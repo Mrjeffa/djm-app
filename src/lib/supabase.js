@@ -3,11 +3,32 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://xftnovnldcdfohqlqgor.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdG5vdm5sZGNkZm9ocWxxZ29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzODU2NzQsImV4cCI6MjA5NTk2MTY3NH0.5Qgfipldcz_YrODg5HT25h0nkIfJMzMiW2ChQO57wfM'
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  }
+})
 
 // ── Auth ─────────────────────────────────────────────────────
 export const stuurMagicLink = (email) =>
-  supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+  supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: window.location.origin,
+    }
+  })
+
+export const stuurUitnodiging = (email) =>
+  supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: window.location.origin,
+    }
+  })
 
 export const uitloggen = () => supabase.auth.signOut()
 

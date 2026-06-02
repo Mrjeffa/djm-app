@@ -28,13 +28,20 @@ export default function App() {
       setLaden(false)
     }).catch(() => setLaden(false))
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSessie(session)
-      if (session) {
-        const admin = await checkAdmin(session)
-        setAdminModus(admin)
-      } else {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setSessie(null)
         setAdminModus(false)
+        setLaden(false)
+        return
+      }
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        setSessie(session)
+        if (session) {
+          const admin = await checkAdmin(session)
+          setAdminModus(admin)
+        }
+        setLaden(false)
       }
     })
 

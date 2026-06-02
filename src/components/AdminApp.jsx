@@ -136,9 +136,22 @@ function ModalFooter({onClose,label="Opslaan",onClick}){
 // ── Modals ───────────────────────────────────────────────────────────────────
 
 function UitnodigingModal({klant, onClose}){
-  const [stap, setStap] = useState("keuze"); // "keuze" | "email_verzonden" | "link"
+  const [stap, setStap] = useState("keuze");
   const [gekopieerd, setGekopieerd] = useState(false);
-  const inviteLink = `https://app.dejongemotor.nl/login?uitnodiging=${klant.id}&email=${encodeURIComponent(klant.email)}`;
+  const [bezig, setBezig] = useState(false);
+  const inviteLink = `${window.location.origin}`;
+
+  const stuurEmail = async () => {
+    setBezig(true);
+    try {
+      const { stuurUitnodiging } = await import("../lib/supabase.js");
+      await stuurUitnodiging(klant.email);
+      setStap("email_verzonden");
+    } catch(e) {
+      alert("Fout bij versturen: " + e.message);
+    }
+    setBezig(false);
+  };
 
   const kopieer = () => {
     navigator.clipboard.writeText(inviteLink).then(()=>{
@@ -158,11 +171,11 @@ function UitnodigingModal({klant, onClose}){
           <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Hoe wil je de uitnodiging versturen?</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <button style={{...s.btn,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
-              onClick={()=>setStap("email_verzonden")}>
+              onClick={stuurEmail} disabled={bezig}>
               <span style={{fontSize:16}}>✉</span>
               <div>
-                <div>Stuur via e-mail</div>
-                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Klant ontvangt een e-mail met inloglink</div>
+                <div>{bezig ? "Versturen..." : "Stuur via e-mail"}</div>
+                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Klant ontvangt een inloglink op {klant.email}</div>
               </div>
             </button>
             <button style={{...s.btnOutline,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
@@ -327,7 +340,6 @@ function KlantModal({onSave, onClose, voorraad=[]}){
             <Field label="Bouwjaar"><input style={s.input} value={motorF.bouwjaar} onChange={setM("bouwjaar")} placeholder="2022"/></Field>
             <Field label="Kilometerstand"><input style={s.input} value={motorF.km} onChange={setM("km")} placeholder="15000"/></Field>
           </Grid2>
-          <Field label="Aankoopdatum bij ons"><input style={s.input} type="date" value={motorF.aankoopdatum} onChange={setM("aankoopdatum")}/></Field>
         </div>
       )}
 
@@ -554,9 +566,10 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
 
   const filtered=klanten.filter(k=>
     k.naam.toLowerCase().includes(search.toLowerCase())||
-    (k.motoren||[]).some(m=>m.kenteken.toLowerCase().includes(search.toLowerCase()))
+    (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
   );
   const klant=sel?klanten.find(k=>k.id===sel):null;
+  const klantMotoren = klant?.motoren || [];
 
   const addMotor=f=>{ if(klant) onAddMotor(klant.id,f); };
   const addService=f=>{ if(klant&&selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -573,7 +586,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
             <div key={k.id} onClick={()=>setSel(k.id)}
               style={{padding:"12px 14px",background:sel===k.id?`${T.accent}15`:T.surf,border:`1px solid ${sel===k.id?T.accent:T.border}`,borderRadius:5,cursor:"pointer",transition:"all 0.1s"}}>
               <div style={{fontSize:14,fontWeight:500}}>{k.naam}</div>
-              <div style={{fontSize:12,color:T.muted,marginTop:3}}>{k.motoren.length} motor{k.motoren.length!==1?"en":""} · {k.woonplaats}</div>
+              <div style={{fontSize:12,color:T.muted,marginTop:3}}>{klantMotoren.length} motor{klantMotoren.length!==1?"en":""} · {k.woonplaats}</div>
             </div>
           ))}
         </div>
@@ -599,7 +612,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
                 </div>
               </div>
             </div>
-            {klant.motoren.map(motor=>(
+            {klantMotoren.map(motor=>(
               <div key={motor.id} style={{...s.card,marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div>
