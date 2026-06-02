@@ -175,7 +175,7 @@ function MijnMotor({ motoren, onMotorUpdate }) {
                   {kmSindsBeurt.toLocaleString()} km
                 </div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}><button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:"#666660",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button><div style={{ textAlign: "right" }}>
+              <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 12, color: T.muted }}>Interval</div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>per {motor.intervalKm.toLocaleString()} km</div>
               </div>
@@ -523,9 +523,12 @@ export default function KlantApp({ userId }) {
           <div style={css.logoTop}>DE JONGE MOTOREN</div>
           <div style={css.logoSub}>MIJN GARAGE</div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}><button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:"#666660",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button><div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{KLANT.naam.split(" ")[0]}</div>
-          <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{KLANT.naam.split(" ")[0]}</div>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
+          </div>
+          <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:"#666660",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
         </div>
       </div>
 
