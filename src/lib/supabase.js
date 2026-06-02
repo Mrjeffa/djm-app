@@ -7,7 +7,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 // ── Auth ─────────────────────────────────────────────────────
 export const stuurMagicLink = (email) =>
-  supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
+  supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
 
 export const uitloggen = () => supabase.auth.signOut()
 
