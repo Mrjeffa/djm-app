@@ -561,15 +561,20 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
 
 function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,voorraad=[]}){
   const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState("alle"); // "alle" | "geen_account"
   const [sel,setSel]=useState(null);
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [uitnodigKlant,setUitnodigKlant]=useState(null);
 
-  const filtered=klanten.filter(k=>
-    k.naam.toLowerCase().includes(search.toLowerCase())||
-    (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
-  );
+  const geenAccount = klanten.filter(k=>!k.user_id);
+
+  const filtered=klanten.filter(k=>{
+    const matchSearch = k.naam.toLowerCase().includes(search.toLowerCase())||
+      (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()));
+    const matchFilter = filter==="alle" || (filter==="geen_account" && !k.user_id);
+    return matchSearch && matchFilter;
+  });
   const klant=sel?klanten.find(k=>k.id===sel):null;
   const klantMotoren = klant?.motoren || [];
 
@@ -578,17 +583,28 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
 
   return(
     <div style={{display:"flex",gap:18,height:"100%"}}>
-      <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:8}}>
           <input style={{...s.input,flex:1}} placeholder="Zoek naam of kenteken..." value={search} onChange={e=>setSearch(e.target.value)}/>
           <button style={s.btn} onClick={()=>setModal("addKlant")}>+</button>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {[["alle","Alle"],["geen_account",`Geen account${geenAccount.length>0?` (${geenAccount.length})`:""}`]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>setFilter(id)}
+              style={{flex:1,padding:"7px 8px",borderRadius:4,border:`1px solid ${filter===id?T.accent:T.border}`,background:filter===id?`${T.accent}20`:"transparent",color:filter===id?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif"}}>
+              {lbl}
+            </button>
+          ))}
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:4,overflowY:"auto"}}>
           {filtered.map(k=>(
             <div key={k.id} onClick={()=>setSel(k.id)}
               style={{padding:"12px 14px",background:sel===k.id?`${T.accent}15`:T.surf,border:`1px solid ${sel===k.id?T.accent:T.border}`,borderRadius:5,cursor:"pointer",transition:"all 0.1s"}}>
-              <div style={{fontSize:14,fontWeight:500}}>{k.naam}</div>
-              <div style={{fontSize:12,color:T.muted,marginTop:3}}>{klantMotoren.length} motor{klantMotoren.length!==1?"en":""} · {k.woonplaats}</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:14,fontWeight:500}}>{k.naam}</div>
+                {!k.user_id&&<span style={{fontSize:10,background:`${T.yellow}20`,color:T.yellow,padding:"1px 6px",borderRadius:3,fontWeight:600}}>Geen account</span>}
+              </div>
+              <div style={{fontSize:12,color:T.muted,marginTop:3}}>{(k.motoren||[]).length} motor{(k.motoren||[]).length!==1?"en":""} · {k.woonplaats}</div>
             </div>
           ))}
         </div>
