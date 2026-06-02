@@ -1064,38 +1064,56 @@ export default function AdminApp(){
 
   // ── Data ophalen bij laden ──────────────────────────────────
   useEffect(()=>{
-    Promise.all([
-      import("../lib/supabase.js").then(m=>m.supabase.from("klanten").select("*").order("naam")),
-      import("../lib/supabase.js").then(m=>m.supabase.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false})),
-      import("../lib/supabase.js").then(m=>m.supabase.from("afspraken").select("*, klanten(naam)").order("datum")),
-    ]).then(([k,v,a])=>{
-      // Motoren, km_historie en service_beurten per klant ophalen
-      const klantIds = (k.data||[]).map(x=>x.id);
-      if(klantIds.length===0){ setLaden(false); return; }
-      import("../lib/supabase.js").then(m=>
-        Promise.all([
-          m.supabase.from("motoren").select("*").in("klant_id",klantIds),
-          m.supabase.from("km_historie").select("*").order("datum"),
-          m.supabase.from("service_beurten").select("*").order("datum",{ascending:false}),
-        ])
-      ).then(([mot,km,svc])=>{
-        const motoren = mot.data||[];
-        const kmHist = km.data||[];
-        const svcBeurten = svc.data||[];
-        const verrijkt = (k.data||[]).map(klant=>({
-          ...klant,
-          motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
-            ...m,
-            kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
-            service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km})),
-          }))
-        }));
+    const laadAlles = async () => {
+      try {
+        const sb = (await import("../lib/supabase.js")).supabase;
+        const [k, v, a] = await Promise.all([
+          sb.from("klanten").select("*").order("naam"),
+          sb.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false}),
+          sb.from("afspraken").select("*, klanten(naam)").order("datum"),
+        ]);
+
+        const klantIds = (k.data||[]).map(x=>x.id);
+        let verrijkt = (k.data||[]).map(klant=>({...klant, motoren:[]}));
+
+        if(klantIds.length > 0){
+          const [mot, km, svc] = await Promise.all([
+            sb.from("motoren").select("*").in("klant_id",klantIds),
+            sb.from("km_historie").select("*").order("datum"),
+            sb.from("service_beurten").select("*").order("datum",{ascending:false}),
+          ]);
+          const motoren = mot.data||[];
+          const kmHist = km.data||[];
+          const svcBeurten = svc.data||[];
+          verrijkt = (k.data||[]).map(klant=>({
+            ...klant,
+            motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
+              ...m,
+              kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
+              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km})),
+            }))
+          }));
+        }
+
         setKlanten(verrijkt);
         setShowroom(v.data||[]);
         setAfspraken((a.data||[]).map(x=>({...x,klant:x.klanten?.naam||"Onbekend"})));
+
+        // Instellingen laden
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden").single();
+        if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
+        if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
+
+      } catch(e) {
+        console.error("Laad fout:", e);
+      } finally {
         setLaden(false);
-      });
-    });
+      }
+    };
+
+    // Maximaal 10 seconden — daarna toch doorgaan
+    const timer = setTimeout(()=>setLaden(false), 10000);
+    laadAlles().then(()=>clearTimeout(timer));
   },[]);
 
   // ── Mutaties ───────────────────────────────────────────────
@@ -1225,16 +1243,6 @@ export default function AdminApp(){
     await sb.from("instellingen").update({ openingstijden: tijden }).eq("id", 1);
     setOpeningstijden(tijden);
   };
-
-  // Instellingen laden bij start
-  useEffect(()=>{
-    import("../lib/supabase.js").then(m=>
-      m.supabase.from("instellingen").select("gesloten_dagen,openingstijden").single()
-    ).then(({data})=>{
-      if(data?.gesloten_dagen) setGeslotenDagen(data.gesloten_dagen);
-      if(data?.openingstijden) setOpeningstijden(data.openingstijden);
-    });
-  },[]);
 
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
