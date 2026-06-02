@@ -568,11 +568,12 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
   const [uitnodigKlant,setUitnodigKlant]=useState(null);
 
   const geenAccount = klanten.filter(k=>!k.user_id);
+  const inAfwachting = klanten.filter(k=>k.status==="in_afwachting");
 
   const filtered=klanten.filter(k=>{
     const matchSearch = k.naam.toLowerCase().includes(search.toLowerCase())||
       (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()));
-    const matchFilter = filter==="alle" || (filter==="geen_account" && !k.user_id);
+    const matchFilter = filter==="alle" || (filter==="geen_account" && !k.user_id) || (filter==="in_afwachting" && k.status==="in_afwachting");
     return matchSearch && matchFilter;
   });
   const klant=sel?klanten.find(k=>k.id===sel):null;
@@ -589,9 +590,13 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
           <button style={s.btn} onClick={()=>setModal("addKlant")}>+</button>
         </div>
         <div style={{display:"flex",gap:6}}>
-          {[["alle","Alle"],["geen_account",`Geen account${geenAccount.length>0?` (${geenAccount.length})`:""}`]].map(([id,lbl])=>(
+          {[
+            ["alle","Alle"],
+            ["in_afwachting",`Wacht${inAfwachting.length>0?` (${inAfwachting.length})`:""}`],
+            ["geen_account",`Geen account${geenAccount.length>0?` (${geenAccount.length})`:""}`]
+          ].map(([id,lbl])=>(
             <button key={id} onClick={()=>setFilter(id)}
-              style={{flex:1,padding:"7px 8px",borderRadius:4,border:`1px solid ${filter===id?T.accent:T.border}`,background:filter===id?`${T.accent}20`:"transparent",color:filter===id?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif"}}>
+              style={{flex:1,padding:"7px 6px",borderRadius:4,border:`1px solid ${filter===id?(id==="in_afwachting"?T.yellow:T.accent):T.border}`,background:filter===id?`${id==="in_afwachting"?T.yellow:T.accent}20`:"transparent",color:filter===id?(id==="in_afwachting"?T.yellow:T.accent):T.muted,cursor:"pointer",fontSize:11,fontFamily:"Barlow, sans-serif"}}>
               {lbl}
             </button>
           ))}
@@ -618,13 +623,24 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
             <div style={{...s.card,marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
-                  <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22}}>{klant.naam}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22}}>{klant.naam}</div>
+                    {klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
+                    {klant.status==="goedgekeurd"&&<span style={{fontSize:11,background:`${T.green}20`,color:T.green,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✓ Goedgekeurd</span>}
+                    {klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
+                  </div>
                   <div style={{fontSize:13,color:T.muted,marginTop:6,lineHeight:1.8}}>
                     {klant.email} · {klant.telefoon}<br/>
                     {klant.adres}, {klant.postcode} {klant.woonplaats}
                   </div>
                 </div>
-                <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  {klant.status!=="goedgekeurd"&&(
+                    <button style={{...s.btn,background:T.green}} onClick={()=>onUpdateKlant({...klant,status:"goedgekeurd"})}>✓ Goedkeuren</button>
+                  )}
+                  {klant.status!=="afgewezen"&&(
+                    <button style={{...s.btn,background:T.red}} onClick={()=>onUpdateKlant({...klant,status:"afgewezen"})}>✕ Afwijzen</button>
+                  )}
                   <button style={s.btnOutline} onClick={()=>setUitnodigKlant(klant)}>Uitnodigen</button>
                   <button style={s.btn} onClick={()=>setModal("addMotor")}>+ Motor</button>
                 </div>
@@ -721,16 +737,77 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
   );
 }
 
-function AgendaPage({afspraken,klanten,onAddAfspraak,geslotenDagen=[],onToggleGesloten}){
+function AfspraakEditModal({afspraak, klanten, onSave, onDelete, onClose}){
+  const [f,setF]=useState({
+    klant: afspraak.klant||"",
+    datum: afspraak.datum||TODAY,
+    tijd: afspraak.tijd||"09:00",
+    duur: String(afspraak.duur||1),
+    omschrijving: afspraak.omschrijving||afspraak.opmerking||""
+  });
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  return(
+    <Modal title="AFSPRAAK WIJZIGEN" onClose={onClose}>
+      <Field label="Klant">
+        <select style={s.input} value={f.klant} onChange={set("klant")}>
+          <option value="">— Selecteer klant —</option>
+          {klanten.map(k=><option key={k.id}>{k.naam}</option>)}
+          <option value="Walk-in">Walk-in</option>
+        </select>
+      </Field>
+      <Grid2>
+        <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+        <Field label="Starttijd"><input style={s.input} type="time" value={f.tijd} onChange={set("tijd")}/></Field>
+        <Field label="Duur (uur)">
+          <select style={s.input} value={f.duur} onChange={set("duur")}>
+            {[1,2,3,4,5,6,7,8].map(h=><option key={h}>{h}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <Field label="Omschrijving">
+        <textarea style={{...s.input,height:70,resize:"none"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))}/>
+      </Field>
+      <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+        <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
+        <div style={{display:"flex",gap:10}}>
+          <button style={s.btnGhost} onClick={onClose}>Annuleer</button>
+          <button style={s.btn} onClick={()=>onSave({...afspraak,...f,duur:parseInt(f.duur)})}>Opslaan</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AgendaPage({afspraken,klanten,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden}){
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
-  const [blokkeerDatum,setBlokkeerDatum]=useState(null);
+  const [editAfspraak,setEditAfspraak]=useState(null);
+  const [dragId,setDragId]=useState(null);
   const weekDates=getWeekDates(weekBase);
   const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
   const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
-  const HOURS=Array.from({length:9},(_,i)=>i+9); // 09-17
-  const CAL_H=440;
-  const TOTAL_MIN=WEND-WSTART;
+  const HOURS=Array.from({length:9},(_,i)=>i+9);
+  const CAL_H=440; const TOTAL_MIN=WEND-WSTART;
+
+  // Dag gesloten op basis van instellingen openingstijden
+  const DAGMAP=["zo","ma","di","wo","do","vr","za"];
+  const isDagGesloten=(datum)=>{
+    if(geslotenDagen.includes(datum)) return true;
+    if(openingstijden){
+      const dow=new Date(datum).getDay();
+      const dagKey=DAGMAP[dow];
+      return openingstijden[dagKey]?.gesloten===true;
+    }
+    return false;
+  };
+
+  const handleDrop=(datum,e)=>{
+    e.preventDefault();
+    if(!dragId) return;
+    const afs=afspraken.find(a=>a.id===dragId);
+    if(afs && afs.datum!==datum) onEditAfspraak({...afs,datum});
+    setDragId(null);
+  };
 
   return(
     <div>
@@ -740,28 +817,39 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,geslotenDagen=[],onToggleGe
           <span style={{fontSize:13,color:T.muted,minWidth:120,textAlign:"center"}}>{fmtDate(weekDates[0])} – {fmtDate(weekDates[5])}</span>
           <button style={s.btnGhost} onClick={next}>Volgende →</button>
         </div>
-        <div style={{display:"flex",gap:8}}>
-          <button style={s.btnGhost} onClick={()=>setBlokkeerDatum(TODAY)}>🔒 Dag blokkeren</button>
-          <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
-        </div>
+        <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
       </div>
 
       <div style={{...s.card,padding:0,overflow:"hidden"}}>
+        {/* Dag headers */}
         <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",borderBottom:`1px solid ${T.border}`}}>
           <div/>
           {weekDates.map((d,i)=>{
-            const isGesloten=geslotenDagen.includes(d);
+            const gesloten=isDagGesloten(d);
             return(
-              <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`,background:isGesloten?`${T.red}10`:d===TODAY?`${T.accent}18`:"transparent"}}>
+              <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`,background:gesloten?`${T.red}10`:d===TODAY?`${T.accent}18`:"transparent"}}>
                 <div style={{fontSize:10,color:T.muted,letterSpacing:1}}>{DAYS_NL[i]}</div>
-                <div style={{fontSize:14,fontWeight:d===TODAY?700:400,color:isGesloten?T.red:d===TODAY?T.accent:T.text,marginTop:2}}>{fmtDate(d)}</div>
-                {isGesloten&&<div style={{fontSize:9,color:T.red,marginTop:2,letterSpacing:0.5}}>GESLOTEN</div>}
+                <div style={{fontSize:13,fontWeight:d===TODAY?700:400,color:gesloten?T.red:d===TODAY?T.accent:T.text,marginTop:2}}>{fmtDate(d)}</div>
+                {gesloten
+                  ? <div style={{fontSize:9,color:T.red,marginTop:2}}>GESLOTEN</div>
+                  : <div style={{fontSize:9,color:T.muted,marginTop:2}}>
+                      {openingstijden&&!openingstijden[DAGMAP[new Date(d).getDay()]]?.gesloten
+                        ? `${openingstijden[DAGMAP[new Date(d).getDay()]]?.open||"09:00"}–${openingstijden[DAGMAP[new Date(d).getDay()]]?.sluit||"17:00"}`
+                        : "09:00–17:00"}
+                    </div>
+                }
+                {/* Dag blokkeren / deblokkeren bij klik */}
+                <div onClick={()=>onToggleGesloten(d, !geslotenDagen.includes(d))}
+                  style={{fontSize:9,color:geslotenDagen.includes(d)?T.green:T.muted,cursor:"pointer",marginTop:2,textDecoration:"underline"}}>
+                  {geslotenDagen.includes(d)?"deblokkeer":"blokkeer"}
+                </div>
               </div>
             );
           })}
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",position:"relative",height:CAL_H}}>
+        {/* Tijdrooster */}
+        <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",height:CAL_H}}>
           <div style={{position:"relative",borderRight:`1px solid ${T.border}`}}>
             {HOURS.map(h=>(
               <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
@@ -772,26 +860,39 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,geslotenDagen=[],onToggleGe
 
           {weekDates.map((d)=>{
             const apts=afspraken.filter(a=>a.datum===d);
-            const isGesloten=geslotenDagen.includes(d);
+            const gesloten=isDagGesloten(d);
             return(
-              <div key={d} style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:isGesloten?`${T.red}08`:d===TODAY?`${T.accent}06`:"transparent"}}>
+              <div key={d}
+                style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:gesloten?`${T.red}06`:d===TODAY?`${T.accent}04`:"transparent"}}
+                onDragOver={e=>{e.preventDefault();}}
+                onDrop={e=>handleDrop(d,e)}>
                 {HOURS.map(h=>(
-                  <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}22`}}/>
+                  <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}18`}}/>
                 ))}
-                {isGesloten&&(
-                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    <div style={{fontSize:11,color:T.red,fontWeight:600,letterSpacing:1}}>GESLOTEN</div>
+                {gesloten&&(
+                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                    <div style={{fontSize:11,color:T.red,fontWeight:600,opacity:0.6}}>GESLOTEN</div>
                   </div>
                 )}
-                {!isGesloten&&apts.map(a=>{
+                {apts.map(a=>{
                   const startMin=timeToMin(a.tijd||"09:00")-WSTART;
                   const top=Math.max(0,startMin/TOTAL_MIN*100);
                   const height=Math.min((a.duur||1)*60/TOTAL_MIN*100,100-top);
                   return(
-                    <div key={a.id} style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,background:`${T.accent}28`,border:`1px solid ${T.accent}80`,borderRadius:4,padding:"4px 6px",overflow:"hidden",cursor:"default"}}>
+                    <div key={a.id}
+                      draggable
+                      onDragStart={()=>setDragId(a.id)}
+                      onDragEnd={()=>setDragId(null)}
+                      onClick={()=>setEditAfspraak(a)}
+                      style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,
+                        background:dragId===a.id?`${T.accent}15`:`${T.accent}28`,
+                        border:`1px solid ${T.accent}80`,borderRadius:4,padding:"4px 6px",
+                        overflow:"hidden",cursor:"grab",userSelect:"none",
+                        boxShadow:dragId===a.id?"0 2px 8px rgba(0,0,0,0.4)":"none",
+                        transition:"opacity 0.1s"}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.accent}}>{a.tijd}</div>
                       <div style={{fontSize:10,color:T.text,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.klant}</div>
-                      {height>6&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u</div>}
+                      {height>8&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u · {a.omschrijving||a.opmerking||""}</div>}
                     </div>
                   );
                 })}
@@ -801,26 +902,16 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,geslotenDagen=[],onToggleGe
         </div>
       </div>
 
-      {modal&&<AfspraakModal afspraken={afspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      <div style={{fontSize:11,color:T.muted,marginTop:8}}>💡 Klik een afspraak om te wijzigen · Sleep naar een andere dag</div>
 
-      {blokkeerDatum!==null&&(
-        <Modal title="DAG BLOKKEREN" onClose={()=>setBlokkeerDatum(null)}>
-          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Selecteer een datum om te blokkeren voor afspraken. Klanten kunnen die dag niet boeken.</div>
-          <Field label="Datum">
-            <input style={s.input} type="date" value={blokkeerDatum} onChange={e=>setBlokkeerDatum(e.target.value)} min={TODAY}/>
-          </Field>
-          {geslotenDagen.includes(blokkeerDatum)&&(
-            <div style={{fontSize:12,color:T.yellow,marginBottom:10}}>⚠ Deze dag staat al geblokkeerd — klik "Deblokkeren" om hem vrij te geven.</div>
-          )}
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
-            <button style={s.btnGhost} onClick={()=>setBlokkeerDatum(null)}>Annuleer</button>
-            {geslotenDagen.includes(blokkeerDatum)?(
-              <button style={{...s.btn,background:T.green}} onClick={()=>{onToggleGesloten(blokkeerDatum,false);setBlokkeerDatum(null);}}>Deblokkeren</button>
-            ):(
-              <button style={{...s.btn,background:T.red}} onClick={()=>{onToggleGesloten(blokkeerDatum,true);setBlokkeerDatum(null);}}>Dag blokkeren</button>
-            )}
-          </div>
-        </Modal>
+      {modal&&<AfspraakModal afspraken={afspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {editAfspraak&&(
+        <AfspraakEditModal
+          afspraak={editAfspraak}
+          klanten={klanten}
+          onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
+          onDelete={id=>{onDeleteAfspraak(id);setEditAfspraak(null);}}
+          onClose={()=>setEditAfspraak(null)}/>
       )}
     </div>
   );
@@ -1038,8 +1129,9 @@ export default function AdminApp(){
   const updateKlant = async (u) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("klanten").update({
-      naam:u.naam,email:u.email,telefoon:u.telefoon,
-      adres:u.adres,postcode:u.postcode,woonplaats:u.woonplaats
+      naam:u.naam, email:u.email, telefoon:u.telefoon,
+      adres:u.adres, postcode:u.postcode, woonplaats:u.woonplaats,
+      status:u.status||"goedgekeurd"
     }).eq("id",u.id);
     setKlanten(p=>p.map(k=>k.id===u.id?u:k));
   };
@@ -1100,6 +1192,20 @@ export default function AdminApp(){
       duur:parseInt(f.duur)||1, opmerking:f.omschrijving||"", status:"gepland"
     }).select().single();
     if(afs) setAfspraken(p=>[...p,{...afs,klant:f.klant,omschrijving:f.omschrijving,motor:f.motor}]);
+  };
+
+  const editAfspraak = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("afspraken").update({
+      datum:f.datum, tijd:f.tijd, duur:parseInt(f.duur)||1, opmerking:f.omschrijving||""
+    }).eq("id",f.id);
+    setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f}:a));
+  };
+
+  const deleteAfspraak = async (id) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("afspraken").delete().eq("id",id);
+    setAfspraken(p=>p.filter(a=>a.id!==id));
   };
 
   const toggleGeslotenDag = async (datum, blokkeer) => {
@@ -1177,7 +1283,7 @@ export default function AdminApp(){
           {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
           {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
           {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
-          {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag}/>}
+          {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
           {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag}/>}
         </div>
       </div>

@@ -615,6 +615,38 @@ export default function KlantApp({ userId }) {
     </div>
   );
 
+  if (klant.status === 'in_afwachting') return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+      <div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
+        <div style={{ fontSize:36, margin:"20px 0 12px" }}>⏳</div>
+        <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:10 }}>Account wordt beoordeeld</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+          Je aanmelding is ontvangen. De Jonge Motoren geeft je zo snel mogelijk toegang.
+        </div>
+        <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())}
+          style={{ marginTop:24, padding:"10px 20px", background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:8, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+          Uitloggen
+        </button>
+      </div>
+    </div>
+  );
+
+  if (klant.status === 'afgewezen') return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+      <div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
+        <div style={{ fontSize:36, margin:"20px 0 12px" }}>❌</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+          Je aanmelding is niet goedgekeurd. Neem contact op als je denkt dat dit een fout is.
+        </div>
+        <a href="https://wa.me/31140000000" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
+          Stuur een bericht →
+        </a>
+      </div>
+    </div>
+  );
+
   return (
     <div style={css.app}>
       <div style={css.topBar}>

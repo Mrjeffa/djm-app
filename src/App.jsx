@@ -11,7 +11,9 @@ const IS_RECOVERY = window.location.hash.includes('type=recovery')
 const koppelKlantAanUser = async (user) => {
   try {
     const { data: klant } = await supabase.from('klanten').select('id, user_id').eq('email', user.email).single()
-    if (klant && !klant.user_id) await supabase.from('klanten').update({ user_id: user.id }).eq('id', klant.id)
+    if (klant && !klant.user_id) {
+      await supabase.from('klanten').update({ user_id: user.id, status: 'in_afwachting' }).eq('id', klant.id)
+    }
   } catch { }
 }
 
