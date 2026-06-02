@@ -233,20 +233,16 @@ function KlantModal({onSave, onClose, voorraad=[]}){
     if(!ken) return;
     setRdwStatus("laden");
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:300,
-          system:"Je zoekt Nederlandse kentekengegevens op via de RDW open data API. Retourneer ALLEEN geldige JSON zonder uitleg of markdown met velden: merk, model, bouwjaar (alleen het jaar als string). Als niet gevonden: {\"gevonden\":false}.",
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:`Zoek kenteken ${ken} op in de RDW en geef voertuiggegevens terug als JSON.`}]
-        })
-      });
-      const data = await response.json();
-      const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("").trim();
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
-      if(parsed.gevonden===false){ setRdwStatus("niet_gevonden"); return; }
-      setMotorF(p=>({...p,merk:parsed.merk||"",model:parsed.model||"",bouwjaar:String(parsed.bouwjaar||"")}));
+      const res = await fetch(`https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${ken}`);
+      const data = await res.json();
+      if(!data||data.length===0){ setRdwStatus("niet_gevonden"); return; }
+      const v = data[0];
+      setMotorF(p=>({
+        ...p,
+        merk: v.merk ? v.merk.charAt(0)+v.merk.slice(1).toLowerCase() : "",
+        model: v.handelsbenaming || "",
+        bouwjaar: v.datum_eerste_toelating ? v.datum_eerste_toelating.substring(0,4) : "",
+      }));
       setRdwStatus("gevonden");
     } catch(e){ setRdwStatus("fout"); }
   };
@@ -384,27 +380,18 @@ function VoorraadModal({onSave,onClose}){
     if(!ken) return;
     setStatus("laden");
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 300,
-          system: "Je zoekt Nederlandse kentekengegevens op via de RDW open data API op https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=KENTEKEN. Retourneer ALLEEN geldige JSON zonder uitleg of markdown met velden: merk (string), model (string), bouwjaar (string, alleen het jaar). Als het kenteken niet bestaat of niet gevonden wordt, retourneer: {\"gevonden\":false}.",
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{ role: "user", content: `Zoek kenteken ${ken} op in de RDW en geef de voertuiggegevens terug als JSON.` }]
-        })
-      });
-      const data = await response.json();
-      const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("").trim();
-      const clean = text.replace(/```json|```/g,"").trim();
-      const parsed = JSON.parse(clean);
-      if(parsed.gevonden===false){ setStatus("niet_gevonden"); return; }
-      setF(p=>({...p, merk:parsed.merk||"", model:parsed.model||"", bouwjaar:String(parsed.bouwjaar||"")}));
+      const res = await fetch(`https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${ken}`);
+      const data = await res.json();
+      if(!data||data.length===0){ setStatus("niet_gevonden"); return; }
+      const v = data[0];
+      setF(p=>({
+        ...p,
+        merk: v.merk ? v.merk.charAt(0)+v.merk.slice(1).toLowerCase() : "",
+        model: v.handelsbenaming || "",
+        bouwjaar: v.datum_eerste_toelating ? v.datum_eerste_toelating.substring(0,4) : "",
+      }));
       setStatus("gevonden");
-    } catch(e) {
-      setStatus("fout");
-    }
+    } catch(e){ setStatus("fout"); }
   };
 
   const kentekenGeformateerd = normKenteken(kenteken);
@@ -558,7 +545,7 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,voorraad=[]}){
   const [search,setSearch]=useState("");
   const [sel,setSel]=useState(null);
   const [modal,setModal]=useState(null);
@@ -567,18 +554,12 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,voorraad=[]}){
 
   const filtered=klanten.filter(k=>
     k.naam.toLowerCase().includes(search.toLowerCase())||
-    k.motoren.some(m=>m.kenteken.toLowerCase().includes(search.toLowerCase()))
+    (k.motoren||[]).some(m=>m.kenteken.toLowerCase().includes(search.toLowerCase()))
   );
   const klant=sel?klanten.find(k=>k.id===sel):null;
 
-  const addMotor=f=>{
-    const m={id:Date.now(),...f,bouwjaar:parseInt(f.bouwjaar)||0,km:parseInt(f.km)||0,service:[]};
-    onUpdateKlant({...klant,motoren:[...klant.motoren,m]});
-  };
-  const addService=f=>{
-    const entry={id:Date.now(),...f};
-    onUpdateKlant({...klant,motoren:klant.motoren.map(m=>m.id===selMotorId?{...m,service:[...m.service,entry]}:m)});
-  };
+  const addMotor=f=>{ if(klant) onAddMotor(klant.id,f); };
+  const addService=f=>{ if(klant&&selMotorId) onAddService(klant.id,selMotorId,f); };
 
   return(
     <div style={{display:"flex",gap:18,height:"100%"}}>
@@ -786,26 +767,142 @@ function AgendaPage({afspraken,klanten,onAddAfspraak}){
 
 // ── App Root ─────────────────────────────────────────────────────────────────
 export default function AdminApp(){
-
   const [page,setPage]=useState("dashboard");
-  const [klanten,setKlanten]=useState(INIT_KLANTEN);
-  const [showroom,setShowroom]=useState(INIT_SHOWROOM);
-  const [afspraken,setAfspraken]=useState(INIT_AFSPRAKEN);
+  const [klanten,setKlanten]=useState([]);
+  const [showroom,setShowroom]=useState([]);
+  const [afspraken,setAfspraken]=useState([]);
+  const [laden,setLaden]=useState(true);
 
-  const addKlant=f=>{
-    const motoren = f.motor ? [{id:Date.now(), kenteken:f.motor.kenteken||"", merk:f.motor.merk||"", model:f.motor.model||"", bouwjaar:parseInt(f.motor.bouwjaar)||0, km:parseInt(f.motor.km)||0, aankoopdatum:f.motor.aankoopdatum||TODAY, service:[]}] : [];
-    setKlanten(p=>[...p,{id:Date.now(),naam:f.naam,email:f.email,telefoon:f.telefoon||"",adres:f.adres||"",postcode:f.postcode||"",woonplaats:f.woonplaats||"",motoren}]);
-    if(f.verwijderUitVoorraad) setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
+  // ── Data ophalen bij laden ──────────────────────────────────
+  useEffect(()=>{
+    Promise.all([
+      import("../lib/supabase.js").then(m=>m.supabase.from("klanten").select("*").order("naam")),
+      import("../lib/supabase.js").then(m=>m.supabase.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false})),
+      import("../lib/supabase.js").then(m=>m.supabase.from("afspraken").select("*, klanten(naam)").order("datum")),
+    ]).then(([k,v,a])=>{
+      // Motoren, km_historie en service_beurten per klant ophalen
+      const klantIds = (k.data||[]).map(x=>x.id);
+      if(klantIds.length===0){ setLaden(false); return; }
+      import("../lib/supabase.js").then(m=>
+        Promise.all([
+          m.supabase.from("motoren").select("*").in("klant_id",klantIds),
+          m.supabase.from("km_historie").select("*").order("datum"),
+          m.supabase.from("service_beurten").select("*").order("datum",{ascending:false}),
+        ])
+      ).then(([mot,km,svc])=>{
+        const motoren = mot.data||[];
+        const kmHist = km.data||[];
+        const svcBeurten = svc.data||[];
+        const verrijkt = (k.data||[]).map(klant=>({
+          ...klant,
+          motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
+            ...m,
+            kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
+            service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km})),
+          }))
+        }));
+        setKlanten(verrijkt);
+        setShowroom(v.data||[]);
+        setAfspraken((a.data||[]).map(x=>({...x,klant:x.klanten?.naam||"Onbekend"})));
+        setLaden(false);
+      });
+    });
+  },[]);
+
+  // ── Mutaties ───────────────────────────────────────────────
+  const addKlant = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {data:klant} = await sb.from("klanten").insert({
+      naam:f.naam, email:f.email, telefoon:f.telefoon||"",
+      adres:f.adres||"", postcode:f.postcode||"", woonplaats:f.woonplaats||""
+    }).select().single();
+    if(!klant) return;
+    let motoren = [];
+    if(f.motor){
+      const src = f.motor;
+      const {data:motor} = await sb.from("motoren").insert({
+        klant_id:klant.id, kenteken:src.kenteken||"", merk:src.merk||"",
+        model:src.model||"", bouwjaar:parseInt(src.bouwjaar)||0,
+        aankoopdatum:src.aankoopdatum||TODAY,
+      }).select().single();
+      if(motor){
+        if(src.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(src.km),datum:TODAY}); }
+        motoren = [{...motor,kmHistory:src.km?[{datum:TODAY,km:parseInt(src.km)}]:[],service:[]}];
+        if(f.verwijderUitVoorraad){
+          await sb.from("voorraad").update({verkocht_op:TODAY,verkocht_aan:klant.id}).eq("id",f.verwijderUitVoorraad);
+          setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
+        }
+      }
+    }
+    setKlanten(p=>[...p,{...klant,motoren}]);
   };
-  const updateKlant=u=>setKlanten(p=>p.map(k=>k.id===u.id?u:k));
-  const addShowroomMotor=f=>setShowroom(p=>[...p,{id:Date.now(),...f,bouwjaar:parseInt(f.bouwjaar)||0,km:parseInt(f.km)||0,prijs:parseInt(f.prijs)||0}]);
-  const verkoop=(motor,klantId)=>{
-    const k=klanten.find(k=>k.id===parseInt(klantId));
-    if(!k)return;
-    updateKlant({...k,motoren:[...k.motoren,{id:Date.now(),kenteken:motor.kenteken,merk:motor.merk,model:motor.model,bouwjaar:motor.bouwjaar,km:motor.km,aankoopdatum:TODAY,service:[]}]});
+
+  const updateKlant = async (u) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("klanten").update({
+      naam:u.naam,email:u.email,telefoon:u.telefoon,
+      adres:u.adres,postcode:u.postcode,woonplaats:u.woonplaats
+    }).eq("id",u.id);
+    setKlanten(p=>p.map(k=>k.id===u.id?u:k));
+  };
+
+  const addMotorAanKlant = async (klantId, f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {data:motor} = await sb.from("motoren").insert({
+      klant_id:klantId, kenteken:f.kenteken||"", merk:f.merk||"",
+      model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
+      aankoopdatum:f.aankoopdatum||TODAY,
+    }).select().single();
+    if(!motor) return;
+    if(f.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(f.km),datum:TODAY}); }
+    const nieuwMotor = {...motor,kmHistory:f.km?[{datum:TODAY,km:parseInt(f.km)}]:[],service:[]};
+    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,nieuwMotor]}:k));
+  };
+
+  const addService = async (klantId, motorId, f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {data:svc} = await sb.from("service_beurten").insert({
+      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null
+    }).select().single();
+    if(!svc) return;
+    await sb.from("motoren").update({last_service_km:f.km||0}).eq("id",motorId);
+    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,service:[svc,...m.service],last_service_km:f.km||0}:m)}:k));
+  };
+
+  const addVoorraadMotor = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {data:v} = await sb.from("voorraad").insert({
+      kenteken:f.kenteken, merk:f.merk, model:f.model||"",
+      bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
+      prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY
+    }).select().single();
+    if(v) setShowroom(p=>[v,...p]);
+  };
+
+  const verkoop = async (motor, klantId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const k = klanten.find(k=>k.id===klantId);
+    if(!k) return;
+    await sb.from("voorraad").update({verkocht_op:TODAY,verkocht_aan:klantId}).eq("id",motor.id);
+    const {data:nieuwMotor} = await sb.from("motoren").insert({
+      klant_id:klantId,kenteken:motor.kenteken,merk:motor.merk,
+      model:motor.model||"",bouwjaar:motor.bouwjaar||0,aankoopdatum:TODAY,
+    }).select().single();
+    if(nieuwMotor){
+      setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:[]}]}:k));
+    }
     setShowroom(p=>p.filter(m=>m.id!==motor.id));
   };
-  const addAfspraak=f=>setAfspraken(p=>[...p,{id:Date.now(),...f}]);
+
+  const addAfspraak = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const klant = klanten.find(k=>k.naam===f.klant);
+    const {data:afs} = await sb.from("afspraken").insert({
+      klant_id:klant?.id||null, datum:f.datum,
+      opmerking:f.omschrijving||"", status:"gepland"
+    }).select().single();
+    if(afs) setAfspraken(p=>[...p,{...afs,klant:f.klant,tijd:f.tijd,duur:f.duur,omschrijving:f.omschrijving,motor:f.motor}]);
+  };
 
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
@@ -813,6 +910,14 @@ export default function AdminApp(){
     {id:"voorraad",icon:"◧",label:"Voorraad"},
     {id:"agenda",icon:"◫",label:"Agenda"},
   ];
+
+  if(laden) return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
+      <div style={{width:16,height:16,border:`2px solid ${T.accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+      Laden...
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
   return(
     <div style={s.app}>
@@ -833,16 +938,18 @@ export default function AdminApp(){
           Admin<br/>De Jonge Motoren
         </div>
       </div>
-
       <div style={s.main}>
         <div style={s.header}>
           <div style={s.headerTitle}>{nav.find(n=>n.id===page)?.label.toUpperCase()}</div>
-          <div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{fontSize:12,color:T.muted}}>{new Date().toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"long",year:"numeric"})}</div><button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{padding:"5px 12px",background:"transparent",border:"1px solid #252525",borderRadius:4,color:"#666660",fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button></div>
+          <div style={{display:"flex",gap:12,alignItems:"center"}}>
+            <div style={{fontSize:12,color:T.muted}}>{new Date().toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"long",year:"numeric"})}</div>
+            <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:4,color:T.muted,fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
+          </div>
         </div>
         <div style={s.content}>
           {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
-          {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} voorraad={showroom}/>}
-          {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addShowroomMotor} klanten={klanten} onVerkoop={verkoop}/>}
+          {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
+          {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
           {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak}/>}
         </div>
       </div>
