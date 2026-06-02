@@ -69,18 +69,23 @@ const fmtDatum = d => {
 };
 
 // Haal beschikbare wo/do/vr dagen op voor de komende 6 weken
-const getBeschikbareDagen = (bezet) => {
+const getBeschikbareDagen = (bezet = [], geslotenWeken = []) => {
   const dagen = [];
   const start = new Date(TODAY);
   start.setDate(start.getDate() + 1);
-  for (let i = 0; dagen.length < 24; i++) {
+  for (let i = 0; dagen.length < 12; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     if (i > 28) break;
     const dayOfWeek = d.getDay();
     if ([3,4,5].includes(dayOfWeek)) {
       const iso = d.toISOString().split("T")[0];
-      dagen.push({ datum: iso, bezet: bezet.includes(iso), dag: DAGEN_NL[dayOfWeek] });
+      // Maandag van deze week bepalen
+      const ma = new Date(d);
+      ma.setDate(d.getDate() - (dayOfWeek - 1));
+      const maIso = ma.toISOString().split("T")[0];
+      const isGesloten = geslotenWeken.includes(maIso);
+      dagen.push({ datum: iso, bezet: bezet.includes(iso) || isGesloten, dag: DAGEN_NL[dayOfWeek] });
     }
   }
   return dagen;
@@ -244,22 +249,24 @@ function Servicegeschiedenis({ motoren }) {
 }
 
 // ── Scherm: Km Stand ───────────────────────────────────────────────────────
-function KmStand({ motoren, onUpdate }) {
+function KmStand({ motoren, onSlaOp }) {
   const [selId, setSelId] = useState(motoren[0]?.id);
   const [nieuwKm, setNieuwKm] = useState("");
   const [opgeslagen, setOpgeslagen] = useState(false);
+  const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selId) || motoren[0];
   if (!motor) return null;
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
 
-  const opslaan = () => {
+  const opslaan = async () => {
     const km = parseInt(nieuwKm);
     if (!km || km <= huidigKm) return;
-    const nieuwEntry = { datum: TODAY, km };
-    onUpdate(selId, { kmHistory: [...motor.kmHistory, nieuwEntry] });
+    setBezig(true);
+    await onSlaOp(motor.id, km);
     setNieuwKm("");
     setOpgeslagen(true);
+    setBezig(false);
     setTimeout(() => setOpgeslagen(false), 2500);
   };
 
@@ -286,7 +293,9 @@ function KmStand({ motoren, onUpdate }) {
         {opgeslagen ? (
           <div style={{ ...css.btn, background: T.green, textAlign: "center", borderRadius: 8, padding: 13, fontSize: 15, fontWeight: 600, cursor: "default" }}>✓ Opgeslagen!</div>
         ) : (
-          <button style={{ ...css.btn, opacity: (!nieuwKm || parseInt(nieuwKm) <= huidigKm) ? 0.4 : 1 }} onClick={opslaan}>Opslaan</button>
+          <button style={{ ...css.btn, opacity: (!nieuwKm || parseInt(nieuwKm) <= huidigKm || bezig) ? 0.4 : 1 }} onClick={opslaan}>
+            {bezig ? "Opslaan..." : "Opslaan"}
+          </button>
         )}
       </div>
 
@@ -307,18 +316,20 @@ function KmStand({ motoren, onUpdate }) {
 }
 
 // ── Scherm: Afspraak ───────────────────────────────────────────────────────
-function Afspraak({ motoren }) {
+function Afspraak({ motoren, bezetteDagen = [], geslotenWeken = [], onSlaOp }) {
   const [selId, setSelId] = useState(motoren[0]?.id);
   const [selDatum, setSelDatum] = useState(null);
   const [opmerking, setOpmerking] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
+  const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selId) || motoren[0];
-  const beschikbaar = getBeschikbareDagen(BEZETTE_DAGEN);
+  const beschikbaar = getBeschikbareDagen(bezetteDagen, geslotenWeken);
 
-  const DAGVOL = { wo: "Woensdag", do: "Donderdag", vr: "Vrijdag" };
-
-  const verstuur = () => {
-    if (!selDatum) return;
+  const verstuur = async () => {
+    if (!selDatum || bezig) return;
+    setBezig(true);
+    await onSlaOp({ motorId: selId, datum: selDatum, opmerking });
+    setBezig(false);
     setVerstuurd(true);
   };
 
@@ -385,8 +396,8 @@ function Afspraak({ motoren }) {
           value={opmerking} onChange={e => setOpmerking(e.target.value)} />
       </div>
 
-      <button style={{ ...css.btn, opacity: !selDatum ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}>
-        Afspraak aanvragen
+      <button style={{ ...css.btn, opacity: !selDatum || bezig ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}>
+        {bezig ? "Versturen..." : "Afspraak aanvragen"}
       </button>
     </div>
   );
@@ -497,12 +508,77 @@ function Contact() {
 
 // ── App ────────────────────────────────────────────────────────────────────
 export default function KlantApp({ userId }) {
-
   const [tab, setTab] = useState("motor");
-  const [motoren, setMotoren] = useState(INIT_MOTOREN);
+  const [klant, setKlant] = useState(null);
+  const [motoren, setMotoren] = useState([]);
+  const [bezetteDagen, setBezetteDagen] = useState([]);
+  const [geslotenWeken, setGeslotenWeken] = useState([]);
+  const [laden, setLaden] = useState(true);
 
-  const updateMotor = (id, updates) => {
-    setMotoren(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+  useEffect(() => {
+    const laadData = async () => {
+      try {
+        const sb = (await import("../lib/supabase.js")).supabase;
+
+        // Klant ophalen op basis van user_id
+        const { data: klantData } = await sb
+          .from("klanten").select("*").eq("user_id", userId).single();
+        if (!klantData) { setLaden(false); return; }
+        setKlant(klantData);
+
+        // Motoren ophalen
+        const { data: motorenData } = await sb
+          .from("motoren").select("*").eq("klant_id", klantData.id);
+        const motorIds = (motorenData||[]).map(m => m.id);
+
+        if (motorIds.length > 0) {
+          const [{ data: kmData }, { data: svcData }] = await Promise.all([
+            sb.from("km_historie").select("*").in("motor_id", motorIds).order("datum"),
+            sb.from("service_beurten").select("*").in("motor_id", motorIds).order("datum", { ascending: false }),
+          ]);
+          const verrijkt = (motorenData||[]).map(m => ({
+            ...m,
+            kmHistory: (kmData||[]).filter(k => k.motor_id === m.id).map(k => ({ datum: k.datum, km: k.km })),
+            service: (svcData||[]).filter(s => s.motor_id === m.id),
+          }));
+          setMotoren(verrijkt);
+        }
+
+        // Bezette dagen ophalen
+        const { data: afspraken } = await sb
+          .from("afspraken").select("datum").gte("datum", TODAY);
+        setBezetteDagen((afspraken||[]).map(a => a.datum));
+
+        // Gesloten weken ophalen
+        const { data: inst } = await sb.from("instellingen").select("*").single();
+        setGeslotenWeken(inst?.gesloten_weken || []);
+
+      } catch(e) { console.error(e); }
+      setLaden(false);
+    };
+    laadData();
+  }, [userId]);
+
+  const slaKmOp = async (motorId, km) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
+    setMotoren(prev => prev.map(m => m.id === motorId
+      ? { ...m, kmHistory: [...m.kmHistory, { datum: TODAY, km }] }
+      : m
+    ));
+  };
+
+  const slaAfspraakOp = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const motor = motoren.find(m => m.id === f.motorId);
+    await sb.from("afspraken").insert({
+      klant_id: klant.id,
+      motor_id: motor?.id || null,
+      datum: f.datum,
+      opmerking: f.opmerking || "",
+      status: "aangevraagd",
+    });
+    setBezetteDagen(prev => [...prev, f.datum]);
   };
 
   const nav = [
@@ -512,12 +588,35 @@ export default function KlantApp({ userId }) {
     { id: "afspraak", icon: "📅", label: "Afspraak" },
     { id: "contact", icon: "📞", label: "Contact" },
   ];
-
   const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact" };
+
+  if (laden) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg }}>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+        <div style={{ width:28, height:28, border:`3px solid ${T.accent}`, borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
+        <div style={{ color:T.muted, fontSize:13, fontFamily:"Barlow, sans-serif" }}>Laden...</div>
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (!klant) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+      <div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
+        <div style={{ fontSize:13, color:T.muted, marginTop:16, lineHeight:1.8 }}>
+          Je account is nog niet gekoppeld aan een klantprofiel.<br/>
+          Neem contact op met De Jonge Motoren.
+        </div>
+        <a href="https://wa.me/31140000000" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
+          Stuur een bericht →
+        </a>
+      </div>
+    </div>
+  );
 
   return (
     <div style={css.app}>
-      {/* Top bar */}
       <div style={css.topBar}>
         <div style={css.logoWrap}>
           <div style={css.logoTop}>DE JONGE MOTOREN</div>
@@ -525,30 +624,27 @@ export default function KlantApp({ userId }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{KLANT.naam.split(" ")[0]}</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{klant.naam.split(" ")[0]}</div>
             <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
           </div>
-          <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:"#666660",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
+          <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
         </div>
       </div>
 
-      {/* Paginatitel */}
       <div style={{ padding: "14px 20px 0" }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 26, letterSpacing: 0.5 }}>
           {titles[tab]}
         </div>
       </div>
 
-      {/* Content */}
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={motoren} onMotorUpdate={updateMotor} />}
+        {tab === "motor" && <MijnMotor motoren={motoren} />}
         {tab === "service" && <Servicegeschiedenis motoren={motoren} />}
-        {tab === "km" && <KmStand motoren={motoren} onUpdate={updateMotor} />}
-        {tab === "afspraak" && <Afspraak motoren={motoren} />}
+        {tab === "km" && <KmStand motoren={motoren} onSlaOp={slaKmOp} />}
+        {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} geslotenWeken={geslotenWeken} onSlaOp={slaAfspraakOp} />}
         {tab === "contact" && <Contact />}
       </div>
 
-      {/* Bottom nav */}
       <nav style={css.bottomNav}>
         {nav.map(n => (
           <button key={n.id} style={css.navBtn(tab === n.id)} onClick={() => setTab(n.id)}>
