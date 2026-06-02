@@ -19,7 +19,11 @@ export default function LoginScreen() {
     const { error } = await stuurMagicLink(email)
     setLaden(false)
     if (error) {
-      setFout('E-mailadres niet herkend. Neem contact op met De Jonge Motoren.')
+      if (error.message?.toLowerCase().includes('rate')) {
+        setFout('Te veel pogingen — wacht even en probeer het opnieuw.')
+      } else {
+        setFout(`Fout: ${error.message}`)
+      }
     } else {
       setVerstuurd(true)
     }
