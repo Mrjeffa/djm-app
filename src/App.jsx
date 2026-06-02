@@ -5,8 +5,12 @@ import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
-// Lees hash VOOR Supabase of React iets doet
 const IS_RECOVERY = window.location.hash.includes('type=recovery')
+
+const withTimeout = (promise, ms) => Promise.race([
+  promise,
+  new Promise(resolve => setTimeout(() => resolve({ data: { session: null } }), ms))
+])
 
 const koppelKlantAanUser = async (user) => {
   try {
@@ -31,15 +35,16 @@ export default function App() {
   useEffect(() => {
     if (IS_RECOVERY) { setLaden(false); return }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSessie(session)
-      if (session) {
-        await koppelKlantAanUser(session.user)
-        const admin = await checkAdmin(session)
-        setAdminModus(admin)
-      }
-      setLaden(false)
-    }).catch(() => setLaden(false))
+    withTimeout(supabase.auth.getSession(), 8000)
+      .then(async ({ data: { session } }) => {
+        setSessie(session)
+        if (session) {
+          await koppelKlantAanUser(session.user)
+          setAdminModus(await checkAdmin(session))
+        }
+        setLaden(false)
+      })
+      .catch(() => setLaden(false))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') { setResetModus(true); setLaden(false); return }

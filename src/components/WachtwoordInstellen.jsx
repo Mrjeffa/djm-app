@@ -14,11 +14,23 @@ export default function WachtwoordInstellen({ onKlaar }) {
     if (wachtwoord.length < 8) { setFout('Wachtwoord moet minimaal 8 tekens zijn.'); return }
     if (wachtwoord !== herhaal) { setFout('Wachtwoorden komen niet overeen.'); return }
     setLaden(true); setFout(null)
-    const { error } = await supabase.auth.updateUser({ password: wachtwoord })
-    setLaden(false)
-    if (error) { setFout('Fout: ' + error.message); return }
-    setKlaar(true)
-    setTimeout(() => onKlaar(), 2000)
+
+    try {
+      // Zorg dat de recovery sessie actief is
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        // Probeer sessie te verversen vanuit URL hash
+        await supabase.auth.refreshSession()
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: wachtwoord })
+      if (error) { setFout('Fout: ' + error.message); setLaden(false); return }
+      setKlaar(true)
+      setTimeout(() => onKlaar(), 2000)
+    } catch(e) {
+      setFout('Er ging iets mis. Probeer opnieuw.')
+      setLaden(false)
+    }
   }
 
   return (
