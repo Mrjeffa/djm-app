@@ -58,8 +58,8 @@ const getWeekDates = base => {
 
 const getSlots = (afspraken, datum, duurUur) => {
   const dur = duurUur*60;
-  const busy = afspraken.filter(a=>a.datum===datum)
-    .map(a=>({s:timeToMin(a.tijd),e:timeToMin(a.tijd)+a.duur*60}))
+  const busy = afspraken.filter(a=>a.datum===datum && a.tijd)
+    .map(a=>({s:timeToMin(a.tijd),e:timeToMin(a.tijd)+(parseInt(a.duur)||1)*60}))
     .sort((a,b)=>a.s-b.s);
   const slots=[]; let cur=WSTART;
   for(const b of busy){ let t=cur; while(t+dur<=b.s){slots.push(minToTime(t));t+=30;} cur=Math.max(cur,b.e); }
@@ -140,6 +140,7 @@ function UitnodigingModal({klant, onClose}){
   const [gekopieerd, setGekopieerd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const inviteLink = `${window.location.origin}`;
+  const whatsappTekst = `Hallo ${klant.naam.split(' ')[0]}! 👋\n\nBij De Jonge Motoren kunt u uw motorgegevens en servicehistorie inzien via onze app.\n\n📱 Ga naar: ${window.location.origin}\n\nMaak een account aan met uw e-mailadres: ${klant.email}\n\nTot ziens!`;
 
   const stuurEmail = async () => {
     setBezig(true);
@@ -182,8 +183,8 @@ function UitnodigingModal({klant, onClose}){
               onClick={()=>setStap("link")}>
               <span style={{fontSize:16}}>🔗</span>
               <div>
-                <div>Kopieer uitnodigingslink</div>
-                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Plak zelf in WhatsApp of SMS</div>
+                <div>WhatsApp bericht</div>
+                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Klaar om te versturen via WhatsApp</div>
               </div>
             </button>
           </div>
@@ -208,13 +209,14 @@ function UitnodigingModal({klant, onClose}){
       )}
       {stap==="link"&&(
         <div>
-          <div style={{fontSize:13,color:T.muted,marginBottom:12}}>Kopieer deze link en stuur hem via WhatsApp of SMS:</div>
-          <div style={{background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,padding:"10px 14px",fontSize:12,color:T.muted,wordBreak:"break-all",lineHeight:1.6,marginBottom:12}}>
-            {inviteLink}
+          <div style={{fontSize:13,color:T.muted,marginBottom:12}}>Dit bericht wordt verstuurd via WhatsApp:</div>
+          <div style={{background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,padding:"12px 14px",fontSize:13,lineHeight:1.8,marginBottom:14,whiteSpace:"pre-wrap",color:T.text}}>
+            {whatsappTekst}
           </div>
-          <button style={{...s.btn,width:"100%"}} onClick={kopieer}>
-            {gekopieerd ? "✓ Gekopieerd!" : "Kopieer link"}
-          </button>
+          <a href={`https://wa.me/?text=${encodeURIComponent(whatsappTekst)}`} target="_blank" rel="noopener noreferrer"
+            style={{display:"block",padding:13,background:"#25D366",color:"#fff",borderRadius:8,fontSize:15,fontWeight:600,textAlign:"center",textDecoration:"none",fontFamily:"Barlow, sans-serif"}}>
+            📱 Openen in WhatsApp
+          </a>
           <div style={{marginTop:12,textAlign:"center"}}>
             <button style={{background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif"}} onClick={onClose}>
               Sluiten
@@ -819,33 +821,67 @@ const DEFAULT_TIJDEN = {
   zo:{open:"",sluit:"",gesloten:true}
 };
 
-function InstellingenPage({openingstijden,onSave}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
+  const [periodeVan,setPeriodeVan]=useState("");
+  const [periodeTot,setPeriodeTot]=useState("");
 
   useEffect(()=>{ if(openingstijden) setTijden(openingstijden); },[openingstijden]);
 
   const setDag=(dag,veld,waarde)=>setTijden(p=>({...p,[dag]:{...p[dag],[veld]:waarde}}));
 
   const opslaan=async()=>{
-    await onSave(tijden);
+    await onSaveTijden(tijden);
     setOpgeslagen(true);
     setTimeout(()=>setOpgeslagen(false),2000);
   };
 
+  // Genereer alle datums in een periode
+  const voegPeriodeToe = () => {
+    if(!periodeVan||!periodeTot||periodeVan>periodeTot) return;
+    const datums = [];
+    const cur = new Date(periodeVan);
+    const end = new Date(periodeTot);
+    while(cur <= end) {
+      datums.push(cur.toISOString().split("T")[0]);
+      cur.setDate(cur.getDate()+1);
+    }
+    datums.forEach(d => onToggleGesloten(d, true));
+    setPeriodeVan(""); setPeriodeTot("");
+  };
+
+  // Gesorteerde gesloten periodes weergeven als ranges
+  const geslotenGesorteeerd = [...geslotenDagen].sort();
+  const periodes = [];
+  if(geslotenGesorteeerd.length > 0) {
+    let start = geslotenGesorteeerd[0], prev = geslotenGesorteeerd[0];
+    for(let i=1; i<=geslotenGesorteeerd.length; i++) {
+      const cur = geslotenGesorteeerd[i];
+      const prevDate = new Date(prev);
+      const curDate = cur ? new Date(cur) : null;
+      const isAaneengesloten = curDate && (curDate - prevDate === 86400000);
+      if(!isAaneengesloten) {
+        periodes.push({van:start, tot:prev});
+        start = cur; 
+      }
+      prev = cur;
+    }
+  }
+
   return(
-    <div style={{maxWidth:560}}>
-      <div style={{...s.card,marginBottom:20}}>
+    <div style={{maxWidth:600}}>
+      {/* Openingstijden */}
+      <div style={{...s.card,marginBottom:16}}>
         <div style={s.sectionLabel}>Openingstijden</div>
-        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Dit zien klanten bij Contact. Pas hier je tijden aan.</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Klanten zien dit bij Contact.</div>
         {DAGEN.map(dag=>(
           <div key={dag} style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
             <div style={{fontSize:13,fontWeight:500}}>{DAG_LABELS[dag]}</div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
                 <input type="checkbox" checked={tijden[dag]?.gesloten||false}
-                  onChange={e=>setDag(dag,"gesloten",e.target.checked)}
-                  style={{accentColor:T.accent}}/>
+                  onChange={e=>setDag(dag,"gesloten",e.target.checked)} style={{accentColor:T.accent}}/>
                 <span style={{fontSize:12,color:T.muted}}>Gesloten</span>
               </label>
               {!tijden[dag]?.gesloten&&(
@@ -857,14 +893,55 @@ function InstellingenPage({openingstijden,onSave}){
                     value={tijden[dag]?.sluit||""} onChange={e=>setDag(dag,"sluit",e.target.value)}/>
                 </>
               )}
-              {tijden[dag]?.gesloten&&<span style={{fontSize:12,color:T.muted}}>—</span>}
             </div>
           </div>
         ))}
         <div style={{marginTop:16,display:"flex",justifyContent:"flex-end"}}>
-          <button style={{...s.btn,background:opgeslagen?T.green:T.accent}} onClick={opslaan}>
+          <button style={{...s.btn,background:opgeslagen?T.green:T.accent,width:"auto",padding:"9px 20px"}} onClick={opslaan}>
             {opgeslagen?"✓ Opgeslagen!":"Opslaan"}
           </button>
+        </div>
+      </div>
+
+      {/* Gesloten periodes */}
+      <div style={s.card}>
+        <div style={s.sectionLabel}>Gesloten periodes</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Vakantie, feestdagen, en andere gesloten dagen. Klanten kunnen op deze dagen geen afspraak plannen.</div>
+
+        {/* Bestaande periodes */}
+        {periodes.length===0 ? (
+          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Nog geen periodes ingesteld.</div>
+        ) : periodes.map((p,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style={{fontSize:13}}>
+              {p.van===p.tot ? p.van : `${p.van} t/m ${p.tot}`}
+            </div>
+            <button onClick={()=>{
+              const cur = new Date(p.van);
+              const end = new Date(p.tot);
+              while(cur <= end) { onToggleGesloten(cur.toISOString().split("T")[0], false); cur.setDate(cur.getDate()+1); }
+            }} style={{background:"none",border:`1px solid ${T.red}`,color:T.red,borderRadius:4,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+              Verwijder
+            </button>
+          </div>
+        ))}
+
+        {/* Nieuwe periode toevoegen */}
+        <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+          <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Periode toevoegen</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <span style={{fontSize:12,color:T.muted}}>Van</span>
+              <input style={{...s.input,width:140,marginBottom:0,padding:"7px 10px"}} type="date" value={periodeVan} onChange={e=>setPeriodeVan(e.target.value)} min={TODAY}/>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <span style={{fontSize:12,color:T.muted}}>t/m</span>
+              <input style={{...s.input,width:140,marginBottom:0,padding:"7px 10px"}} type="date" value={periodeTot} onChange={e=>setPeriodeTot(e.target.value)} min={periodeVan||TODAY}/>
+            </div>
+            <button style={{...s.btn,width:"auto",padding:"8px 16px",background:T.accent}} onClick={voegPeriodeToe}>
+              Toevoegen
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1003,10 +1080,10 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     const klant = klanten.find(k=>k.naam===f.klant);
     const {data:afs} = await sb.from("afspraken").insert({
-      klant_id:klant?.id||null, datum:f.datum,
-      opmerking:f.omschrijving||"", status:"gepland"
+      klant_id:klant?.id||null, datum:f.datum, tijd:f.tijd,
+      duur:parseInt(f.duur)||1, opmerking:f.omschrijving||"", status:"gepland"
     }).select().single();
-    if(afs) setAfspraken(p=>[...p,{...afs,klant:f.klant,tijd:f.tijd,duur:f.duur,omschrijving:f.omschrijving,motor:f.motor}]);
+    if(afs) setAfspraken(p=>[...p,{...afs,klant:f.klant,omschrijving:f.omschrijving,motor:f.motor}]);
   };
 
   const toggleGeslotenDag = async (datum, blokkeer) => {
@@ -1085,7 +1162,7 @@ export default function AdminApp(){
           {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
           {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
           {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag}/>}
-          {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} onSave={slaOpeningstijdenOp}/>}
+          {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag}/>}
         </div>
       </div>
     </div>
