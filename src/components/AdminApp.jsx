@@ -45,7 +45,7 @@ const s = {
 // ── Utils ───────────────────────────────────────────────────────────────────
 const timeToMin = t => { const [h,m]=t.split(":").map(Number); return h*60+m; };
 const minToTime = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-const WSTART = 480; const WEND = 1020;
+const WSTART = 540; const WEND = 1020; // 09:00 - 17:00
 const TODAY = new Date().toISOString().split("T")[0];
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
@@ -505,9 +505,9 @@ function AfspraakModal({afspraken,klanten,onSave,onClose}){
 
 // ── Pages ────────────────────────────────────────────────────────────────────
 function Dashboard({klanten,showroom,afspraken,onNav}){
-  const totalMotoren=klanten.reduce((a,k)=>a+k.motoren.length,0);
+  const totalMotoren=klanten.reduce((a,k)=>a+(k.motoren||[]).length,0);
   const vandaag=afspraken.filter(a=>a.datum===TODAY);
-  const komend=afspraken.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||a.tijd.localeCompare(b.tijd)).slice(0,6);
+  const komend=afspraken.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
 
   return(
     <div>
@@ -621,15 +621,15 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
                       <span style={{...s.badge(T.accent),marginLeft:10,fontSize:10}}>{motor.kenteken}</span>
                     </div>
                     <div style={{fontSize:12,color:T.muted,marginTop:4}}>
-                      {motor.bouwjaar} · {motor.km.toLocaleString()} km · Gekocht {motor.aankoopdatum}
+                      {motor.bouwjaar} · {motor.kmHistory?.length ? motor.kmHistory[motor.kmHistory.length-1].km.toLocaleString() : "—"} km · {motor.aankoopdatum ? `Gekocht ${motor.aankoopdatum}` : "Eigen motor"}
                     </div>
                   </div>
                   <button style={s.btn} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
                 </div>
-                {motor.service.length===0?(
+                {(motor.service||[]).length===0?(
                   <div style={{fontSize:12,color:T.muted,padding:"6px 0"}}>Nog geen servicemeldingen</div>
                 ):(
-                  motor.service.slice().reverse().map(sv=>(
+                  (motor.service||[]).slice().reverse().map(sv=>(
                     <div key={sv.id} style={{display:"flex",gap:14,padding:"8px 0",borderTop:`1px solid ${T.border}`}}>
                       <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
                       <div style={{fontSize:13}}>{sv.omschrijving}</div>
@@ -703,13 +703,14 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
   );
 }
 
-function AgendaPage({afspraken,klanten,onAddAfspraak}){
+function AgendaPage({afspraken,klanten,onAddAfspraak,geslotenDagen=[],onToggleGesloten}){
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
+  const [blokkeerDatum,setBlokkeerDatum]=useState(null);
   const weekDates=getWeekDates(weekBase);
   const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
   const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
-  const HOURS=Array.from({length:10},(_,i)=>i+8); // 08-17
+  const HOURS=Array.from({length:9},(_,i)=>i+9); // 09-17
   const CAL_H=440;
   const TOTAL_MIN=WEND-WSTART;
 
@@ -721,44 +722,53 @@ function AgendaPage({afspraken,klanten,onAddAfspraak}){
           <span style={{fontSize:13,color:T.muted,minWidth:120,textAlign:"center"}}>{fmtDate(weekDates[0])} – {fmtDate(weekDates[5])}</span>
           <button style={s.btnGhost} onClick={next}>Volgende →</button>
         </div>
-        <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
+        <div style={{display:"flex",gap:8}}>
+          <button style={s.btnGhost} onClick={()=>setBlokkeerDatum(TODAY)}>🔒 Dag blokkeren</button>
+          <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
+        </div>
       </div>
 
       <div style={{...s.card,padding:0,overflow:"hidden"}}>
-        {/* Day headers */}
         <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",borderBottom:`1px solid ${T.border}`}}>
           <div/>
-          {weekDates.map((d,i)=>(
-            <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`,background:d===TODAY?`${T.accent}18`:"transparent"}}>
-              <div style={{fontSize:10,color:T.muted,letterSpacing:1}}>{DAYS_NL[i]}</div>
-              <div style={{fontSize:14,fontWeight:d===TODAY?700:400,color:d===TODAY?T.accent:T.text,marginTop:2}}>{fmtDate(d)}</div>
-            </div>
-          ))}
+          {weekDates.map((d,i)=>{
+            const isGesloten=geslotenDagen.includes(d);
+            return(
+              <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`,background:isGesloten?`${T.red}10`:d===TODAY?`${T.accent}18`:"transparent"}}>
+                <div style={{fontSize:10,color:T.muted,letterSpacing:1}}>{DAYS_NL[i]}</div>
+                <div style={{fontSize:14,fontWeight:d===TODAY?700:400,color:isGesloten?T.red:d===TODAY?T.accent:T.text,marginTop:2}}>{fmtDate(d)}</div>
+                {isGesloten&&<div style={{fontSize:9,color:T.red,marginTop:2,letterSpacing:0.5}}>GESLOTEN</div>}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Grid */}
         <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",position:"relative",height:CAL_H}}>
-          {/* Hour labels */}
           <div style={{position:"relative",borderRight:`1px solid ${T.border}`}}>
             {HOURS.map(h=>(
-              <div key={h} style={{position:"absolute",top:`${(h-8)/9*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
+              <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
                 {h}:00
               </div>
             ))}
           </div>
 
-          {/* Day columns */}
           {weekDates.map((d)=>{
             const apts=afspraken.filter(a=>a.datum===d);
+            const isGesloten=geslotenDagen.includes(d);
             return(
-              <div key={d} style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:d===TODAY?`${T.accent}06`:"transparent"}}>
+              <div key={d} style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:isGesloten?`${T.red}08`:d===TODAY?`${T.accent}06`:"transparent"}}>
                 {HOURS.map(h=>(
-                  <div key={h} style={{position:"absolute",top:`${(h-8)/9*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}22`}}/>
+                  <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}22`}}/>
                 ))}
-                {apts.map(a=>{
-                  const startMin=timeToMin(a.tijd)-WSTART;
+                {isGesloten&&(
+                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{fontSize:11,color:T.red,fontWeight:600,letterSpacing:1}}>GESLOTEN</div>
+                  </div>
+                )}
+                {!isGesloten&&apts.map(a=>{
+                  const startMin=timeToMin(a.tijd||"09:00")-WSTART;
                   const top=Math.max(0,startMin/TOTAL_MIN*100);
-                  const height=Math.min(a.duur*60/TOTAL_MIN*100,100-top);
+                  const height=Math.min((a.duur||1)*60/TOTAL_MIN*100,100-top);
                   return(
                     <div key={a.id} style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,background:`${T.accent}28`,border:`1px solid ${T.accent}80`,borderRadius:4,padding:"4px 6px",overflow:"hidden",cursor:"default"}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.accent}}>{a.tijd}</div>
@@ -774,11 +784,93 @@ function AgendaPage({afspraken,klanten,onAddAfspraak}){
       </div>
 
       {modal&&<AfspraakModal afspraken={afspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+
+      {blokkeerDatum!==null&&(
+        <Modal title="DAG BLOKKEREN" onClose={()=>setBlokkeerDatum(null)}>
+          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Selecteer een datum om te blokkeren voor afspraken. Klanten kunnen die dag niet boeken.</div>
+          <Field label="Datum">
+            <input style={s.input} type="date" value={blokkeerDatum} onChange={e=>setBlokkeerDatum(e.target.value)} min={TODAY}/>
+          </Field>
+          {geslotenDagen.includes(blokkeerDatum)&&(
+            <div style={{fontSize:12,color:T.yellow,marginBottom:10}}>⚠ Deze dag staat al geblokkeerd — klik "Deblokkeren" om hem vrij te geven.</div>
+          )}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+            <button style={s.btnGhost} onClick={()=>setBlokkeerDatum(null)}>Annuleer</button>
+            {geslotenDagen.includes(blokkeerDatum)?(
+              <button style={{...s.btn,background:T.green}} onClick={()=>{onToggleGesloten(blokkeerDatum,false);setBlokkeerDatum(null);}}>Deblokkeren</button>
+            ):(
+              <button style={{...s.btn,background:T.red}} onClick={()=>{onToggleGesloten(blokkeerDatum,true);setBlokkeerDatum(null);}}>Dag blokkeren</button>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 // ── App Root ─────────────────────────────────────────────────────────────────
+// ── Instellingen Page ─────────────────────────────────────────────────────────
+const DAGEN = ["ma","di","wo","do","vr","za","zo"];
+const DAG_LABELS = {ma:"Maandag",di:"Dinsdag",wo:"Woensdag",do:"Donderdag",vr:"Vrijdag",za:"Zaterdag",zo:"Zondag"};
+const DEFAULT_TIJDEN = {
+  ma:{open:"09:00",sluit:"17:00",gesloten:false}, di:{open:"09:00",sluit:"17:00",gesloten:false},
+  wo:{open:"09:00",sluit:"17:00",gesloten:false}, do:{open:"09:00",sluit:"17:00",gesloten:false},
+  vr:{open:"09:00",sluit:"17:00",gesloten:false}, za:{open:"10:00",sluit:"15:00",gesloten:false},
+  zo:{open:"",sluit:"",gesloten:true}
+};
+
+function InstellingenPage({openingstijden,onSave}){
+  const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
+  const [opgeslagen,setOpgeslagen]=useState(false);
+
+  useEffect(()=>{ if(openingstijden) setTijden(openingstijden); },[openingstijden]);
+
+  const setDag=(dag,veld,waarde)=>setTijden(p=>({...p,[dag]:{...p[dag],[veld]:waarde}}));
+
+  const opslaan=async()=>{
+    await onSave(tijden);
+    setOpgeslagen(true);
+    setTimeout(()=>setOpgeslagen(false),2000);
+  };
+
+  return(
+    <div style={{maxWidth:560}}>
+      <div style={{...s.card,marginBottom:20}}>
+        <div style={s.sectionLabel}>Openingstijden</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Dit zien klanten bij Contact. Pas hier je tijden aan.</div>
+        {DAGEN.map(dag=>(
+          <div key={dag} style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style={{fontSize:13,fontWeight:500}}>{DAG_LABELS[dag]}</div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+                <input type="checkbox" checked={tijden[dag]?.gesloten||false}
+                  onChange={e=>setDag(dag,"gesloten",e.target.checked)}
+                  style={{accentColor:T.accent}}/>
+                <span style={{fontSize:12,color:T.muted}}>Gesloten</span>
+              </label>
+              {!tijden[dag]?.gesloten&&(
+                <>
+                  <input style={{...s.input,width:80,padding:"6px 8px",fontSize:13}} type="time"
+                    value={tijden[dag]?.open||""} onChange={e=>setDag(dag,"open",e.target.value)}/>
+                  <span style={{fontSize:12,color:T.muted}}>–</span>
+                  <input style={{...s.input,width:80,padding:"6px 8px",fontSize:13}} type="time"
+                    value={tijden[dag]?.sluit||""} onChange={e=>setDag(dag,"sluit",e.target.value)}/>
+                </>
+              )}
+              {tijden[dag]?.gesloten&&<span style={{fontSize:12,color:T.muted}}>—</span>}
+            </div>
+          </div>
+        ))}
+        <div style={{marginTop:16,display:"flex",justifyContent:"flex-end"}}>
+          <button style={{...s.btn,background:opgeslagen?T.green:T.accent}} onClick={opslaan}>
+            {opgeslagen?"✓ Opgeslagen!":"Opslaan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminApp(){
   const [page,setPage]=useState("dashboard");
   const [klanten,setKlanten]=useState([]);
@@ -917,11 +1009,40 @@ export default function AdminApp(){
     if(afs) setAfspraken(p=>[...p,{...afs,klant:f.klant,tijd:f.tijd,duur:f.duur,omschrijving:f.omschrijving,motor:f.motor}]);
   };
 
+  const toggleGeslotenDag = async (datum, blokkeer) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { data: inst } = await sb.from("instellingen").select("gesloten_dagen").single();
+    const huidig = inst?.gesloten_dagen || [];
+    const nieuw = blokkeer ? [...new Set([...huidig, datum])] : huidig.filter(d=>d!==datum);
+    await sb.from("instellingen").update({ gesloten_dagen: nieuw }).eq("id", 1);
+    setGeslotenDagen(nieuw);
+  };
+
+  const [geslotenDagen, setGeslotenDagen] = useState([]);
+  const [openingstijden, setOpeningstijden] = useState(null);
+
+  const slaOpeningstijdenOp = async (tijden) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ openingstijden: tijden }).eq("id", 1);
+    setOpeningstijden(tijden);
+  };
+
+  // Instellingen laden bij start
+  useEffect(()=>{
+    import("../lib/supabase.js").then(m=>
+      m.supabase.from("instellingen").select("gesloten_dagen,openingstijden").single()
+    ).then(({data})=>{
+      if(data?.gesloten_dagen) setGeslotenDagen(data.gesloten_dagen);
+      if(data?.openingstijden) setOpeningstijden(data.openingstijden);
+    });
+  },[]);
+
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
     {id:"klanten",icon:"◎",label:"Klanten"},
     {id:"voorraad",icon:"◧",label:"Voorraad"},
     {id:"agenda",icon:"◫",label:"Agenda"},
+    {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
 
   if(laden) return(
@@ -963,7 +1084,8 @@ export default function AdminApp(){
           {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
           {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
           {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
-          {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak}/>}
+          {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag}/>}
+          {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} onSave={slaOpeningstijdenOp}/>}
         </div>
       </div>
     </div>

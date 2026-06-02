@@ -1,78 +1,99 @@
 import { useState } from 'react'
-import { stuurMagicLink } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase.js'
 
 const T = {
   bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A',
-  accent:'#E8520A', text:'#F0ECE6', muted:'#666660'
+  accent:'#E8520A', text:'#F0ECE6', muted:'#666660', red:'#EF4444'
+}
+
+const s = {
+  wrap: { display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:T.bg, padding:20, fontFamily:'sans-serif' },
+  logo: { textAlign:'center', marginBottom:32 },
+  logoTop: { fontSize:28, fontWeight:900, letterSpacing:3, color:T.text },
+  logoSub: { fontSize:13, fontWeight:600, letterSpacing:5, color:T.accent, marginTop:4 },
+  card: { width:'100%', maxWidth:380, background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:28 },
+  input: { width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 },
+  btn: { width:'100%', padding:13, background:T.accent, color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'sans-serif', marginTop:4 },
+  fout: { fontSize:12, color:T.red, marginBottom:10 },
+  link: { textAlign:'center', marginTop:14, fontSize:12, color:T.muted, cursor:'pointer', textDecoration:'underline' },
 }
 
 export default function LoginScreen() {
+  const [scherm, setScherm] = useState('login') // 'login' | 'reset_verstuurd'
   const [email, setEmail] = useState('')
-  const [verstuurd, setVerstuurd] = useState(false)
+  const [wachtwoord, setWachtwoord] = useState('')
   const [laden, setLaden] = useState(false)
   const [fout, setFout] = useState(null)
 
-  const verstuur = async () => {
-    if (!email) return
-    setLaden(true)
-    setFout(null)
-    const { error } = await stuurMagicLink(email)
+  const login = async () => {
+    if (!email || !wachtwoord) return
+    setLaden(true); setFout(null)
+    const { error } = await supabase.auth.signInWithPassword({ email, password: wachtwoord })
     setLaden(false)
-    if (error) {
-      if (error.message?.toLowerCase().includes('rate')) {
-        setFout('Te veel pogingen — wacht even en probeer het opnieuw.')
-      } else {
-        setFout(`Fout: ${error.message}`)
-      }
-    } else {
-      setVerstuurd(true)
-    }
+    if (error) setFout('E-mailadres of wachtwoord klopt niet.')
   }
 
-  return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:T.bg, padding:20, fontFamily:'sans-serif' }}>
-      <div style={{ width:'100%', maxWidth:380 }}>
-        {/* Logo */}
-        <div style={{ textAlign:'center', marginBottom:40 }}>
-          <div style={{ fontSize:28, fontWeight:900, letterSpacing:3, color:T.text }}>DE JONGE</div>
-          <div style={{ fontSize:13, fontWeight:600, letterSpacing:5, color:T.accent, marginTop:4 }}>MOTOREN</div>
+  const resetWachtwoord = async () => {
+    if (!email) { setFout('Vul eerst je e-mailadres in.'); return }
+    setLaden(true); setFout(null)
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/#reset`
+    })
+    setLaden(false)
+    setScherm('reset_verstuurd')
+  }
+
+  if (scherm === 'reset_verstuurd') return (
+    <div style={s.wrap}>
+      <div>
+        <div style={s.logo}>
+          <div style={s.logoTop}>DE JONGE</div>
+          <div style={s.logoSub}>MOTOREN</div>
         </div>
-
-        {verstuurd ? (
-          <div style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:28, textAlign:'center' }}>
-            <div style={{ fontSize:40, marginBottom:16 }}>✉️</div>
-            <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:10 }}>Check je e-mail</div>
-            <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
-              We hebben een inloglink gestuurd naar<br/>
-              <span style={{ color:T.text }}>{email}</span><br/>
-              Klik op de link om in te loggen.
-            </div>
+        <div style={{...s.card, textAlign:'center'}}>
+          <div style={{fontSize:36, marginBottom:14}}>✉️</div>
+          <div style={{fontSize:15, fontWeight:600, color:T.text, marginBottom:8}}>Reset-mail verstuurd</div>
+          <div style={{fontSize:13, color:T.muted, lineHeight:1.7}}>
+            Check je e-mail op <span style={{color:T.text}}>{email}</span> voor een link om je wachtwoord in te stellen.
           </div>
-        ) : (
-          <div style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:28 }}>
-            <div style={{ fontSize:15, fontWeight:600, color:T.text, marginBottom:6 }}>Inloggen</div>
-            <div style={{ fontSize:13, color:T.muted, marginBottom:20, lineHeight:1.6 }}>
-              Vul je e-mailadres in. Je ontvangt een inloglink — geen wachtwoord nodig.
-            </div>
+          <div style={s.link} onClick={()=>setScherm('login')}>← Terug naar inloggen</div>
+        </div>
+      </div>
+    </div>
+  )
 
-            <div style={{ marginBottom:12 }}>
-              <input
-                style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box' }}
-                type="email" placeholder="jouw@email.nl"
-                value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && verstuur()}
-              />
-            </div>
-
-            {fout && <div style={{ fontSize:12, color:'#EF4444', marginBottom:10 }}>{fout}</div>}
-
-            <button
-              onClick={verstuur} disabled={laden || !email}
-              style={{ width:'100%', padding:13, background:T.accent, color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor: laden||!email ? 'default' : 'pointer', opacity: laden||!email ? 0.5 : 1, fontFamily:'sans-serif' }}>
-              {laden ? 'Versturen...' : 'Stuur inloglink →'}
-            </button>
+  return (
+    <div style={s.wrap}>
+      <div>
+        <div style={s.logo}>
+          <div style={s.logoTop}>DE JONGE</div>
+          <div style={s.logoSub}>MOTOREN</div>
+        </div>
+        <div style={s.card}>
+          <div style={{fontSize:15, fontWeight:600, color:T.text, marginBottom:6}}>Inloggen</div>
+          <div style={{fontSize:13, color:T.muted, marginBottom:20, lineHeight:1.6}}>
+            Vul je e-mailadres en wachtwoord in.
           </div>
-        )}
+
+          <input style={s.input} type="email" placeholder="jouw@email.nl"
+            value={email} onChange={e=>setEmail(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&login()}/>
+
+          <input style={s.input} type="password" placeholder="Wachtwoord"
+            value={wachtwoord} onChange={e=>setWachtwoord(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&login()}/>
+
+          {fout && <div style={s.fout}>{fout}</div>}
+
+          <button style={{...s.btn, opacity: laden||!email||!wachtwoord ? 0.5 : 1}}
+            onClick={login} disabled={laden||!email||!wachtwoord}>
+            {laden ? 'Bezig...' : 'Inloggen →'}
+          </button>
+
+          <div style={s.link} onClick={resetWachtwoord}>
+            Wachtwoord vergeten?
+          </div>
+        </div>
       </div>
     </div>
   )

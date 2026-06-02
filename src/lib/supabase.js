@@ -22,12 +22,8 @@ export const stuurMagicLink = (email) =>
   })
 
 export const stuurUitnodiging = (email) =>
-  supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: window.location.origin,
-    }
+  supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/#reset`
   })
 
 export const uitloggen = () => supabase.auth.signOut()
