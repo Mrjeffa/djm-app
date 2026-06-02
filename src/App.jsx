@@ -5,20 +5,21 @@ import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
+// Lees hash VOOR Supabase of React iets doet
+const IS_RECOVERY = window.location.hash.includes('type=recovery')
+
 const koppelKlantAanUser = async (user) => {
   try {
     const { data: klant } = await supabase.from('klanten').select('id, user_id').eq('email', user.email).single()
-    if (klant && !klant.user_id) {
-      await supabase.from('klanten').update({ user_id: user.id }).eq('id', klant.id)
-    }
+    if (klant && !klant.user_id) await supabase.from('klanten').update({ user_id: user.id }).eq('id', klant.id)
   } catch { }
 }
 
 export default function App() {
   const [sessie, setSessie] = useState(null)
   const [adminModus, setAdminModus] = useState(false)
-  const [laden, setLaden] = useState(true)
-  const [resetModus, setResetModus] = useState(false)
+  const [laden, setLaden] = useState(!IS_RECOVERY)
+  const [resetModus, setResetModus] = useState(IS_RECOVERY)
 
   const checkAdmin = async (session) => {
     if (!session) return false
@@ -26,6 +27,8 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (IS_RECOVERY) { setLaden(false); return }
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSessie(session)
       if (session) {
@@ -37,19 +40,14 @@ export default function App() {
     }).catch(() => setLaden(false))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setResetModus(true); setLaden(false); return
-      }
-      if (event === 'SIGNED_OUT') {
-        setSessie(null); setAdminModus(false); setResetModus(false); setLaden(false); return
-      }
+      if (event === 'PASSWORD_RECOVERY') { setResetModus(true); setLaden(false); return }
+      if (event === 'SIGNED_OUT') { setSessie(null); setAdminModus(false); setResetModus(false); setLaden(false); return }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        setResetModus(false)
+        if (!IS_RECOVERY) setResetModus(false)
         setSessie(session)
         if (session) {
           if (event === 'SIGNED_IN') await koppelKlantAanUser(session.user)
-          const admin = await checkAdmin(session)
-          setAdminModus(admin)
+          setAdminModus(await checkAdmin(session))
         }
         setLaden(false)
       }
@@ -67,7 +65,7 @@ export default function App() {
     </div>
   )
 
-  if (resetModus) return <WachtwoordInstellen onKlaar={() => setResetModus(false)} />
+  if (resetModus) return <WachtwoordInstellen onKlaar={() => { setResetModus(false); window.location.hash = ''; window.location.reload(); }} />
   if (!sessie) return <LoginScreen />
   if (adminModus) return <AdminApp />
   return <KlantApp userId={sessie.user.id} />
