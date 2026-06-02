@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, isAdmin } from './lib/supabase.js'
+import { supabase } from './lib/supabase.js'
 import AdminApp from './components/AdminApp.jsx'
 import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
@@ -7,59 +7,58 @@ import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
 const IS_RECOVERY = window.location.hash.includes('type=recovery')
 
-const withTimeout = (promise, ms) => Promise.race([
-  promise,
-  new Promise(resolve => setTimeout(() => resolve({ data: { session: null } }), ms))
-])
+// Elke async operatie heeft max 5 sec
+const tijdelijk = (fn, fallback) =>
+  Promise.race([
+    fn().catch(() => fallback),
+    new Promise(r => setTimeout(() => r(fallback), 5000))
+  ])
 
-const koppelKlantAanUser = async (user) => {
-  try {
-    const { data: klant } = await supabase.from('klanten').select('id, user_id').eq('email', user.email).single()
-    if (klant && !klant.user_id) {
-      await supabase.from('klanten').update({ user_id: user.id, status: 'in_afwachting' }).eq('id', klant.id)
-    }
-  } catch { }
-}
+const checkIsAdmin = () =>
+  tijdelijk(async () => {
+    const { data } = await supabase.from('admins').select('id').eq('id', (await supabase.auth.getUser()).data?.user?.id).single()
+    return !!data
+  }, false)
+
+const koppelKlant = (user) =>
+  tijdelijk(async () => {
+    const { data: k } = await supabase.from('klanten').select('id,user_id').eq('email', user.email).single()
+    if (k && !k.user_id) await supabase.from('klanten').update({ user_id: user.id, status: 'in_afwachting' }).eq('id', k.id)
+  }, null)
 
 export default function App() {
   const [sessie, setSessie] = useState(null)
-  const [adminModus, setAdminModus] = useState(false)
+  const [admin, setAdmin] = useState(false)
   const [laden, setLaden] = useState(!IS_RECOVERY)
-  const [resetModus, setResetModus] = useState(IS_RECOVERY)
+  const [reset, setReset] = useState(IS_RECOVERY)
 
-  const checkAdmin = async (session) => {
-    if (!session) return false
-    try { return await isAdmin() } catch { return false }
+  const verwerkSessie = async (session) => {
+    if (!session) { setLaden(false); return }
+    setSessie(session)
+    await koppelKlant(session.user)
+    setAdmin(await checkIsAdmin())
+    setLaden(false)
   }
 
   useEffect(() => {
     if (IS_RECOVERY) { setLaden(false); return }
 
-    withTimeout(supabase.auth.getSession(), 8000)
-      .then(async ({ data: { session } }) => {
-        setSessie(session)
-        if (session) {
-          await koppelKlantAanUser(session.user)
-          setAdminModus(await checkAdmin(session))
-        }
-        setLaden(false)
-      })
+    // Haal sessie op — max 6 sec, daarna gewoon inlogscherm tonen
+    tijdelijk(() => supabase.auth.getSession(), { data: { session: null } })
+      .then(r => verwerkSessie(r?.data?.session || null))
       .catch(() => setLaden(false))
 
+    // Luister naar auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') { setResetModus(true); setLaden(false); return }
-      if (event === 'SIGNED_OUT') { setSessie(null); setAdminModus(false); setResetModus(false); setLaden(false); return }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (!IS_RECOVERY) setResetModus(false)
-        setSessie(session)
-        if (session) {
-          if (event === 'SIGNED_IN') await koppelKlantAanUser(session.user)
-          setAdminModus(await checkAdmin(session))
-        }
-        setLaden(false)
-      }
+      if (event === 'PASSWORD_RECOVERY') { setReset(true); setLaden(false) }
+      else if (event === 'SIGNED_OUT') { setSessie(null); setAdmin(false); setReset(false); setLaden(false) }
+      else if (event === 'SIGNED_IN') { await verwerkSessie(session) }
+      else if (event === 'TOKEN_REFRESHED') { setSessie(session); setLaden(false) }
     })
-    return () => subscription.unsubscribe()
+
+    // Harde vangnet: na 12 sec altijd doorgaan
+    const vannet = setTimeout(() => setLaden(false), 12000)
+    return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 
   if (laden) return (
@@ -72,8 +71,8 @@ export default function App() {
     </div>
   )
 
-  if (resetModus) return <WachtwoordInstellen onKlaar={() => { setResetModus(false); window.location.hash = ''; window.location.reload(); }} />
+  if (reset) return <WachtwoordInstellen onKlaar={() => { setReset(false); window.location.hash = ''; window.location.reload() }} />
   if (!sessie) return <LoginScreen />
-  if (adminModus) return <AdminApp />
+  if (admin) return <AdminApp />
   return <KlantApp userId={sessie.user.id} />
 }
