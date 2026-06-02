@@ -1,0 +1,851 @@
+import { useState, useEffect } from "react";
+
+function useFonts() {
+  useEffect(() => {
+    const el = document.createElement("link");
+    el.rel = "stylesheet";
+    el.href = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600&display=swap";
+    document.head.appendChild(el);
+  }, []);
+}
+
+const T = {
+  bg: "#080808", surf: "#111111", surf2: "#1A1A1A", border: "#252525",
+  accent: "#E8520A", text: "#EEEBE6", muted: "#666660",
+  green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
+};
+
+const s = {
+  app: { display:"flex", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" },
+  sidebar: { width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 },
+  logo: { padding:"24px 20px 20px", borderBottom:`1px solid ${T.border}` },
+  logoTop: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text },
+  logoSub: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:600, fontSize:13, letterSpacing:4, color:T.accent, marginTop:2 },
+  navItem: (a) => ({ display:"flex", alignItems:"center", gap:10, padding:"12px 20px", cursor:"pointer", fontSize:14, fontWeight: a?600:400, color: a?T.accent:T.muted, background: a?`${T.accent}15`:"transparent", borderLeft: a?`3px solid ${T.accent}`:"3px solid transparent", transition:"all 0.15s" }),
+  main: { flex:1, display:"flex", flexDirection:"column", overflow:"hidden" },
+  header: { padding:"18px 28px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 },
+  headerTitle: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, letterSpacing:1 },
+  content: { flex:1, overflowY:"auto", padding:"22px 28px" },
+  card: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20 },
+  statCard: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20, flex:1 },
+  statNum: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:42, color:T.accent, lineHeight:1 },
+  statLabel: { fontSize:11, color:T.muted, marginTop:5, letterSpacing:1, textTransform:"uppercase" },
+  btn: { padding:"9px 16px", background:T.accent, color:"#fff", border:"none", borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
+  btnGhost: { padding:"9px 16px", background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:4, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
+  btnOutline: { padding:"9px 16px", background:"transparent", color:T.accent, border:`1px solid ${T.accent}`, borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
+  input: { background:T.surf2, border:`1px solid ${T.border}`, borderRadius:4, padding:"9px 12px", color:T.text, fontSize:14, fontFamily:"Barlow, sans-serif", outline:"none", width:"100%", boxSizing:"border-box" },
+  label: { fontSize:11, color:T.muted, marginBottom:5, letterSpacing:0.5, display:"block", textTransform:"uppercase" },
+  overlay: { position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, padding:20 },
+  modal: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:28, width:"100%", maxWidth:520, maxHeight:"88vh", overflowY:"auto" },
+  modalTitle: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:22, marginBottom:20 },
+  badge: (c) => ({ display:"inline-block", padding:"2px 8px", borderRadius:3, fontSize:11, fontWeight:600, background:`${c}20`, color:c }),
+  sectionLabel: { fontSize:11, color:T.accent, letterSpacing:2, marginBottom:14, textTransform:"uppercase" },
+};
+
+// ── Utils ───────────────────────────────────────────────────────────────────
+const timeToMin = t => { const [h,m]=t.split(":").map(Number); return h*60+m; };
+const minToTime = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const WSTART = 480; const WEND = 1020;
+const TODAY = new Date().toISOString().split("T")[0];
+const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
+const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
+
+const getWeekDates = base => {
+  const d = new Date(base); const day = d.getDay();
+  const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
+  return Array.from({length:6},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i); return x.toISOString().split("T")[0]; });
+};
+
+const getSlots = (afspraken, datum, duurUur) => {
+  const dur = duurUur*60;
+  const busy = afspraken.filter(a=>a.datum===datum)
+    .map(a=>({s:timeToMin(a.tijd),e:timeToMin(a.tijd)+a.duur*60}))
+    .sort((a,b)=>a.s-b.s);
+  const slots=[]; let cur=WSTART;
+  for(const b of busy){ let t=cur; while(t+dur<=b.s){slots.push(minToTime(t));t+=30;} cur=Math.max(cur,b.e); }
+  let t=cur; while(t+dur<=WEND){slots.push(minToTime(t));t+=30;}
+  return slots;
+};
+
+// ── Mock Data ────────────────────────────────────────────────────────────────
+const INIT_KLANTEN = [
+  { id:1, naam:"Pieter de Vries", email:"pieter@mail.nl", telefoon:"06-12345678", adres:"Hoofdstraat 12", postcode:"4691AA", woonplaats:"Tholen",
+    motoren:[
+      { id:1, kenteken:"TH-123-B", merk:"Honda", model:"CB500F", bouwjaar:2019, km:18500, aankoopdatum:"2024-03-15", service:[
+        {id:1,datum:"2024-06-10",omschrijving:"Olie vervangen, luchtfilter gereinigd"},
+        {id:2,datum:"2025-01-15",omschrijving:"APK + ketting gespannen"},
+      ]},
+      { id:2, kenteken:"TH-456-C", merk:"Yamaha", model:"MT-07", bouwjaar:2021, km:8200, aankoopdatum:"2025-02-20", service:[] },
+    ]},
+  { id:2, naam:"Karin Visser", email:"karin@gmail.com", telefoon:"06-87654321", adres:"Molenweg 5", postcode:"4611BZ", woonplaats:"Bergen op Zoom",
+    motoren:[
+      { id:3, kenteken:"BZ-789-D", merk:"Kawasaki", model:"Z650", bouwjaar:2022, km:5100, aankoopdatum:"2025-01-08", service:[] },
+    ]},
+  { id:3, naam:"Bas Mooij", email:"bas@hotmail.com", telefoon:"06-55511222", adres:"Zeestraat 33", postcode:"4301KA", woonplaats:"Zierikzee",
+    motoren:[
+      { id:4, kenteken:"ZZ-001-E", merk:"BMW", model:"R1250GS", bouwjaar:2020, km:32000, aankoopdatum:"2024-11-22", service:[
+        {id:3,datum:"2025-03-01",omschrijving:"Grote beurt: remmen, vloeistoffen, banden check"},
+      ]},
+    ]},
+];
+
+const INIT_SHOWROOM = [
+  {id:101,kenteken:"GO-234-F",merk:"Triumph",model:"Street Triple",bouwjaar:2021,km:12000,prijs:8950,datum_in:"2025-05-01"},
+  {id:102,kenteken:"ZL-567-G",merk:"Ducati",model:"Monster 797",bouwjaar:2019,km:21000,prijs:7500,datum_in:"2025-04-15"},
+  {id:103,kenteken:"NB-890-H",merk:"Honda",model:"CBR650R",bouwjaar:2023,km:3200,prijs:11500,datum_in:"2025-05-20"},
+];
+
+const addDays = (n) => { const d = new Date(); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
+const INIT_AFSPRAKEN = [
+  {id:1,klant:"Pieter de Vries",datum:TODAY,tijd:"09:00",duur:2,omschrijving:"Olie vervangen Honda CB500F",motor:"TH-123-B"},
+  {id:2,klant:"Karin Visser",datum:TODAY,tijd:"13:00",duur:4,omschrijving:"Grote beurt Kawasaki Z650",motor:"BZ-789-D"},
+  {id:3,klant:"Bas Mooij",datum:addDays(1),tijd:"10:00",duur:1,omschrijving:"Bandencheck BMW GS",motor:"ZZ-001-E"},
+  {id:4,klant:"Nieuw klant",datum:addDays(2),tijd:"14:00",duur:3,omschrijving:"APK + check",motor:"-"},
+];
+
+// ── Shared UI ────────────────────────────────────────────────────────────────
+function Modal({title,onClose,children}){
+  return(
+    <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={s.modal}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={s.modalTitle}>{title}</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.muted,fontSize:22,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({label,children}){
+  return <div style={{marginBottom:14}}><label style={s.label}>{label}</label>{children}</div>;
+}
+
+function Grid2({children}){ return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{children}</div>; }
+
+function ModalFooter({onClose,label="Opslaan",onClick}){
+  return(
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+      <button style={s.btnGhost} onClick={onClose}>Annuleer</button>
+      <button style={s.btn} onClick={onClick}>{label}</button>
+    </div>
+  );
+}
+
+// ── Modals ───────────────────────────────────────────────────────────────────
+
+function UitnodigingModal({klant, onClose}){
+  const [stap, setStap] = useState("keuze"); // "keuze" | "email_verzonden" | "link"
+  const [gekopieerd, setGekopieerd] = useState(false);
+  const inviteLink = `https://app.dejongemotor.nl/login?uitnodiging=${klant.id}&email=${encodeURIComponent(klant.email)}`;
+
+  const kopieer = () => {
+    navigator.clipboard.writeText(inviteLink).then(()=>{
+      setGekopieerd(true);
+      setTimeout(()=>setGekopieerd(false), 2500);
+    });
+  };
+
+  return(
+    <Modal title="KLANT UITNODIGEN" onClose={onClose}>
+      {stap==="keuze"&&(
+        <>
+          <div style={{padding:"14px 16px",background:T.surf2,borderRadius:5,marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:500}}>{klant.naam}</div>
+            <div style={{fontSize:12,color:T.muted,marginTop:3}}>{klant.email}</div>
+          </div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Hoe wil je de uitnodiging versturen?</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <button style={{...s.btn,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
+              onClick={()=>setStap("email_verzonden")}>
+              <span style={{fontSize:16}}>✉</span>
+              <div>
+                <div>Stuur via e-mail</div>
+                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Klant ontvangt een e-mail met inloglink</div>
+              </div>
+            </button>
+            <button style={{...s.btnOutline,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
+              onClick={()=>setStap("link")}>
+              <span style={{fontSize:16}}>🔗</span>
+              <div>
+                <div>Kopieer uitnodigingslink</div>
+                <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Plak zelf in WhatsApp of SMS</div>
+              </div>
+            </button>
+          </div>
+          <div style={{marginTop:16,textAlign:"center"}}>
+            <button style={{background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif"}} onClick={onClose}>
+              Niet nu
+            </button>
+          </div>
+        </>
+      )}
+      {stap==="email_verzonden"&&(
+        <div style={{textAlign:"center",padding:"16px 0"}}>
+          <div style={{fontSize:36,marginBottom:12}}>✅</div>
+          <div style={{fontSize:16,fontWeight:600,marginBottom:8}}>E-mail verstuurd!</div>
+          <div style={{fontSize:13,color:T.muted,lineHeight:1.6}}>
+            {klant.naam} krijgt een e-mail op<br/>
+            <span style={{color:T.text}}>{klant.email}</span><br/>
+            met een directe inloglink.
+          </div>
+          <button style={{...s.btn,marginTop:20}} onClick={onClose}>Sluiten</button>
+        </div>
+      )}
+      {stap==="link"&&(
+        <div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:12}}>Kopieer deze link en stuur hem via WhatsApp of SMS:</div>
+          <div style={{background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,padding:"10px 14px",fontSize:12,color:T.muted,wordBreak:"break-all",lineHeight:1.6,marginBottom:12}}>
+            {inviteLink}
+          </div>
+          <button style={{...s.btn,width:"100%"}} onClick={kopieer}>
+            {gekopieerd ? "✓ Gekopieerd!" : "Kopieer link"}
+          </button>
+          <div style={{marginTop:12,textAlign:"center"}}>
+            <button style={{background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif"}} onClick={onClose}>
+              Sluiten
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function KlantModal({onSave, onClose, voorraad=[]}){
+  const [f,setF]=useState({naam:"",email:"",telefoon:"",adres:"",postcode:"",woonplaats:""});
+  const [opgeslagen,setOpgeslagen]=useState(null);
+  const [motorKeuze,setMotorKeuze]=useState(null); // null | "voorraad" | "nieuw"
+  const [geselecteerdeVoorraad,setGeselecteerdeVoorraad]=useState(null);
+  // eigen motor velden
+  const [kenteken,setKenteken]=useState("");
+  const [motorF,setMotorF]=useState({merk:"",model:"",bouwjaar:"",km:"",aankoopdatum:TODAY});
+  const [rdwStatus,setRdwStatus]=useState(null);
+  const setM=k=>e=>setMotorF(p=>({...p,[k]:e.target.value}));
+  const normK=k=>k.replace(/-/g,"").toUpperCase();
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+
+  if(opgeslagen) return <UitnodigingModal klant={opgeslagen} onClose={onClose}/>;
+
+  const haalRDWOp = async () => {
+    const ken = normK(kenteken);
+    if(!ken) return;
+    setRdwStatus("laden");
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:300,
+          system:"Je zoekt Nederlandse kentekengegevens op via de RDW open data API. Retourneer ALLEEN geldige JSON zonder uitleg of markdown met velden: merk, model, bouwjaar (alleen het jaar als string). Als niet gevonden: {\"gevonden\":false}.",
+          tools:[{type:"web_search_20250305",name:"web_search"}],
+          messages:[{role:"user",content:`Zoek kenteken ${ken} op in de RDW en geef voertuiggegevens terug als JSON.`}]
+        })
+      });
+      const data = await response.json();
+      const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      if(parsed.gevonden===false){ setRdwStatus("niet_gevonden"); return; }
+      setMotorF(p=>({...p,merk:parsed.merk||"",model:parsed.model||"",bouwjaar:String(parsed.bouwjaar||"")}));
+      setRdwStatus("gevonden");
+    } catch(e){ setRdwStatus("fout"); }
+  };
+
+  const sla_op = () => {
+    if(!f.naam||!f.email) return;
+    let motor = null;
+    if(motorKeuze==="voorraad" && geselecteerdeVoorraad) {
+      motor = {...geselecteerdeVoorraad, aankoopdatum: TODAY};
+    } else if(motorKeuze==="nieuw" && normK(kenteken)) {
+      motor = {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:parseInt(motorF.km)||0};
+    }
+    onSave({...f, motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
+    setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email});
+  };
+
+  return(
+    <Modal title="KLANT TOEVOEGEN" onClose={onClose}>
+      <div style={s.sectionLabel}>Klantgegevens</div>
+      <Field label="Naam *"><input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Voor- en achternaam"/></Field>
+      <Grid2>
+        <Field label="E-mail *"><input style={s.input} value={f.email} onChange={set("email")} placeholder="email@voorbeeld.nl"/></Field>
+        <Field label="Telefoon"><input style={s.input} value={f.telefoon} onChange={set("telefoon")} placeholder="06-12345678"/></Field>
+        <Field label="Adres"><input style={s.input} value={f.adres} onChange={set("adres")} placeholder="Straat + nr"/></Field>
+        <Field label="Postcode"><input style={s.input} value={f.postcode} onChange={set("postcode")} placeholder="4691AA"/></Field>
+      </Grid2>
+      <Field label="Woonplaats"><input style={s.input} value={f.woonplaats} onChange={set("woonplaats")} placeholder="Stad/dorp"/></Field>
+
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"16px 0"}}/>
+      <div style={s.sectionLabel}>Motor (optioneel)</div>
+
+      {/* Keuze knoppen */}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <button onClick={()=>setMotorKeuze("voorraad")} style={{flex:1,padding:"10px",borderRadius:4,border:`1px solid ${motorKeuze==="voorraad"?T.accent:T.border}`,background:motorKeuze==="voorraad"?`${T.accent}20`:"transparent",color:motorKeuze==="voorraad"?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",fontWeight:motorKeuze==="voorraad"?600:400}}>
+          📋 Uit voorraad
+        </button>
+        <button onClick={()=>setMotorKeuze("nieuw")} style={{flex:1,padding:"10px",borderRadius:4,border:`1px solid ${motorKeuze==="nieuw"?T.accent:T.border}`,background:motorKeuze==="nieuw"?`${T.accent}20`:"transparent",color:motorKeuze==="nieuw"?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",fontWeight:motorKeuze==="nieuw"?600:400}}>
+          🔍 Eigen motor
+        </button>
+        {motorKeuze&&<button onClick={()=>{setMotorKeuze(null);setGeselecteerdeVoorraad(null);}} style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif"}}>✕</button>}
+      </div>
+
+      {/* Uit voorraad */}
+      {motorKeuze==="voorraad"&&(
+        <div>
+          {voorraad.length===0?(
+            <div style={{fontSize:13,color:T.muted,padding:"10px 0"}}>Geen motors in voorraad</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {voorraad.map(m=>(
+                <div key={m.id} onClick={()=>setGeselecteerdeVoorraad(m)}
+                  style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${geselecteerdeVoorraad?.id===m.id?T.accent:T.border}`,background:geselecteerdeVoorraad?.id===m.id?`${T.accent}20`:"transparent",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:500}}>{m.merk} {m.model}</div>
+                    <div style={{fontSize:11,color:T.muted,marginTop:2}}>{m.kenteken} · {m.bouwjaar} · {m.km.toLocaleString()} km</div>
+                  </div>
+                  <div style={{fontSize:13,color:T.accent,fontWeight:600}}>€{m.prijs.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Eigen motor met RDW */}
+      {motorKeuze==="nieuw"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:6}}>
+            <input style={{...s.input,flex:1,fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:2,textTransform:"uppercase"}}
+              value={kenteken} onChange={e=>setKenteken(e.target.value)} placeholder="AB-123-C"
+              onKeyDown={e=>e.key==="Enter"&&haalRDWOp()}/>
+            <button style={{...s.btn,flexShrink:0}} onClick={haalRDWOp} disabled={rdwStatus==="laden"}>
+              {rdwStatus==="laden"?"Laden...":"Ophalen →"}
+            </button>
+          </div>
+          {rdwStatus==="gevonden"&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>✓ Gegevens opgehaald — controleer hieronder.</div>}
+          {rdwStatus==="niet_gevonden"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Niet gevonden — vul handmatig in.</div>}
+          {rdwStatus==="fout"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Verbinding mislukt — vul handmatig in.</div>}
+          <Grid2>
+            <Field label="Merk"><input style={s.input} value={motorF.merk} onChange={setM("merk")} placeholder="Honda"/></Field>
+            <Field label="Model"><input style={s.input} value={motorF.model} onChange={setM("model")} placeholder="CB500F"/></Field>
+            <Field label="Bouwjaar"><input style={s.input} value={motorF.bouwjaar} onChange={setM("bouwjaar")} placeholder="2022"/></Field>
+            <Field label="Kilometerstand"><input style={s.input} value={motorF.km} onChange={setM("km")} placeholder="15000"/></Field>
+          </Grid2>
+          <Field label="Aankoopdatum bij ons"><input style={s.input} type="date" value={motorF.aankoopdatum} onChange={setM("aankoopdatum")}/></Field>
+        </div>
+      )}
+
+      <ModalFooter onClose={onClose} label="Opslaan" onClick={sla_op}/>
+    </Modal>
+  );
+}
+
+function MotorModal({onSave,onClose}){
+  const [f,setF]=useState({kenteken:"",merk:"",model:"",bouwjaar:"",km:"",aankoopdatum:TODAY});
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  return(
+    <Modal title="MOTOR TOEVOEGEN" onClose={onClose}>
+      <Grid2>
+        <Field label="Kenteken *"><input style={s.input} value={f.kenteken} onChange={set("kenteken")} placeholder="AB-123-C"/></Field>
+        <Field label="Aankoopdatum"><input style={s.input} type="date" value={f.aankoopdatum} onChange={set("aankoopdatum")}/></Field>
+        <Field label="Merk *"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
+        <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
+        <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
+        <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
+      </Grid2>
+      <ModalFooter onClose={onClose} label="Motor Toevoegen" onClick={()=>{if(f.kenteken&&f.merk){onSave(f);onClose();}}}/>
+    </Modal>
+  );
+}
+
+function ServiceModal({onSave,onClose}){
+  const [f,setF]=useState({datum:TODAY,omschrijving:""});
+  return(
+    <Modal title="SERVICE TOEVOEGEN" onClose={onClose}>
+      <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value}))}/></Field>
+      <Field label="Omschrijving">
+        <textarea style={{...s.input,height:90,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat is er gedaan?"/>
+      </Field>
+      <ModalFooter onClose={onClose} onClick={()=>{if(f.omschrijving){onSave(f);onClose();}}}/>
+    </Modal>
+  );
+}
+
+function VoorraadModal({onSave,onClose}){
+  const [kenteken,setKenteken]=useState("");
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY});
+  const [status,setStatus]=useState(null); // null | "laden" | "gevonden" | "niet_gevonden" | "fout"
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+
+  const normKenteken = k => k.replace(/-/g,"").toUpperCase();
+
+  const haalRDWOp = async () => {
+    const ken = normKenteken(kenteken);
+    if(!ken) return;
+    setStatus("laden");
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          system: "Je zoekt Nederlandse kentekengegevens op via de RDW open data API op https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=KENTEKEN. Retourneer ALLEEN geldige JSON zonder uitleg of markdown met velden: merk (string), model (string), bouwjaar (string, alleen het jaar). Als het kenteken niet bestaat of niet gevonden wordt, retourneer: {\"gevonden\":false}.",
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: `Zoek kenteken ${ken} op in de RDW en geef de voertuiggegevens terug als JSON.` }]
+        })
+      });
+      const data = await response.json();
+      const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+      const clean = text.replace(/```json|```/g,"").trim();
+      const parsed = JSON.parse(clean);
+      if(parsed.gevonden===false){ setStatus("niet_gevonden"); return; }
+      setF(p=>({...p, merk:parsed.merk||"", model:parsed.model||"", bouwjaar:String(parsed.bouwjaar||"")}));
+      setStatus("gevonden");
+    } catch(e) {
+      setStatus("fout");
+    }
+  };
+
+  const kentekenGeformateerd = normKenteken(kenteken);
+  const rdwGegevensGeladen = status==="gevonden";
+
+  return(
+    <Modal title="MOTOR TOEVOEGEN — VOORRAAD" onClose={onClose}>
+      {/* Stap 1: kenteken */}
+      <div style={s.sectionLabel}>Stap 1 — Kenteken opzoeken via RDW</div>
+      <div style={{display:"flex",gap:8,marginBottom:6}}>
+        <input style={{...s.input,flex:1,fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:16,letterSpacing:2,textTransform:"uppercase"}}
+          value={kenteken} onChange={e=>setKenteken(e.target.value)}
+          placeholder="AB-123-C" onKeyDown={e=>e.key==="Enter"&&haalRDWOp()}/>
+        <button style={{...s.btn,flexShrink:0}} onClick={haalRDWOp} disabled={status==="laden"}>
+          {status==="laden"?"Laden...":"Ophalen →"}
+        </button>
+      </div>
+      {status==="niet_gevonden"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Kenteken niet gevonden in RDW — vul gegevens handmatig in.</div>}
+      {status==="fout"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Verbinding mislukt — vul gegevens handmatig in.</div>}
+      {status==="gevonden"&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>✓ Gegevens opgehaald uit RDW — controleer en pas aan indien nodig.</div>}
+
+      {/* Stap 2: details (altijd zichtbaar, invulbaar) */}
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Stap 2 — Gegevens controleren / aanvullen</div>
+      <Grid2>
+        <Field label="Merk"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
+        <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
+        <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
+        <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
+        <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
+        <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
+      </Grid2>
+      <ModalFooter onClose={onClose} label="Toevoegen aan voorraad"
+        onClick={()=>{if(kentekenGeformateerd&&f.merk){onSave({...f,kenteken:kentekenGeformateerd});onClose();}}}/>
+    </Modal>
+  );
+}
+
+function AfspraakModal({afspraken,klanten,onSave,onClose}){
+  const [f,setF]=useState({klant:"",motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
+  const set=k=>e=>{
+    const val=e.target.value;
+    setF(p=>({...p,[k]:val,...(k==="datum"||k==="duur"?{tijd:""}:{})}));
+  };
+  const selectedKlant=klanten.find(k=>k.naam===f.klant);
+  const slots=f.datum&&f.duur?getSlots(afspraken,f.datum,parseInt(f.duur)):[];
+
+  return(
+    <Modal title="AFSPRAAK INPLANNEN" onClose={onClose}>
+      <Field label="Klant">
+        <select style={s.input} value={f.klant} onChange={e=>setF(p=>({...p,klant:e.target.value,motor:""}))}>
+          <option value="">— Selecteer klant —</option>
+          {klanten.map(k=><option key={k.id}>{k.naam}</option>)}
+          <option value="Walk-in">Walk-in / Onbekend</option>
+        </select>
+      </Field>
+      {selectedKlant&&(
+        <Field label="Motor">
+          <select style={s.input} value={f.motor} onChange={set("motor")}>
+            <option value="">— Selecteer motor —</option>
+            {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
+          </select>
+        </Field>
+      )}
+      <Grid2>
+        <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+        <Field label="Duur (uur)">
+          <select style={s.input} value={f.duur} onChange={set("duur")}>
+            {[1,2,3,4,5,6,7,8].map(h=><option key={h}>{h}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      {f.datum&&(
+        <Field label={`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
+          {slots.length===0?(
+            <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>
+              ⚠ Geen vrij blok van {f.duur} uur beschikbaar op deze dag
+            </div>
+          ):(
+            <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+              {slots.map(t=>(
+                <button key={t} onClick={()=>setF(p=>({...p,tijd:t}))}
+                  style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?T.accent:T.border}`,background:f.tijd===t?`${T.accent}25`:"transparent",color:f.tijd===t?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+        </Field>
+      )}
+      <Field label="Omschrijving">
+        <textarea style={{...s.input,height:75,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat moet er gedaan worden?"/>
+      </Field>
+      <ModalFooter onClose={onClose} label="Inplannen"
+        onClick={()=>{if(f.klant&&f.tijd){onSave({...f,duur:parseInt(f.duur)});onClose();}}}/>
+    </Modal>
+  );
+}
+
+// ── Pages ────────────────────────────────────────────────────────────────────
+function Dashboard({klanten,showroom,afspraken,onNav}){
+  const totalMotoren=klanten.reduce((a,k)=>a+k.motoren.length,0);
+  const vandaag=afspraken.filter(a=>a.datum===TODAY);
+  const komend=afspraken.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||a.tijd.localeCompare(b.tijd)).slice(0,6);
+
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+        {[{num:klanten.length,lbl:"Klanten"},{num:totalMotoren,lbl:"Motoren"},{num:showroom.length,lbl:"Voorraad"},{num:vandaag.length,lbl:"Afspraken vandaag"}].map((x,i)=>(
+          <div key={i} style={s.statCard}>
+            <div style={s.statNum}>{x.num}</div>
+            <div style={s.statLabel}>{x.lbl}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={s.card}>
+          <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:1,marginBottom:14,textTransform:"uppercase",color:T.text}}>
+            Vandaag · {fmtDate(TODAY)}
+          </div>
+          {vandaag.length===0?<div style={{color:T.muted,fontSize:13}}>Geen afspraken vandaag</div>:vandaag.map(a=>(
+            <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{background:T.accent,color:"#fff",padding:"3px 8px",borderRadius:3,fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd}</div>
+              <div>
+                <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
+                <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving} · {a.duur}u</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={s.card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:1,textTransform:"uppercase"}}>Komende Afspraken</div>
+            <button style={s.btn} onClick={()=>onNav("agenda")}>+ Nieuw</button>
+          </div>
+          {komend.map(a=>(
+            <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
+                <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
+                <div style={{fontSize:12,color:T.accent}}>{fmtDate(a.datum)}</div>
+                <div style={{fontSize:12,color:T.muted}}>{a.tijd} · {a.duur}u</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,voorraad=[]}){
+  const [search,setSearch]=useState("");
+  const [sel,setSel]=useState(null);
+  const [modal,setModal]=useState(null);
+  const [selMotorId,setSelMotorId]=useState(null);
+  const [uitnodigKlant,setUitnodigKlant]=useState(null);
+
+  const filtered=klanten.filter(k=>
+    k.naam.toLowerCase().includes(search.toLowerCase())||
+    k.motoren.some(m=>m.kenteken.toLowerCase().includes(search.toLowerCase()))
+  );
+  const klant=sel?klanten.find(k=>k.id===sel):null;
+
+  const addMotor=f=>{
+    const m={id:Date.now(),...f,bouwjaar:parseInt(f.bouwjaar)||0,km:parseInt(f.km)||0,service:[]};
+    onUpdateKlant({...klant,motoren:[...klant.motoren,m]});
+  };
+  const addService=f=>{
+    const entry={id:Date.now(),...f};
+    onUpdateKlant({...klant,motoren:klant.motoren.map(m=>m.id===selMotorId?{...m,service:[...m.service,entry]}:m)});
+  };
+
+  return(
+    <div style={{display:"flex",gap:18,height:"100%"}}>
+      <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",gap:8}}>
+          <input style={{...s.input,flex:1}} placeholder="Zoek naam of kenteken..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <button style={s.btn} onClick={()=>setModal("addKlant")}>+</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:4,overflowY:"auto"}}>
+          {filtered.map(k=>(
+            <div key={k.id} onClick={()=>setSel(k.id)}
+              style={{padding:"12px 14px",background:sel===k.id?`${T.accent}15`:T.surf,border:`1px solid ${sel===k.id?T.accent:T.border}`,borderRadius:5,cursor:"pointer",transition:"all 0.1s"}}>
+              <div style={{fontSize:14,fontWeight:500}}>{k.naam}</div>
+              <div style={{fontSize:12,color:T.muted,marginTop:3}}>{k.motoren.length} motor{k.motoren.length!==1?"en":""} · {k.woonplaats}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto"}}>
+        {!klant?(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,color:T.muted,fontSize:13}}>← Selecteer een klant</div>
+        ):(
+          <div>
+            <div style={{...s.card,marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22}}>{klant.naam}</div>
+                  <div style={{fontSize:13,color:T.muted,marginTop:6,lineHeight:1.8}}>
+                    {klant.email} · {klant.telefoon}<br/>
+                    {klant.adres}, {klant.postcode} {klant.woonplaats}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button style={s.btnOutline} onClick={()=>setUitnodigKlant(klant)}>Uitnodigen</button>
+                  <button style={s.btn} onClick={()=>setModal("addMotor")}>+ Motor</button>
+                </div>
+              </div>
+            </div>
+            {klant.motoren.map(motor=>(
+              <div key={motor.id} style={{...s.card,marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div>
+                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17}}>
+                      {motor.merk} {motor.model}
+                      <span style={{...s.badge(T.accent),marginLeft:10,fontSize:10}}>{motor.kenteken}</span>
+                    </div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:4}}>
+                      {motor.bouwjaar} · {motor.km.toLocaleString()} km · Gekocht {motor.aankoopdatum}
+                    </div>
+                  </div>
+                  <button style={s.btn} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
+                </div>
+                {motor.service.length===0?(
+                  <div style={{fontSize:12,color:T.muted,padding:"6px 0"}}>Nog geen servicemeldingen</div>
+                ):(
+                  motor.service.slice().reverse().map(sv=>(
+                    <div key={sv.id} style={{display:"flex",gap:14,padding:"8px 0",borderTop:`1px solid ${T.border}`}}>
+                      <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
+                      <div style={{fontSize:13}}>{sv.omschrijving}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {modal==="addKlant"&&<KlantModal onSave={onAddKlant} onClose={()=>setModal(null)} voorraad={voorraad}/>}
+      {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)}/>}
+      {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
+      {uitnodigKlant&&<UitnodigingModal klant={uitnodigKlant} onClose={()=>setUitnodigKlant(null)}/>}
+    </div>
+  );
+}
+
+function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
+  const [modal,setModal]=useState(null);
+  const [verkoopMotor,setVerkoopMotor]=useState(null);
+  const [verkoopKlant,setVerkoopKlant]=useState("");
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+        <button style={s.btn} onClick={()=>setModal("add")}>+ Motor Toevoegen</button>
+      </div>
+      {showroom.length===0&&<div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>Geen motors in voorraad</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:14}}>
+        {showroom.map(m=>(
+          <div key={m.id} style={s.card}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div>
+                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
+                <span style={{...s.badge(T.muted),marginTop:4,display:"inline-block"}}>{m.kenteken}</span>
+              </div>
+              <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,color:T.accent}}>€{m.prijs.toLocaleString()}</div>
+            </div>
+            <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:12}}>
+              {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
+            </div>
+            <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={s.btnOutline}>
+              Verkopen aan klant →
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
+
+      {verkoopMotor&&(
+        <Modal title="MOTOR VERKOPEN" onClose={()=>setVerkoopMotor(null)}>
+          <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
+            <div style={{fontSize:14,fontWeight:500}}>{verkoopMotor.merk} {verkoopMotor.model} — {verkoopMotor.kenteken}</div>
+            <div style={{fontSize:12,color:T.muted,marginTop:4}}>Vraagprijs: €{verkoopMotor.prijs.toLocaleString()}</div>
+          </div>
+          <Field label="Verkopen aan">
+            <select style={s.input} value={verkoopKlant} onChange={e=>setVerkoopKlant(e.target.value)}>
+              <option value="">— Selecteer klant —</option>
+              {klanten.map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
+            </select>
+          </Field>
+          <ModalFooter onClose={()=>setVerkoopMotor(null)} label="Verkopen"
+            onClick={()=>{if(verkoopKlant){onVerkoop(verkoopMotor,verkoopKlant);setVerkoopMotor(null);}}}/>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function AgendaPage({afspraken,klanten,onAddAfspraak}){
+  const [weekBase,setWeekBase]=useState(TODAY);
+  const [modal,setModal]=useState(false);
+  const weekDates=getWeekDates(weekBase);
+  const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
+  const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
+  const HOURS=Array.from({length:10},(_,i)=>i+8); // 08-17
+  const CAL_H=440;
+  const TOTAL_MIN=WEND-WSTART;
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button style={s.btnGhost} onClick={prev}>← Vorige</button>
+          <span style={{fontSize:13,color:T.muted,minWidth:120,textAlign:"center"}}>{fmtDate(weekDates[0])} – {fmtDate(weekDates[5])}</span>
+          <button style={s.btnGhost} onClick={next}>Volgende →</button>
+        </div>
+        <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
+      </div>
+
+      <div style={{...s.card,padding:0,overflow:"hidden"}}>
+        {/* Day headers */}
+        <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",borderBottom:`1px solid ${T.border}`}}>
+          <div/>
+          {weekDates.map((d,i)=>(
+            <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`,background:d===TODAY?`${T.accent}18`:"transparent"}}>
+              <div style={{fontSize:10,color:T.muted,letterSpacing:1}}>{DAYS_NL[i]}</div>
+              <div style={{fontSize:14,fontWeight:d===TODAY?700:400,color:d===TODAY?T.accent:T.text,marginTop:2}}>{fmtDate(d)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Grid */}
+        <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",position:"relative",height:CAL_H}}>
+          {/* Hour labels */}
+          <div style={{position:"relative",borderRight:`1px solid ${T.border}`}}>
+            {HOURS.map(h=>(
+              <div key={h} style={{position:"absolute",top:`${(h-8)/9*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
+                {h}:00
+              </div>
+            ))}
+          </div>
+
+          {/* Day columns */}
+          {weekDates.map((d)=>{
+            const apts=afspraken.filter(a=>a.datum===d);
+            return(
+              <div key={d} style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:d===TODAY?`${T.accent}06`:"transparent"}}>
+                {HOURS.map(h=>(
+                  <div key={h} style={{position:"absolute",top:`${(h-8)/9*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}22`}}/>
+                ))}
+                {apts.map(a=>{
+                  const startMin=timeToMin(a.tijd)-WSTART;
+                  const top=Math.max(0,startMin/TOTAL_MIN*100);
+                  const height=Math.min(a.duur*60/TOTAL_MIN*100,100-top);
+                  return(
+                    <div key={a.id} style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,background:`${T.accent}28`,border:`1px solid ${T.accent}80`,borderRadius:4,padding:"4px 6px",overflow:"hidden",cursor:"default"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:T.accent}}>{a.tijd}</div>
+                      <div style={{fontSize:10,color:T.text,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.klant}</div>
+                      {height>6&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {modal&&<AfspraakModal afspraken={afspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+    </div>
+  );
+}
+
+// ── App Root ─────────────────────────────────────────────────────────────────
+export default function AdminApp(){
+
+  const [page,setPage]=useState("dashboard");
+  const [klanten,setKlanten]=useState(INIT_KLANTEN);
+  const [showroom,setShowroom]=useState(INIT_SHOWROOM);
+  const [afspraken,setAfspraken]=useState(INIT_AFSPRAKEN);
+
+  const addKlant=f=>{
+    const motoren = f.motor ? [{id:Date.now(), kenteken:f.motor.kenteken||"", merk:f.motor.merk||"", model:f.motor.model||"", bouwjaar:parseInt(f.motor.bouwjaar)||0, km:parseInt(f.motor.km)||0, aankoopdatum:f.motor.aankoopdatum||TODAY, service:[]}] : [];
+    setKlanten(p=>[...p,{id:Date.now(),naam:f.naam,email:f.email,telefoon:f.telefoon||"",adres:f.adres||"",postcode:f.postcode||"",woonplaats:f.woonplaats||"",motoren}]);
+    if(f.verwijderUitVoorraad) setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
+  };
+  const updateKlant=u=>setKlanten(p=>p.map(k=>k.id===u.id?u:k));
+  const addShowroomMotor=f=>setShowroom(p=>[...p,{id:Date.now(),...f,bouwjaar:parseInt(f.bouwjaar)||0,km:parseInt(f.km)||0,prijs:parseInt(f.prijs)||0}]);
+  const verkoop=(motor,klantId)=>{
+    const k=klanten.find(k=>k.id===parseInt(klantId));
+    if(!k)return;
+    updateKlant({...k,motoren:[...k.motoren,{id:Date.now(),kenteken:motor.kenteken,merk:motor.merk,model:motor.model,bouwjaar:motor.bouwjaar,km:motor.km,aankoopdatum:TODAY,service:[]}]});
+    setShowroom(p=>p.filter(m=>m.id!==motor.id));
+  };
+  const addAfspraak=f=>setAfspraken(p=>[...p,{id:Date.now(),...f}]);
+
+  const nav=[
+    {id:"dashboard",icon:"◈",label:"Dashboard"},
+    {id:"klanten",icon:"◎",label:"Klanten"},
+    {id:"voorraad",icon:"◧",label:"Voorraad"},
+    {id:"agenda",icon:"◫",label:"Agenda"},
+  ];
+
+  return(
+    <div style={s.app}>
+      <div style={s.sidebar}>
+        <div style={s.logo}>
+          <div style={s.logoTop}>DE JONGE</div>
+          <div style={s.logoSub}>MOTOREN</div>
+        </div>
+        <nav style={{padding:"10px 0",flex:1}}>
+          {nav.map(n=>(
+            <div key={n.id} style={s.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
+              <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
+              <span>{n.label}</span>
+            </div>
+          ))}
+        </nav>
+        <div style={{padding:"14px 20px",borderTop:`1px solid ${T.border}`,fontSize:11,color:T.muted,lineHeight:1.6}}>
+          Admin<br/>De Jonge Motoren
+        </div>
+      </div>
+
+      <div style={s.main}>
+        <div style={s.header}>
+          <div style={s.headerTitle}>{nav.find(n=>n.id===page)?.label.toUpperCase()}</div>
+          <div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{fontSize:12,color:T.muted}}>{new Date().toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"long",year:"numeric"})}</div><button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{padding:"5px 12px",background:"transparent",border:"1px solid #252525",borderRadius:4,color:"#666660",fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button></div>
+        </div>
+        <div style={s.content}>
+          {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
+          {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} voorraad={showroom}/>}
+          {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addShowroomMotor} klanten={klanten} onVerkoop={verkoop}/>}
+          {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
