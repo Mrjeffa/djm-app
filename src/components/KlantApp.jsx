@@ -717,14 +717,29 @@ export default function KlantApp({ userId }) {
     const timer = setTimeout(() => setLaden(false), 12000);
     const laadData = async () => {
       try {
-        // Klant, instellingen en afspraken parallel ophalen
-        const [klantRes, afsprakenRes, instRes] = await Promise.all([
+        // Klant, instellingen, afspraken en huidige user parallel ophalen
+        const [klantRes, afsprakenRes, instRes, userRes] = await Promise.all([
           supabase.from("klanten").select("*").eq("user_id", userId).single(),
           supabase.from("afspraken").select("datum").gte("datum", TODAY),
           supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single(),
+          supabase.auth.getUser(),
         ]);
 
-        const klantData = klantRes.data;
+        let klantData = klantRes.data;
+
+        // Niet gevonden op user_id → probeer email-koppeling (admin pre-aangemaakt)
+        if (!klantData) {
+          const email = userRes.data?.user?.email;
+          if (email) {
+            const { data: klantByEmail } = await supabase
+              .from("klanten").select("*").eq("email", email).is("user_id", null).single();
+            if (klantByEmail) {
+              await supabase.from("klanten").update({ user_id: userId }).eq("id", klantByEmail.id);
+              klantData = { ...klantByEmail, user_id: userId };
+            }
+          }
+        }
+
         if (!klantData) { setLaden(false); clearTimeout(timer); return; }
         setKlant(klantData);
 
@@ -846,12 +861,15 @@ export default function KlantApp({ userId }) {
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
       <div>
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
-        <div style={{ fontSize:13, color:T.muted, marginTop:16, lineHeight:1.8 }}>
-          Je account is nog niet gekoppeld aan een klantprofiel.<br/>Neem contact op met De Jonge Motoren.
+        <div style={{ fontSize:36, margin:"20px 0 12px" }}>⏳</div>
+        <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:10 }}>Wacht op goedkeuring</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+          Je e-mailadres staat nog niet in ons systeem. De Jonge Motoren voegt je zo snel mogelijk toe.
         </div>
-        <a href="https://wa.me/31140000000" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
-          Stuur een bericht →
-        </a>
+        <button onClick={uitloggen}
+          style={{ marginTop:24, padding:"10px 20px", background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:8, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+          Uitloggen
+        </button>
       </div>
     </div>
   );
