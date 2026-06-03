@@ -738,6 +738,7 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
 }
 
 function AfspraakEditModal({afspraak, klanten, onSave, onDelete, onClose}){
+  const isAanvraag=afspraak.status==="aangevraagd";
   const [f,setF]=useState({
     klant: afspraak.klant||"",
     datum: afspraak.datum||TODAY,
@@ -747,7 +748,15 @@ function AfspraakEditModal({afspraak, klanten, onSave, onDelete, onClose}){
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   return(
-    <Modal title="AFSPRAAK WIJZIGEN" onClose={onClose}>
+    <Modal title={isAanvraag?"AANVRAAG INPLANNEN":"AFSPRAAK WIJZIGEN"} onClose={onClose}>
+      {isAanvraag&&(
+        <div style={{background:`${T.yellow}15`,border:`1px solid ${T.yellow}40`,borderRadius:5,padding:"10px 14px",marginBottom:16,fontSize:13,color:T.yellow}}>
+          📋 Aanvraag van klant — stel tijd en duur in om te bevestigen.
+          {(afspraak.opmerking||afspraak.omschrijving)&&(
+            <div style={{marginTop:6,color:T.text,fontSize:12}}>Opmerking: {afspraak.opmerking||afspraak.omschrijving}</div>
+          )}
+        </div>
+      )}
       <Field label="Klant">
         <select style={s.input} value={f.klant} onChange={set("klant")}>
           <option value="">— Selecteer klant —</option>
@@ -783,6 +792,9 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,onEditAfspraak,onDeleteAfsp
   const [modal,setModal]=useState(false);
   const [editAfspraak,setEditAfspraak]=useState(null);
   const [dragId,setDragId]=useState(null);
+  // Splits geplande vs aangevraagde afspraken
+  const geplandAfspraken=afspraken.filter(a=>a.status!=="aangevraagd");
+  const aanvragen=afspraken.filter(a=>a.status==="aangevraagd").sort((a,b)=>a.datum.localeCompare(b.datum));
   const weekDates=getWeekDates(weekBase);
   const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
   const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
@@ -859,7 +871,7 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,onEditAfspraak,onDeleteAfsp
           </div>
 
           {weekDates.map((d)=>{
-            const apts=afspraken.filter(a=>a.datum===d);
+            const apts=geplandAfspraken.filter(a=>a.datum===d);
             const gesloten=isDagGesloten(d);
             return(
               <div key={d}
@@ -904,7 +916,43 @@ function AgendaPage({afspraken,klanten,onAddAfspraak,onEditAfspraak,onDeleteAfsp
 
       <div style={{fontSize:11,color:T.muted,marginTop:8}}>💡 Klik een afspraak om te wijzigen · Sleep naar een andere dag</div>
 
-      {modal&&<AfspraakModal afspraken={afspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {/* Aanvragen van klanten */}
+      {aanvragen.length>0&&(
+        <div style={{marginTop:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:1,textTransform:"uppercase",color:T.yellow}}>
+              Aanvragen klanten
+            </div>
+            <span style={{...s.badge(T.yellow),fontSize:11}}>{aanvragen.length}</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {aanvragen.map(a=>(
+              <div key={a.id} style={{...s.card,display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",border:`1px solid ${T.yellow}35`,background:`${T.yellow}08`}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{...s.badge(T.yellow),fontSize:10}}>Aanvraag</span>
+                    <span style={{fontSize:13,fontWeight:600}}>{a.klant||"Onbekende klant"}</span>
+                    <span style={{fontSize:12,color:T.muted}}>· {a.datum}</span>
+                  </div>
+                  {(a.opmerking||a.omschrijving)&&(
+                    <div style={{fontSize:12,color:T.muted}}>{a.opmerking||a.omschrijving}</div>
+                  )}
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0,marginLeft:16}}>
+                  <button style={{...s.btn,background:T.accent}} onClick={()=>setEditAfspraak(a)}>
+                    Inplannen
+                  </button>
+                  <button style={{...s.btn,background:T.red}} onClick={()=>onDeleteAfspraak(a.id)}>
+                    Afwijzen
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
@@ -1214,10 +1262,13 @@ export default function AdminApp(){
 
   const editAfspraak = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
+    // Als er een tijd is ingesteld, markeer als gepland (ook bij aanvragen)
+    const nieuweStatus = f.tijd ? "gepland" : (f.status || "aangevraagd");
     await sb.from("afspraken").update({
-      datum:f.datum, tijd:f.tijd, duur:parseInt(f.duur)||1, opmerking:f.omschrijving||""
+      datum:f.datum, tijd:f.tijd||null, duur:parseInt(f.duur)||1,
+      opmerking:f.omschrijving||f.opmerking||"", status:nieuweStatus
     }).eq("id",f.id);
-    setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f}:a));
+    setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,status:nieuweStatus}:a));
   };
 
   const deleteAfspraak = async (id) => {

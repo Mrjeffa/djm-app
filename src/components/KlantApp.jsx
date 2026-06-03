@@ -68,8 +68,9 @@ const fmtDatum = d => {
   return `${dt.getDate()} ${MAANDEN_NL[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 
-// Haal beschikbare wo/do/vr dagen op voor de komende 6 weken
-const getBeschikbareDagen = (bezet = [], geslotenWeken = []) => {
+// Haal beschikbare wo/do/vr dagen op voor de komende 4 weken
+// bezet bevat zowel bestaande afspraken als gesloten_dagen uit instellingen
+const getBeschikbareDagen = (bezet = []) => {
   const dagen = [];
   const start = new Date(TODAY);
   start.setDate(start.getDate() + 1);
@@ -80,12 +81,7 @@ const getBeschikbareDagen = (bezet = [], geslotenWeken = []) => {
     const dayOfWeek = d.getDay();
     if ([3,4,5].includes(dayOfWeek)) {
       const iso = d.toISOString().split("T")[0];
-      // Maandag van deze week bepalen
-      const ma = new Date(d);
-      ma.setDate(d.getDate() - (dayOfWeek - 1));
-      const maIso = ma.toISOString().split("T")[0];
-      const isGesloten = geslotenWeken.includes(maIso);
-      dagen.push({ datum: iso, bezet: bezet.includes(iso) || isGesloten, dag: DAGEN_NL[dayOfWeek] });
+      dagen.push({ datum: iso, bezet: bezet.includes(iso), dag: DAGEN_NL[dayOfWeek] });
     }
   }
   return dagen;
@@ -316,14 +312,14 @@ function KmStand({ motoren, onSlaOp }) {
 }
 
 // ── Scherm: Afspraak ───────────────────────────────────────────────────────
-function Afspraak({ motoren, bezetteDagen = [], geslotenWeken = [], onSlaOp }) {
+function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
   const [selId, setSelId] = useState(motoren[0]?.id);
   const [selDatum, setSelDatum] = useState(null);
   const [opmerking, setOpmerking] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selId) || motoren[0];
-  const beschikbaar = getBeschikbareDagen(bezetteDagen, geslotenWeken);
+  const beschikbaar = getBeschikbareDagen(bezetteDagen);
 
   const verstuur = async () => {
     if (!selDatum || bezig) return;
@@ -404,10 +400,18 @@ function Afspraak({ motoren, bezetteDagen = [], geslotenWeken = [], onSlaOp }) {
 }
 
 // ── Scherm: Contact ────────────────────────────────────────────────────────
-const TIJDEN = { ma:"09–17", di:"09–17", wo:"09–17", do:"09–17", vr:"09–17", za:"10–15", zo:null };
-const GESLOTEN_WEKEN = ["2026-06-01"]; // maandagen van gesloten weken — straks uit backend
+const DAGMAP_KORT = ["zo","ma","di","wo","do","vr","za"];
+const DEFAULT_TIJDEN = { ma:"09–17", di:"09–17", wo:"09–17", do:"09–17", vr:"09–17", za:"10–15", zo:null };
 
-function WeekKalender() {
+function WeekKalender({ openingstijden, geslotenDagen = [] }) {
+  const getTijd = (dag) => {
+    if (!openingstijden || !openingstijden[dag]) return DEFAULT_TIJDEN[dag];
+    if (openingstijden[dag].gesloten) return null;
+    const o = openingstijden[dag].open?.substring(0,5) || "09:00";
+    const s = openingstijden[dag].sluit?.substring(0,5) || "17:00";
+    return `${o.replace(":",".")}–${s.replace(":",".")}`;
+  };
+
   // Bouw 2 weken op
   const ma = new Date(TODAY);
   const dow = ma.getDay();
@@ -416,18 +420,18 @@ function WeekKalender() {
   const weken = [0, 1].map(offset => {
     const start = new Date(ma);
     start.setDate(ma.getDate() + offset * 7);
-    const maStr = start.toISOString().split("T")[0];
-    const isGesloten = GESLOTEN_WEKEN.includes(maStr);
     const dagen = ["ma","di","wo","do","vr","za","zo"].map((dag, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const iso = d.toISOString().split("T")[0];
       const isVandaag = iso === TODAY;
-      return { dag, datum: d.getDate(), iso, isVandaag, tijd: isGesloten ? null : TIJDEN[dag] };
+      const isGesloten = geslotenDagen.includes(iso);
+      return { dag, datum: d.getDate(), iso, isVandaag, tijd: isGesloten ? null : getTijd(dag), gesloten: isGesloten };
     });
     const fmt = d => `${d.getDate()} ${MAANDEN_NL[d.getMonth()]}`;
     const end = new Date(start); end.setDate(start.getDate() + 6);
-    return { label: offset === 0 ? "Deze week" : "Volgende week", periode: `${fmt(start)} – ${fmt(end)}`, isGesloten, dagen };
+    const weekGesloten = dagen.every(d => !d.tijd);
+    return { label: offset === 0 ? "Deze week" : "Volgende week", periode: `${fmt(start)} – ${fmt(end)}`, weekGesloten, dagen };
   });
 
   return (
@@ -441,7 +445,7 @@ function WeekKalender() {
               <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{week.label}</span>
               <span style={{ fontSize: 11, color: T.muted, marginLeft: 6 }}>{week.periode}</span>
             </div>
-            {week.isGesloten && <span style={{ ...css.badge(T.red), fontSize: 10 }}>Gesloten</span>}
+            {week.weekGesloten && <span style={{ ...css.badge(T.red), fontSize: 10 }}>Gesloten</span>}
           </div>
           {/* Dag blokjes */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
@@ -450,13 +454,13 @@ function WeekKalender() {
                 <div style={{ fontSize: 10, color: T.muted, letterSpacing: 0.5, textTransform: "uppercase" }}>{d.dag}</div>
                 <div style={{
                   width: "100%", borderRadius: 6, padding: "7px 4px",
-                  background: d.isVandaag ? T.accentSoft : week.isGesloten || !d.tijd ? T.surf2 : T.surf3,
-                  border: `1px solid ${d.isVandaag ? T.accent : week.isGesloten || !d.tijd ? T.border : T.border}`,
+                  background: d.isVandaag ? T.accentSoft : !d.tijd ? T.surf2 : T.surf3,
+                  border: `1px solid ${d.isVandaag ? T.accent : T.border}`,
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 2
                 }}>
                   <div style={{ fontSize: 13, fontWeight: d.isVandaag ? 700 : 500, color: d.isVandaag ? T.accent : T.text }}>{d.datum}</div>
-                  <div style={{ fontSize: 9, color: week.isGesloten || !d.tijd ? T.muted : T.green, fontWeight: 600, letterSpacing: 0.3 }}>
-                    {week.isGesloten ? "—" : d.tijd || "—"}
+                  <div style={{ fontSize: 9, color: !d.tijd ? T.muted : T.green, fontWeight: 600, letterSpacing: 0.3 }}>
+                    {d.tijd || "—"}
                   </div>
                 </div>
               </div>
@@ -472,7 +476,7 @@ function WeekKalender() {
   );
 }
 
-function Contact() {
+function Contact({ openingstijden, geslotenDagen }) {
   return (
     <div>
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}10)`, border: `1px solid ${T.accent}30`, marginBottom: 20 }}>
@@ -501,7 +505,7 @@ function Contact() {
         </a>
       ))}
 
-      <WeekKalender />
+      <WeekKalender openingstijden={openingstijden} geslotenDagen={geslotenDagen} />
     </div>
   );
 }
@@ -512,7 +516,8 @@ export default function KlantApp({ userId }) {
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
   const [bezetteDagen, setBezetteDagen] = useState([]);
-  const [geslotenWeken, setGeslotenWeken] = useState([]);
+  const [geslotenDagen, setGeslotenDagen] = useState([]);
+  const [openingstijden, setOpeningstijden] = useState(null);
   const [laden, setLaden] = useState(true);
 
   useEffect(() => {
@@ -544,14 +549,15 @@ export default function KlantApp({ userId }) {
           setMotoren(verrijkt);
         }
 
-        // Bezette dagen ophalen
-        const { data: afspraken } = await sb
-          .from("afspraken").select("datum").gte("datum", TODAY);
-        setBezetteDagen((afspraken||[]).map(a => a.datum));
-
-        // Gesloten weken ophalen
-        const { data: inst } = await sb.from("instellingen").select("*").single();
-        setGeslotenWeken(inst?.gesloten_weken || []);
+        // Bezette dagen + gesloten dagen ophalen en samenvoegen
+        const [{ data: afspraken }, { data: inst }] = await Promise.all([
+          sb.from("afspraken").select("datum").gte("datum", TODAY),
+          sb.from("instellingen").select("gesloten_dagen,openingstijden").single(),
+        ]);
+        const gesloten = inst?.gesloten_dagen || [];
+        setGeslotenDagen(gesloten);
+        setBezetteDagen([...(afspraken||[]).map(a => a.datum), ...gesloten]);
+        if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
 
       } catch(e) { console.error(e); }
       setLaden(false);
@@ -673,8 +679,8 @@ export default function KlantApp({ userId }) {
         {tab === "motor" && <MijnMotor motoren={motoren} />}
         {tab === "service" && <Servicegeschiedenis motoren={motoren} />}
         {tab === "km" && <KmStand motoren={motoren} onSlaOp={slaKmOp} />}
-        {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} geslotenWeken={geslotenWeken} onSlaOp={slaAfspraakOp} />}
-        {tab === "contact" && <Contact />}
+        {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
+        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} />}
       </div>
 
       <nav style={css.bottomNav}>

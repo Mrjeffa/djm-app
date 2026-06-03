@@ -1,13 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase.js'
 import AdminApp from './components/AdminApp.jsx'
 import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
-const IS_RECOVERY = window.location.hash.includes('type=recovery')
-
-// Elke async operatie heeft max 5 sec
 const tijdelijk = (fn, fallback) =>
   Promise.race([
     fn().catch(() => fallback),
@@ -16,7 +13,9 @@ const tijdelijk = (fn, fallback) =>
 
 const checkIsAdmin = () =>
   tijdelijk(async () => {
-    const { data } = await supabase.from('admins').select('id').eq('id', (await supabase.auth.getUser()).data?.user?.id).single()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return false
+    const { data } = await supabase.from('admins').select('id').eq('id', user.id).single()
     return !!data
   }, false)
 
@@ -29,31 +28,57 @@ const koppelKlant = (user) =>
 export default function App() {
   const [sessie, setSessie] = useState(null)
   const [admin, setAdmin] = useState(false)
-  const [laden, setLaden] = useState(!IS_RECOVERY)
-  const [reset, setReset] = useState(IS_RECOVERY)
+  const [laden, setLaden] = useState(true)
+  const [reset, setReset] = useState(false)
+  // Voorkomt dubbele verwerking van sessie (race tussen getSession + SIGNED_IN event)
+  const bezig = useRef(false)
+  const inReset = useRef(false)
 
   const verwerkSessie = async (session) => {
-    if (!session) { setLaden(false); return }
+    if (bezig.current) return
+    bezig.current = true
+    if (!session) {
+      bezig.current = false
+      setLaden(false)
+      return
+    }
+    setLaden(true)
     setSessie(session)
     await koppelKlant(session.user)
     setAdmin(await checkIsAdmin())
+    bezig.current = false
     setLaden(false)
   }
 
   useEffect(() => {
-    if (IS_RECOVERY) { setLaden(false); return }
+    // Controleer of dit een wachtwoord-reset link is
+    const isRecovery = window.location.hash.includes('type=recovery')
 
-    // Haal sessie op — max 6 sec, daarna gewoon inlogscherm tonen
-    tijdelijk(() => supabase.auth.getSession(), { data: { session: null } })
-      .then(r => verwerkSessie(r?.data?.session || null))
-      .catch(() => setLaden(false))
+    if (!isRecovery) {
+      // Normale flow: haal bestaande sessie op
+      tijdelijk(() => supabase.auth.getSession(), { data: { session: null } })
+        .then(r => verwerkSessie(r?.data?.session || null))
+        .catch(() => setLaden(false))
+    }
+    // Bij recovery: wacht op PASSWORD_RECOVERY event (Supabase verwerkt de URL hash async)
 
-    // Luister naar auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') { setReset(true); setLaden(false) }
-      else if (event === 'SIGNED_OUT') { setSessie(null); setAdmin(false); setReset(false); setLaden(false) }
-      else if (event === 'SIGNED_IN') { await verwerkSessie(session) }
-      else if (event === 'TOKEN_REFRESHED') { setSessie(session); setLaden(false) }
+      if (event === 'PASSWORD_RECOVERY') {
+        inReset.current = true
+        setReset(true)
+        setLaden(false)
+      } else if (event === 'SIGNED_OUT') {
+        bezig.current = false
+        inReset.current = false
+        setSessie(null)
+        setAdmin(false)
+        setReset(false)
+        setLaden(false)
+      } else if (event === 'SIGNED_IN' && !inReset.current) {
+        await verwerkSessie(session)
+      } else if (event === 'TOKEN_REFRESHED') {
+        setSessie(session)
+      }
     })
 
     // Harde vangnet: na 12 sec altijd doorgaan
