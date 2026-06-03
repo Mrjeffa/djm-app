@@ -33,6 +33,8 @@ export default function App() {
   // Voorkomt dubbele verwerking van sessie (race tussen getSession + SIGNED_IN event)
   const bezig = useRef(false)
   const inReset = useRef(false)
+  // Bijhouden of login al volledig afgerond is — SIGNED_IN bij app-wisselen triggert dan geen laadscherm meer
+  const heeftSessie = useRef(false)
 
   const verwerkSessie = async (session) => {
     if (bezig.current) return
@@ -46,6 +48,7 @@ export default function App() {
     setSessie(session)
     await koppelKlant(session.user)
     setAdmin(await checkIsAdmin())
+    heeftSessie.current = true
     bezig.current = false
     setLaden(false)
   }
@@ -70,24 +73,30 @@ export default function App() {
       } else if (event === 'SIGNED_OUT') {
         bezig.current = false
         inReset.current = false
+        heeftSessie.current = false
         setSessie(null)
         setAdmin(false)
         setReset(false)
         setLaden(false)
       } else if (event === 'SIGNED_IN' && !inReset.current) {
-        await verwerkSessie(session)
+        if (heeftSessie.current) {
+          // Al ingelogd (bijv. terugkeer na schermvergrendeling) — alleen sessie bijwerken, geen laadscherm
+          setSessie(session)
+        } else {
+          await verwerkSessie(session)
+        }
       } else if (event === 'TOKEN_REFRESHED') {
         setSessie(session)
       }
     })
 
-    // Harde vangnet: na 12 sec altijd doorgaan
-    const vannet = setTimeout(() => setLaden(false), 12000)
+    // Harde vangnet: na 12 sec altijd doorgaan + bezig resetten zodat volgende auth-events niet geblokkeerd zijn
+    const vannet = setTimeout(() => { setLaden(false); bezig.current = false }, 12000)
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 
   if (laden) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0E0E0E' }}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background:'#0E0E0E' }}>
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
         <div style={{ width:32, height:32, border:'3px solid #E8520A', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
         <div style={{ color:'#666660', fontSize:13, fontFamily:'sans-serif' }}>Laden...</div>
