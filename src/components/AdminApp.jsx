@@ -567,6 +567,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   const [editSvc,setEditSvc]=useState(null);
   const [delSvcId,setDelSvcId]=useState(null);
   const [delKlant,setDelKlant]=useState(false);
+  const [toonMenu,setToonMenu]=useState(false);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -584,29 +585,46 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
         </button>
       )}
       <div style={{...s.card,marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
               <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22}}>{klant.naam}</div>
               {klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
               {klant.status==="goedgekeurd"&&<span style={{fontSize:11,background:`${T.green}20`,color:T.green,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✓ Goedgekeurd</span>}
               {klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
             </div>
-            <div style={{fontSize:13,color:T.muted,marginTop:6,lineHeight:1.8}}>
-              {klant.email} · {klant.telefoon}<br/>
-              {klant.adres}, {klant.postcode} {klant.woonplaats}
+            <div style={{fontSize:13,color:T.muted,lineHeight:2}}>
+              {(klant.adres||klant.postcode||klant.woonplaats)&&(
+                <div>{[klant.adres,klant.postcode,klant.woonplaats].filter(Boolean).join(", ")}</div>
+              )}
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {klant.email&&<span>{klant.email}</span>}
+                {klant.telefoon&&<a href={`tel:${klant.telefoon}`} style={{color:T.accent,textDecoration:"none",fontWeight:500}}>{klant.telefoon}</a>}
+              </div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"flex-start"}}>
             {klant.status!=="goedgekeurd"&&(
-              <button style={{...s.btn,background:T.green}} onClick={()=>onUpdateKlant({...klant,status:"goedgekeurd"})}>✓ Goedkeuren</button>
+              <button style={{...s.btn,background:T.green,padding:"7px 10px",fontSize:12,whiteSpace:"nowrap"}} onClick={()=>onUpdateKlant({...klant,status:"goedgekeurd"})}>✓ Goedkeuren</button>
             )}
-            {klant.status!=="afgewezen"&&(
-              <button style={{...s.btn,background:T.red}} onClick={()=>onUpdateKlant({...klant,status:"afgewezen"})}>✕ Afwijzen</button>
-            )}
-            <button style={s.btnOutline} onClick={()=>onUitnodig(klant)}>Uitnodigen</button>
             <button style={s.btn} onClick={()=>setModal("addMotor")}>+ Motor</button>
-            <button style={{...s.btnGhost,color:T.red,borderColor:T.red}} onClick={()=>setDelKlant(true)}>Verwijder klant</button>
+            <div style={{position:"relative"}}>
+              <button style={{...s.btnGhost,width:34,height:34,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,letterSpacing:0,flexShrink:0}} onClick={()=>setToonMenu(v=>!v)}>⋮</button>
+              {toonMenu&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setToonMenu(false)}/>}
+              {toonMenu&&(
+                <div style={{position:"absolute",right:0,top:38,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:170,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
+                  <button onClick={()=>{onUitnodig(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Uitnodigen</button>
+                  {klant.status!=="afgewezen"&&(
+                    <button onClick={()=>{onUpdateKlant({...klant,status:"afgewezen"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✕ Afwijzen</button>
+                  )}
+                  {klant.status==="afgewezen"&&(
+                    <button onClick={()=>{onUpdateKlant({...klant,status:"goedgekeurd"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✓ Goedkeuren</button>
+                  )}
+                  <div style={{height:1,background:T.border}}/>
+                  <button onClick={()=>{setDelKlant(true);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijder klant</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {delKlant&&(
