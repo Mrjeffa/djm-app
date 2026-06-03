@@ -585,25 +585,10 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
         </button>
       )}
       <div style={{...s.card,marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
-              <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22}}>{klant.naam}</div>
-              {klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
-              {klant.status==="goedgekeurd"&&<span style={{fontSize:11,background:`${T.green}20`,color:T.green,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✓ Goedgekeurd</span>}
-              {klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
-            </div>
-            <div style={{fontSize:13,color:T.muted,lineHeight:2}}>
-              {(klant.adres||klant.postcode||klant.woonplaats)&&(
-                <div>{[klant.adres,klant.postcode,klant.woonplaats].filter(Boolean).join(", ")}</div>
-              )}
-              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                {klant.email&&<span>{klant.email}</span>}
-                {klant.telefoon&&<a href={`tel:${klant.telefoon}`} style={{color:T.accent,textDecoration:"none",fontWeight:500}}>{klant.telefoon}</a>}
-              </div>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"flex-start"}}>
+        {/* Naam + knoppen op eigen rij zodat adres volle breedte krijgt */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+          <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,flex:1,minWidth:0,wordBreak:"break-word"}}>{klant.naam}</div>
+          <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
             {klant.status!=="goedgekeurd"&&(
               <button style={{...s.btn,background:T.green,padding:"7px 10px",fontSize:12,whiteSpace:"nowrap"}} onClick={()=>onUpdateKlant({...klant,status:"goedgekeurd"})}>✓ Goedkeuren</button>
             )}
@@ -624,6 +609,23 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
                   <button onClick={()=>{setDelKlant(true);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijder klant</button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+        {/* Status badge + adres + contact — volle breedte */}
+        <div style={{marginTop:2}}>
+          <div style={{marginBottom:6}}>
+            {klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
+            {klant.status==="goedgekeurd"&&<span style={{fontSize:11,background:`${T.green}20`,color:T.green,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✓ Goedgekeurd</span>}
+            {klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
+          </div>
+          <div style={{fontSize:13,color:T.muted,lineHeight:1.8}}>
+            {(klant.adres||klant.postcode||klant.woonplaats)&&(
+              <div>{klant.adres}{klant.postcode||klant.woonplaats ? `, ${[klant.postcode,klant.woonplaats].filter(Boolean).join(" ")}` : ""}</div>
+            )}
+            <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:2,alignItems:"center"}}>
+              {klant.email&&<span>{klant.email}</span>}
+              {klant.telefoon&&<a href={`tel:${klant.telefoon}`} style={{color:T.accent,textDecoration:"none",fontWeight:500,whiteSpace:"nowrap"}}>{klant.telefoon}</a>}
             </div>
           </div>
         </div>
