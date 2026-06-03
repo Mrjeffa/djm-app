@@ -23,7 +23,7 @@ export const stuurMagicLink = (email) =>
 
 export const stuurUitnodiging = (email) =>
   supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/#reset`
+    redirectTo: window.location.origin
   })
 
 export const uitloggen = () => supabase.auth.signOut()

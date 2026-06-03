@@ -1,14 +1,5 @@
 import { useState, useEffect } from "react";
 
-function useFonts() {
-  useEffect(() => {
-    const el = document.createElement("link");
-    el.rel = "stylesheet";
-    el.href = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600&display=swap";
-    document.head.appendChild(el);
-  }, []);
-}
-
 const T = {
   bg: "#080808", surf: "#111111", surf2: "#1A1A1A", border: "#252525",
   accent: "#E8520A", text: "#EEEBE6", muted: "#666660",
@@ -66,42 +57,6 @@ const getSlots = (afspraken, datum, duurUur) => {
   let t=cur; while(t+dur<=WEND){slots.push(minToTime(t));t+=30;}
   return slots;
 };
-
-// ── Mock Data ────────────────────────────────────────────────────────────────
-const INIT_KLANTEN = [
-  { id:1, naam:"Pieter de Vries", email:"pieter@mail.nl", telefoon:"06-12345678", adres:"Hoofdstraat 12", postcode:"4691AA", woonplaats:"Tholen",
-    motoren:[
-      { id:1, kenteken:"TH-123-B", merk:"Honda", model:"CB500F", bouwjaar:2019, km:18500, aankoopdatum:"2024-03-15", service:[
-        {id:1,datum:"2024-06-10",omschrijving:"Olie vervangen, luchtfilter gereinigd"},
-        {id:2,datum:"2025-01-15",omschrijving:"APK + ketting gespannen"},
-      ]},
-      { id:2, kenteken:"TH-456-C", merk:"Yamaha", model:"MT-07", bouwjaar:2021, km:8200, aankoopdatum:"2025-02-20", service:[] },
-    ]},
-  { id:2, naam:"Karin Visser", email:"karin@gmail.com", telefoon:"06-87654321", adres:"Molenweg 5", postcode:"4611BZ", woonplaats:"Bergen op Zoom",
-    motoren:[
-      { id:3, kenteken:"BZ-789-D", merk:"Kawasaki", model:"Z650", bouwjaar:2022, km:5100, aankoopdatum:"2025-01-08", service:[] },
-    ]},
-  { id:3, naam:"Bas Mooij", email:"bas@hotmail.com", telefoon:"06-55511222", adres:"Zeestraat 33", postcode:"4301KA", woonplaats:"Zierikzee",
-    motoren:[
-      { id:4, kenteken:"ZZ-001-E", merk:"BMW", model:"R1250GS", bouwjaar:2020, km:32000, aankoopdatum:"2024-11-22", service:[
-        {id:3,datum:"2025-03-01",omschrijving:"Grote beurt: remmen, vloeistoffen, banden check"},
-      ]},
-    ]},
-];
-
-const INIT_SHOWROOM = [
-  {id:101,kenteken:"GO-234-F",merk:"Triumph",model:"Street Triple",bouwjaar:2021,km:12000,prijs:8950,datum_in:"2025-05-01"},
-  {id:102,kenteken:"ZL-567-G",merk:"Ducati",model:"Monster 797",bouwjaar:2019,km:21000,prijs:7500,datum_in:"2025-04-15"},
-  {id:103,kenteken:"NB-890-H",merk:"Honda",model:"CBR650R",bouwjaar:2023,km:3200,prijs:11500,datum_in:"2025-05-20"},
-];
-
-const addDays = (n) => { const d = new Date(); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
-const INIT_AFSPRAKEN = [
-  {id:1,klant:"Pieter de Vries",datum:TODAY,tijd:"09:00",duur:2,omschrijving:"Olie vervangen Honda CB500F",motor:"TH-123-B"},
-  {id:2,klant:"Karin Visser",datum:TODAY,tijd:"13:00",duur:4,omschrijving:"Grote beurt Kawasaki Z650",motor:"BZ-789-D"},
-  {id:3,klant:"Bas Mooij",datum:addDays(1),tijd:"10:00",duur:1,omschrijving:"Bandencheck BMW GS",motor:"ZZ-001-E"},
-  {id:4,klant:"Nieuw klant",datum:addDays(2),tijd:"14:00",duur:3,omschrijving:"APK + check",motor:"-"},
-];
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
 function Modal({title,onClose,children}){
@@ -508,16 +463,19 @@ function AfspraakModal({afspraken,klanten,onSave,onClose}){
 // ── Pages ────────────────────────────────────────────────────────────────────
 function Dashboard({klanten,showroom,afspraken,onNav}){
   const totalMotoren=klanten.reduce((a,k)=>a+(k.motoren||[]).length,0);
-  const vandaag=afspraken.filter(a=>a.datum===TODAY);
-  const komend=afspraken.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
+  const aanvragen=afspraken.filter(a=>a.status==="aangevraagd");
+  const gepland=afspraken.filter(a=>a.status!=="aangevraagd");
+  const vandaag=gepland.filter(a=>a.datum===TODAY);
+  const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
 
   return(
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
-        {[{num:klanten.length,lbl:"Klanten"},{num:totalMotoren,lbl:"Motoren"},{num:showroom.length,lbl:"Voorraad"},{num:vandaag.length,lbl:"Afspraken vandaag"}].map((x,i)=>(
+        {[{num:klanten.length,lbl:"Klanten"},{num:totalMotoren,lbl:"Motoren"},{num:showroom.length,lbl:"Voorraad"},{num:vandaag.length,lbl:"Afspraken vandaag",sub:aanvragen.length>0?`+ ${aanvragen.length} aanvraag`:null}].map((x,i)=>(
           <div key={i} style={s.statCard}>
             <div style={s.statNum}>{x.num}</div>
             <div style={s.statLabel}>{x.lbl}</div>
+            {x.sub&&<div style={{fontSize:11,color:T.yellow,marginTop:4,fontWeight:600}}>{x.sub}</div>}
           </div>
         ))}
       </div>

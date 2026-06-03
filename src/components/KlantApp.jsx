@@ -1,62 +1,11 @@
 import { useState, useEffect } from "react";
 
-function useFonts() {
-  useEffect(() => {
-    const el = document.createElement("link");
-    el.rel = "stylesheet";
-    el.href = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600&display=swap";
-    document.head.appendChild(el);
-  }, []);
-}
-
 // ── Theme ──────────────────────────────────────────────────────────────────
 const T = {
   bg: "#0E0E0E", surf: "#161616", surf2: "#1E1E1E", surf3: "#242424",
   border: "#2A2A2A", accent: "#E8520A", accentSoft: "#E8520A22",
   text: "#F0ECE6", muted: "#666660", green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
 };
-
-// ── Mock klantdata ─────────────────────────────────────────────────────────
-const KLANT = {
-  naam: "Pieter de Vries",
-  email: "pieter@mail.nl",
-};
-
-const INIT_MOTOREN = [
-  {
-    id: 1, kenteken: "TH-123-B", merk: "Honda", model: "CB500F",
-    bouwjaar: 2019, aankoopdatum: "2024-03-15",
-    kmHistory: [
-      { datum: "2024-03-15", km: 12000 },
-      { datum: "2024-07-01", km: 14500 },
-      { datum: "2024-11-15", km: 16800 },
-      { datum: "2025-03-10", km: 18500 },
-      { datum: "2025-09-20", km: 21200 },
-      { datum: "2026-02-14", km: 23800 },
-    ],
-    service: [
-      { id: 1, datum: "2024-06-10", omschrijving: "Olie vervangen, luchtfilter gereinigd", km: 14200 },
-      { id: 2, datum: "2025-01-15", omschrijving: "APK + ketting gespannen, remvloeistof bijgevuld", km: 17100 },
-      { id: 3, datum: "2025-09-22", omschrijving: "Grote beurt: banden, remmen, vloeistoffen", km: 21300 },
-    ],
-    intervalKm: 5000,
-    lastServiceKm: 21300,
-  },
-  {
-    id: 2, kenteken: "TH-456-C", merk: "Yamaha", model: "MT-07",
-    bouwjaar: 2021, aankoopdatum: "2025-02-20",
-    kmHistory: [
-      { datum: "2025-02-20", km: 6800 },
-      { datum: "2025-08-10", km: 8200 },
-    ],
-    service: [],
-    intervalKm: 6000,
-    lastServiceKm: 0,
-  },
-];
-
-// Afspraken die al bezet zijn (gedeeld met admin)
-const BEZETTE_DAGEN = ["2026-05-28", "2026-05-29", "2026-05-30"];
 
 // ── Utils ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
@@ -131,8 +80,10 @@ function MijnMotor({ motoren, onMotorUpdate }) {
   if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
-  const kmSindsBeurt = motor.lastServiceKm ? huidigKm - motor.lastServiceKm : null;
-  const intervalPct = kmSindsBeurt !== null ? Math.min(100, Math.round(kmSindsBeurt / motor.intervalKm * 100)) : null;
+  const lastServiceKm = motor.last_service_km || 0;
+  const intervalKm = motor.interval_km || 5000;
+  const kmSindsBeurt = (lastServiceKm > 0 && motor.service?.length > 0) ? huidigKm - lastServiceKm : null;
+  const intervalPct = kmSindsBeurt !== null ? Math.min(100, Math.round(kmSindsBeurt / intervalKm * 100)) : null;
   const statusColor = intervalPct === null ? T.muted : intervalPct >= 90 ? T.red : intervalPct >= 70 ? T.yellow : T.green;
 
   return (
@@ -151,7 +102,7 @@ function MijnMotor({ motoren, onMotorUpdate }) {
         <div style={{ display: "flex", gap: 20, marginTop: 14 }}>
           {[
             { lbl: "Bouwjaar", val: motor.bouwjaar },
-            { lbl: "In bezit sinds", val: motor.aankoopdatum.substring(0, 4) },
+            { lbl: "In bezit sinds", val: motor.aankoopdatum?.substring(0, 4) || "—" },
             { lbl: "Huidige stand", val: `${huidigKm.toLocaleString()} km` },
           ].map((x, i) => (
             <div key={i}>
@@ -178,7 +129,7 @@ function MijnMotor({ motoren, onMotorUpdate }) {
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 12, color: T.muted }}>Interval</div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>per {motor.intervalKm.toLocaleString()} km</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>per {intervalKm.toLocaleString()} km</div>
               </div>
             </div>
             {/* Progress bar */}
@@ -186,7 +137,7 @@ function MijnMotor({ motoren, onMotorUpdate }) {
               <div style={{ width: `${intervalPct}%`, height: "100%", background: statusColor, borderRadius: 4, transition: "width 0.4s" }} />
             </div>
             <div style={{ fontSize: 12, color: statusColor, marginTop: 8, fontWeight: 600 }}>
-              {intervalPct >= 100 ? "⚠ Onderhoud nodig!" : intervalPct >= 70 ? `Bijna tijd — nog ${(motor.intervalKm - kmSindsBeurt).toLocaleString()} km` : `Goed — nog ${(motor.intervalKm - kmSindsBeurt).toLocaleString()} km`}
+              {intervalPct >= 100 ? "⚠ Onderhoud nodig!" : intervalPct >= 70 ? `Bijna tijd — nog ${(intervalKm - kmSindsBeurt).toLocaleString()} km` : `Goed — nog ${(intervalKm - kmSindsBeurt).toLocaleString()} km`}
             </div>
           </>
         )}
@@ -567,7 +518,8 @@ export default function KlantApp({ userId }) {
 
   const slaKmOp = async (motorId, km) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
+    const { error } = await sb.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
+    if (error) { console.error("Km opslaan mislukt:", error); return; }
     setMotoren(prev => prev.map(m => m.id === motorId
       ? { ...m, kmHistory: [...m.kmHistory, { datum: TODAY, km }] }
       : m
@@ -662,7 +614,7 @@ export default function KlantApp({ userId }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{klant.naam.split(" ")[0]}</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{klant.naam?.split(" ")[0] || klant.naam}</div>
             <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
           </div>
           <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
