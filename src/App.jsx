@@ -5,19 +5,28 @@ import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
-const tijdelijk = (fn, fallback) =>
+// Gecachte admin-hint: laadscherm voelt sneller aan bij refresh/wakeup
+const ADMIN_CACHE = 'djm_admin_v1'
+const getCachedAdmin = () => { try { return sessionStorage.getItem(ADMIN_CACHE) === '1' } catch (_) { return false } }
+const setCachedAdmin = (v) => { try { sessionStorage.setItem(ADMIN_CACHE, v ? '1' : '0') } catch (_) {} }
+const clearCachedAdmin = () => { try { sessionStorage.removeItem(ADMIN_CACHE) } catch (_) {} }
+
+// Generiek timeout-wrapper
+const tijdelijk = (fn, fallback, ms = 8000) =>
   Promise.race([
     fn().catch(() => fallback),
-    new Promise(r => setTimeout(() => r(fallback), 5000))
+    new Promise(r => setTimeout(() => r(fallback), ms))
   ])
 
-const checkIsAdmin = () =>
-  tijdelijk(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return false
-    const { data } = await supabase.from('admins').select('id').eq('id', user.id).single()
-    return !!data
-  }, false)
+// Admin check: alleen DB query — geen extra getUser() round-trip nodig
+// Geeft null terug bij timeout (onzeker), false bij zeker geen admin
+const checkIsAdmin = (userId) =>
+  Promise.race([
+    supabase.from('admins').select('id').eq('id', userId).single()
+      .then(({ data }) => { const r = !!data; setCachedAdmin(r); return r })
+      .catch(() => false),
+    new Promise(r => setTimeout(() => r(null), 8000))
+  ])
 
 const koppelKlant = (user) =>
   tijdelijk(async () => {
@@ -27,14 +36,20 @@ const koppelKlant = (user) =>
 
 export default function App() {
   const [sessie, setSessie] = useState(null)
-  const [admin, setAdmin] = useState(false)
+  // Begin met gecachte admin-waarde zodat snelle refresh geen laadscherm toont
+  const [admin, setAdmin] = useState(getCachedAdmin)
   const [laden, setLaden] = useState(true)
   const [reset, setReset] = useState(false)
-  // Voorkomt dubbele verwerking van sessie (race tussen getSession + SIGNED_IN event)
   const bezig = useRef(false)
   const inReset = useRef(false)
-  // Bijhouden of login al volledig afgerond is — SIGNED_IN bij app-wisselen triggert dan geen laadscherm meer
   const heeftSessie = useRef(false)
+
+  // Verwerk admin-resultaat: null (timeout) = onzeker, behoud huidige waarde
+  const verwerkAdmin = (isAdmin) => {
+    if (isAdmin === null) return
+    setAdmin(isAdmin)
+    setCachedAdmin(isAdmin)
+  }
 
   const verwerkSessie = async (session) => {
     if (bezig.current) return
@@ -47,23 +62,20 @@ export default function App() {
     setLaden(true)
     setSessie(session)
     await koppelKlant(session.user)
-    setAdmin(await checkIsAdmin())
+    verwerkAdmin(await checkIsAdmin(session.user.id))
     heeftSessie.current = true
     bezig.current = false
     setLaden(false)
   }
 
   useEffect(() => {
-    // Controleer of dit een wachtwoord-reset link is
     const isRecovery = window.location.hash.includes('type=recovery')
 
     if (!isRecovery) {
-      // Normale flow: haal bestaande sessie op
-      tijdelijk(() => supabase.auth.getSession(), { data: { session: null } })
+      tijdelijk(() => supabase.auth.getSession(), { data: { session: null } }, 8000)
         .then(r => verwerkSessie(r?.data?.session || null))
         .catch(() => setLaden(false))
     }
-    // Bij recovery: wacht op PASSWORD_RECOVERY event (Supabase verwerkt de URL hash async)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -78,10 +90,13 @@ export default function App() {
         setAdmin(false)
         setReset(false)
         setLaden(false)
+        clearCachedAdmin()
       } else if (event === 'SIGNED_IN' && !inReset.current) {
         if (heeftSessie.current) {
-          // Al ingelogd (bijv. terugkeer na schermvergrendeling) — alleen sessie bijwerken, geen laadscherm
+          // Stille update bij app-wisselen of schermvergrendeling — geen laadscherm
           setSessie(session)
+          // Herbevestig admin op achtergrond; null-timeout doet niets
+          checkIsAdmin(session.user.id).then(verwerkAdmin).catch(() => {})
         } else {
           await verwerkSessie(session)
         }
@@ -90,7 +105,7 @@ export default function App() {
       }
     })
 
-    // Harde vangnet: na 12 sec altijd doorgaan + bezig resetten zodat volgende auth-events niet geblokkeerd zijn
+    // Vangnet: na 12s altijd doorgaan + reset bezig zodat events niet geblokkeerd raken
     const vannet = setTimeout(() => { setLaden(false); bezig.current = false }, 12000)
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
@@ -99,7 +114,7 @@ export default function App() {
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background:'#0E0E0E' }}>
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
         <div style={{ width:32, height:32, border:'3px solid #E8520A', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-        <div style={{ color:'#666660', fontSize:13, fontFamily:'sans-serif' }}>Laden...</div>
+        <div style={{ color:'#666660', fontSize:13, fontFamily:'Barlow, sans-serif' }}>Laden...</div>
       </div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
