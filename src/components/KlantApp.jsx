@@ -447,7 +447,7 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
 }
 
 // ── Scherm: Instellingen ───────────────────────────────────────────────────
-function Instellingen({ klant, motoren, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord }) {
+function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord }) {
   const [profiel, setProfiel] = useState({
     naam: klant.naam || "", telefoon: klant.telefoon || "",
     adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
@@ -595,8 +595,11 @@ function Instellingen({ klant, motoren, onUpdateKlant, onVoegMotorToe, onVerwijd
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{m.merk} {m.model}</div>
                 <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{m.kenteken}{m.bouwjaar ? ` · ${m.bouwjaar}` : ""}</div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={css.badge(T.accent)}>{m.kenteken}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => onKiesHoofd(m.id)} title={m.id === hoofdMotorId ? "Hoofdvoertuig" : "Instellen als hoofdvoertuig"}
+                  style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", padding: "4px 2px", lineHeight: 1, color: m.id === hoofdMotorId ? T.accent : T.muted, opacity: m.id === hoofdMotorId ? 1 : 0.5 }}>
+                  {m.id === hoofdMotorId ? "★" : "☆"}
+                </button>
                 <button onClick={() => { setVerwijderBevestigId(verwijderBevestigId === m.id ? null : m.id); setVerwijderFout(null); }}
                   style={{ background: "none", border: "none", color: verwijderBevestigId === m.id ? T.red : T.muted, fontSize: 16, cursor: "pointer", padding: "4px 2px", lineHeight: 1 }}>🗑</button>
               </div>
@@ -704,6 +707,7 @@ export default function KlantApp({ userId }) {
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
   const [selMotorId, setSelMotorId] = useState(() => sessionStorage.getItem("djm_sel_motor"));
+  const [hoofdMotorId, setHoofdMotorId] = useState(() => localStorage.getItem("djm_hoofd_motor"));
   const [bezetteDagen, setBezetteDagen] = useState([]);
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
@@ -711,6 +715,11 @@ export default function KlantApp({ userId }) {
   const [laden, setLaden] = useState(true);
 
   const kiesMotor = (id) => { sessionStorage.setItem("djm_sel_motor", id); setSelMotorId(id); };
+  const kiesHoofdMotor = (id) => { localStorage.setItem("djm_hoofd_motor", id); setHoofdMotorId(id); kiesMotor(id); };
+
+  const gesorteerdMotoren = hoofdMotorId
+    ? [...motoren].sort((a, b) => a.id === hoofdMotorId ? -1 : b.id === hoofdMotorId ? 1 : 0)
+    : motoren;
 
   useEffect(() => {
     const timer = setTimeout(() => setLaden(false), 12000);
@@ -765,8 +774,9 @@ export default function KlantApp({ userId }) {
             kmHistory: (kmData||[]).filter(k => k.motor_id === m.id).map(k => ({ datum: k.datum, km: k.km })),
             service: (svcData||[]).filter(s => s.motor_id === m.id),
           })));
-          const storedId = sessionStorage.getItem("djm_sel_motor");
-          setSelMotorId(motorIds.includes(storedId) ? storedId : motorIds[0]);
+          const storedSel = sessionStorage.getItem("djm_sel_motor");
+          const storedHoofd = localStorage.getItem("djm_hoofd_motor");
+          setSelMotorId(motorIds.includes(storedSel) ? storedSel : motorIds.includes(storedHoofd) ? storedHoofd : motorIds[0]);
         } else {
           setMotoren([]);
         }
@@ -934,14 +944,16 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
-        {tab === "service" && <Servicegeschiedenis motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
-        {tab === "km" && <KmStand motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp} />}
-        {tab === "afspraak" && <Afspraak motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
+        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
+        {tab === "service" && <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
+        {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp} />}
+        {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
         {tab === "instellingen" && (
           <Instellingen
-            klant={klant} motoren={motoren}
+            klant={klant} motoren={gesorteerdMotoren}
+            hoofdMotorId={hoofdMotorId}
+            onKiesHoofd={kiesHoofdMotor}
             onUpdateKlant={updateKlantProfiel}
             onVoegMotorToe={voegMotorToeVanKlant}
             onVerwijderMotor={verwijderMotor}
