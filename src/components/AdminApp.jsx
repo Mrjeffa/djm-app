@@ -344,10 +344,10 @@ function MotorModal({onSave,onClose}){
   );
 }
 
-function ServiceModal({onSave,onClose}){
-  const [f,setF]=useState({datum:TODAY,omschrijving:"",km:""});
+function ServiceModal({onSave,onClose,initial}){
+  const [f,setF]=useState(initial?{datum:initial.datum,omschrijving:initial.omschrijving,km:initial.km||""}:{datum:TODAY,omschrijving:"",km:""});
   return(
-    <Modal title="SERVICE TOEVOEGEN" onClose={onClose}>
+    <Modal title={initial?"SERVICE BEWERKEN":"SERVICE TOEVOEGEN"} onClose={onClose}>
       <Grid2>
         <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value}))}/></Field>
         <Field label="Kilometerstand"><input style={s.input} type="number" value={f.km} onChange={e=>setF(p=>({...p,km:e.target.value}))} placeholder="bijv. 35000"/></Field>
@@ -493,6 +493,13 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
   const vandaag=gepland.filter(a=>a.datum===TODAY);
   const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
 
+  const getMotorInfo = (motorId) => {
+    const motor = klanten.flatMap(k=>k.motoren||[]).find(m=>m.id===motorId);
+    if(!motor) return {label:null,km:null};
+    const lastKm = (motor.kmHistory||[]).slice().sort((x,y)=>x.datum.localeCompare(y.datum)).pop()?.km||null;
+    return {label:[motor.merk,motor.model].filter(Boolean).join(" ")||null, km:lastKm};
+  };
+
   return(
     <div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:22}}>
@@ -509,44 +516,56 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
           <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:1,marginBottom:14,textTransform:"uppercase",color:T.text}}>
             Vandaag · {fmtDate(TODAY)}
           </div>
-          {vandaag.length===0?<div style={{color:T.muted,fontSize:13}}>Geen afspraken vandaag</div>:vandaag.map(a=>(
-            <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
-              <div style={{background:T.accent,color:"#fff",padding:"3px 8px",borderRadius:3,fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd}</div>
-              <div>
-                <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
-                <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving} · {a.duur}u</div>
+          {vandaag.length===0?<div style={{color:T.muted,fontSize:13}}>Geen afspraken vandaag</div>:vandaag.map(a=>{
+            const {label,km}=getMotorInfo(a.motor_id);
+            return(
+              <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{background:T.accent,color:"#fff",padding:"3px 8px",borderRadius:3,fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
+                  {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString()} km`:""}</div>}
+                  <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving} · {a.duur}u</div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div style={s.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:15,letterSpacing:1,textTransform:"uppercase"}}>Komende Afspraken</div>
             <button style={s.btn} onClick={()=>onNav("agenda")}>+ Nieuw</button>
           </div>
-          {komend.map(a=>(
-            <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
-                <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving}</div>
+          {komend.map(a=>{
+            const {label,km}=getMotorInfo(a.motor_id);
+            return(
+              <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
+                    {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString()} km`:""}</div>}
+                    <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
+                    <div style={{fontSize:12,color:T.accent}}>{fmtDate(a.datum)}</div>
+                    <div style={{fontSize:12,color:T.muted}}>{a.tijd} · {a.duur}u</div>
+                  </div>
+                </div>
               </div>
-              <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
-                <div style={{fontSize:12,color:T.accent}}>{fmtDate(a.datum)}</div>
-                <div style={{fontSize:12,color:T.muted}}>{a.tijd} · {a.duur}u</div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
   const [intervalVal,setIntervalVal]=useState("");
+  const [editSvc,setEditSvc]=useState(null);
+  const [delSvcId,setDelSvcId]=useState(null);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -629,12 +648,26 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorI
             <div style={{fontSize:12,color:T.muted,padding:"6px 0"}}>Nog geen servicemeldingen</div>
           ):(
             (motor.service||[]).slice().reverse().map(sv=>(
-              <div key={sv.id} style={{display:"flex",gap:14,padding:"8px 0",borderTop:`1px solid ${T.border}`}}>
-                <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13}}>{sv.omschrijving}</div>
-                  {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>bij {sv.km.toLocaleString()} km</div>}
-                </div>
+              <div key={sv.id} style={{padding:"8px 0",borderTop:`1px solid ${T.border}`}}>
+                {delSvcId===sv.id?(
+                  <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:`${T.red}18`,borderRadius:4}}>
+                    <span style={{fontSize:12,flex:1,color:T.text}}>Servicebeurt verwijderen?</span>
+                    <button onClick={()=>{onDeleteService(klant.id,motor.id,sv.id);setDelSvcId(null);}} style={{background:T.red,color:"#fff",border:"none",borderRadius:3,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Ja, verwijder</button>
+                    <button onClick={()=>setDelSvcId(null)} style={{background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:3,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Annuleer</button>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                    <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13}}>{sv.omschrijving}</div>
+                      {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>bij {sv.km.toLocaleString()} km</div>}
+                    </div>
+                    <div style={{display:"flex",gap:4,flexShrink:0}}>
+                      <button onClick={()=>setEditSvc({...sv,motorId:motor.id})} style={{background:"none",border:"none",color:T.accent,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>✏</button>
+                      <button onClick={()=>setDelSvcId(sv.id)} style={{background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>🗑</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -642,11 +675,12 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorI
       ))}
       {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)}/>}
       {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
+      {editSvc&&<ServiceModal initial={editSvc} onSave={f=>{ onUpdateService(klant.id,editSvc.motorId,editSvc.id,f); setEditSvc(null); }} onClose={()=>setEditSvc(null)}/>}
     </div>
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorInterval,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onUpdateMotorInterval,voorraad=[]}){
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("alle");
@@ -707,6 +741,8 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onUpdateKlant={onUpdateKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
+            onUpdateService={onUpdateService}
+            onDeleteService={onDeleteService}
             onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
@@ -730,6 +766,8 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onUpdateKlant={onUpdateKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
+            onUpdateService={onUpdateService}
+            onDeleteService={onDeleteService}
             onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
@@ -1147,23 +1185,7 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
     setPeriodeVan(""); setPeriodeTot("");
   };
 
-  // Gesorteerde gesloten periodes weergeven als ranges
   const geslotenGesorteeerd = [...geslotenDagen].sort();
-  const periodes = [];
-  if(geslotenGesorteeerd.length > 0) {
-    let start = geslotenGesorteeerd[0], prev = geslotenGesorteeerd[0];
-    for(let i=1; i<=geslotenGesorteeerd.length; i++) {
-      const cur = geslotenGesorteeerd[i];
-      const prevDate = new Date(prev);
-      const curDate = cur ? new Date(cur) : null;
-      const isAaneengesloten = curDate && (curDate - prevDate === 86400000);
-      if(!isAaneengesloten) {
-        periodes.push({van:start, tot:prev});
-        start = cur; 
-      }
-      prev = cur;
-    }
-  }
 
   const slaOpmOp = async () => {
     await onSaveOpmerking(opmTekst);
@@ -1228,18 +1250,12 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
         <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Vakantie, feestdagen, en andere gesloten dagen. Klanten kunnen op deze dagen geen afspraak plannen.</div>
 
         {/* Bestaande periodes */}
-        {periodes.length===0 ? (
+        {geslotenGesorteeerd.length===0 ? (
           <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Nog geen periodes ingesteld.</div>
-        ) : periodes.map((p,i)=>(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-            <div style={{fontSize:13}}>
-              {p.van===p.tot ? p.van : `${p.van} t/m ${p.tot}`}
-            </div>
-            <button onClick={()=>{
-              const cur = new Date(p.van);
-              const end = new Date(p.tot);
-              while(cur <= end) { onToggleGesloten(cur.toISOString().split("T")[0], false); cur.setDate(cur.getDate()+1); }
-            }} style={{background:"none",border:`1px solid ${T.red}`,color:T.red,borderRadius:4,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+        ) : geslotenGesorteeerd.map((d,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style={{fontSize:13}}>{fmtDate(d)} — {new Date(d+"T00:00:00").toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long"})}</div>
+            <button onClick={()=>onToggleGesloten(d, false)} style={{background:"none",border:`1px solid ${T.red}`,color:T.red,borderRadius:4,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",flexShrink:0,marginLeft:8}}>
               Verwijder
             </button>
           </div>
@@ -1283,7 +1299,7 @@ export default function AdminApp(){
         const [k, v, a] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false}),
-          sb.from("afspraken").select("*, klanten(naam)").order("datum"),
+          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
         ]);
 
         const klantIds = (k.data||[]).map(x=>x.id);
@@ -1310,7 +1326,7 @@ export default function AdminApp(){
 
         setKlanten(verrijkt);
         setShowroom(v.data||[]);
-        setAfspraken((a.data||[]).map(x=>({...x,klant:x.klanten?.naam||"Onbekend"})));
+        setAfspraken((a.data||[]).map(x=>({...x,klant:x.klanten?.naam||"Onbekend",motorLabel:x.motoren?[x.motoren.merk,x.motoren.model].filter(Boolean).join(" ")||null:null})));
 
         // Instellingen laden
         const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single();
@@ -1405,6 +1421,24 @@ export default function AdminApp(){
     setKlanten(p=>p.map(k=>({...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,interval_km:intervalKm}:m)})));
   };
 
+  const updateService = async (klantId, motorId, svcId, f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const kmVal = f.km ? parseInt(f.km) : null;
+    await sb.from("service_beurten").update({datum:f.datum,omschrijving:f.omschrijving,km:kmVal}).eq("id",svcId);
+    if(kmVal) await sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId);
+    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{
+      ...m,
+      service:m.service.map(sv=>sv.id===svcId?{...sv,datum:f.datum,omschrijving:f.omschrijving,km:kmVal}:sv),
+      last_service_km:kmVal||m.last_service_km
+    }:m)}:k));
+  };
+
+  const deleteService = async (klantId, motorId, svcId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("service_beurten").delete().eq("id",svcId);
+    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,service:m.service.filter(sv=>sv.id!==svcId)}:m)}:k));
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
@@ -1488,15 +1522,15 @@ export default function AdminApp(){
     import("../lib/supabase.js").then(({ supabase: sb }) => {
       sub = sb.channel("admin-afspraken")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken" }, ({ new: n }) => {
-          sb.from("afspraken").select("*, klanten(naam)").eq("id", n.id).single()
+          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
             .then(({ data }) => {
-              if(data) setAfspraken(p => [...p, { ...data, klant: data.klanten?.naam || "Onbekend" }]);
+              if(data) setAfspraken(p => [...p, { ...data, klant: data.klanten?.naam || "Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null }]);
             });
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken" }, ({ new: n }) => {
-          sb.from("afspraken").select("*, klanten(naam)").eq("id", n.id).single()
+          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
             .then(({ data }) => {
-              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.klanten?.naam || "Onbekend" } : a));
+              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.klanten?.naam || "Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null } : a));
             });
         })
         .on("postgres_changes", { event: "DELETE", schema: "public", table: "afspraken" }, ({ old: o }) => {
@@ -1526,7 +1560,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
