@@ -37,15 +37,13 @@ const getBeschikbareDagen = (bezet = []) => {
 // ── Shared UI ──────────────────────────────────────────────────────────────
 const css = {
   app: { maxWidth: 430, margin: "0 auto", minHeight: "100dvh", background: T.bg, fontFamily: "Barlow, sans-serif", color: T.text, display: "flex", flexDirection: "column", position: "relative" },
-  topBar: { padding: "18px 20px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
+  topBar: { padding: "14px 16px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
   logoWrap: { display: "flex", flexDirection: "column" },
   logoTop: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 2, color: T.text, lineHeight: 1 },
   logoSub: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 10, letterSpacing: 3, color: T.accent, marginTop: 2 },
   scroll: { flex: 1, overflowY: "auto", padding: "20px 20px 90px" },
   bottomNav: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: T.surf, borderTop: `1px solid ${T.border}`, display: "flex", zIndex: 50 },
   navBtn: (a) => ({ flex: 1, padding: "10px 4px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer", background: "none", border: "none", color: a ? T.accent : T.muted, fontFamily: "Barlow, sans-serif" }),
-  navIcon: { fontSize: 20 },
-  navLabel: (a) => ({ fontSize: 10, letterSpacing: 0.5, fontWeight: a ? 600 : 400 }),
   card: { background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 12 },
   cardAccent: { background: T.surf, border: `1px solid ${T.accent}40`, borderRadius: 10, padding: 16, marginBottom: 12 },
   sectionTitle: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 2, color: T.muted, textTransform: "uppercase", marginBottom: 12 },
@@ -72,7 +70,7 @@ function MotorSelector({ motoren, selected, onSelect }) {
 }
 
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
-function MijnMotor({ motoren, onMotorUpdate }) {
+function MijnMotor({ motoren }) {
   const [selId, setSelId] = useState(motoren[0]?.id);
   const motor = motoren.find(m => m.id === selId) || motoren[0];
   if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
@@ -98,7 +96,7 @@ function MijnMotor({ motoren, onMotorUpdate }) {
         </div>
         <div style={{ display: "flex", gap: 20, marginTop: 14 }}>
           {[
-            { lbl: "Bouwjaar", val: motor.bouwjaar },
+            { lbl: "Bouwjaar", val: motor.bouwjaar || "—" },
             { lbl: "In bezit sinds", val: motor.aankoopdatum?.substring(0, 4) || "—" },
             { lbl: "Huidige stand", val: `${huidigKm.toLocaleString()} km` },
           ].map((x, i) => (
@@ -311,13 +309,7 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
                 </div>
                 <div style={{ fontSize: 14, color: d.bezet ? T.muted : T.text }}>{fmtDatum(d.datum)}</div>
               </div>
-              {d.bezet ? (
-                <span style={css.badge(T.muted)}>Vol</span>
-              ) : selDatum === d.datum ? (
-                <span style={css.badge(T.accent)}>✓</span>
-              ) : (
-                <span style={{ fontSize: 12, color: T.muted }}>Vrij</span>
-              )}
+              {d.bezet ? <span style={css.badge(T.muted)}>Vol</span> : selDatum === d.datum ? <span style={css.badge(T.accent)}>✓</span> : <span style={{ fontSize: 12, color: T.muted }}>Vrij</span>}
             </button>
           ))}
         </div>
@@ -386,16 +378,9 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
             {week.dagen.map(d => (
               <div key={d.dag} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                 <div style={{ fontSize: 10, color: T.muted, letterSpacing: 0.5, textTransform: "uppercase" }}>{d.dag}</div>
-                <div style={{
-                  width: "100%", borderRadius: 6, padding: "7px 4px",
-                  background: d.isVandaag ? T.accentSoft : !d.tijd ? T.surf2 : T.surf3,
-                  border: `1px solid ${d.isVandaag ? T.accent : T.border}`,
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 2
-                }}>
+                <div style={{ width: "100%", borderRadius: 6, padding: "7px 4px", background: d.isVandaag ? T.accentSoft : !d.tijd ? T.surf2 : T.surf3, border: `1px solid ${d.isVandaag ? T.accent : T.border}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   <div style={{ fontSize: 13, fontWeight: d.isVandaag ? 700 : 500, color: d.isVandaag ? T.accent : T.text }}>{d.datum}</div>
-                  <div style={{ fontSize: 9, color: !d.tijd ? T.muted : T.green, fontWeight: 600, letterSpacing: 0.3 }}>
-                    {d.tijd || "—"}
-                  </div>
+                  <div style={{ fontSize: 9, color: !d.tijd ? T.muted : T.green, fontWeight: 600, letterSpacing: 0.3 }}>{d.tijd || "—"}</div>
                 </div>
               </div>
             ))}
@@ -418,15 +403,11 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
           ⚠ {opmerking}
         </div>
       ) : null}
-
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}10)`, border: `1px solid ${T.accent}30`, marginBottom: 20 }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>DE JONGE</div>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 12, letterSpacing: 3, color: T.accent, marginTop: 2 }}>MOTOREN</div>
-        <div style={{ fontSize: 13, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-          Motorspecialist · Tholen
-        </div>
+        <div style={{ fontSize: 13, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Motorspecialist · Tholen</div>
       </div>
-
       {[
         { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
         { icon: "💬", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
@@ -434,9 +415,7 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
       ].map((c, i) => (
         <a key={i} href={c.href}
           style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px", background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, textDecoration: "none", color: T.text }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${c.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-            {c.icon}
-          </div>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${c.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{c.icon}</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: c.color }}>{c.label}</div>
             <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{c.sub}</div>
@@ -444,20 +423,16 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
           <div style={{ marginLeft: "auto", color: T.muted, fontSize: 16 }}>→</div>
         </a>
       ))}
-
       <WeekKalender openingstijden={openingstijden} geslotenDagen={geslotenDagen} />
     </div>
   );
 }
 
-// ── Scherm: Gegevens ───────────────────────────────────────────────────────
-function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWachtwoord }) {
+// ── Scherm: Instellingen (profiel + motors) ────────────────────────────────
+function Instellingen({ klant, motoren, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord }) {
   const [profiel, setProfiel] = useState({
-    naam: klant.naam || "",
-    telefoon: klant.telefoon || "",
-    adres: klant.adres || "",
-    postcode: klant.postcode || "",
-    woonplaats: klant.woonplaats || "",
+    naam: klant.naam || "", telefoon: klant.telefoon || "",
+    adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
   });
   const [profielBezig, setProfielBezig] = useState(false);
   const [profielOk, setProfielOk] = useState(false);
@@ -468,11 +443,18 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
   const [wwOk, setWwOk] = useState(false);
   const [wwFout, setWwFout] = useState(null);
 
-  const [motorForm, setMotorForm] = useState({ merk: "", model: "", kenteken: "", bouwjaar: "" });
+  const leegMotorForm = { kenteken: "", merk: "", model: "", bouwjaar: "", aankoopdatum: "", beginkm: "" };
+  const [motorForm, setMotorForm] = useState(leegMotorForm);
   const [motorBezig, setMotorBezig] = useState(false);
   const [motorOk, setMotorOk] = useState(false);
   const [motorFout, setMotorFout] = useState(null);
   const [toonMotorForm, setToonMotorForm] = useState(false);
+  const [rdwBezig, setRdwBezig] = useState(false);
+  const [rdwFout, setRdwFout] = useState(null);
+
+  const [verwijderBevestigId, setVerwijderBevestigId] = useState(null);
+  const [verwijderBezig, setVerwijderBezig] = useState(false);
+  const [verwijderFout, setVerwijderFout] = useState(null);
 
   const slaProfielOp = async () => {
     setProfielBezig(true); setProfielFout(null);
@@ -495,6 +477,26 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
     setTimeout(() => setWwOk(false), 3000);
   };
 
+  const rdwOphalen = async () => {
+    const ken = motorForm.kenteken.replace(/-/g, "").toUpperCase();
+    if (!ken || ken.length < 4) { setRdwFout("Vul eerst een kenteken in."); return; }
+    setRdwBezig(true); setRdwFout(null);
+    try {
+      const res = await fetch(`https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${ken}`);
+      const data = await res.json();
+      if (!data.length) { setRdwFout("Kenteken niet gevonden in RDW."); setRdwBezig(false); return; }
+      const v = data[0];
+      const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+      setMotorForm(p => ({
+        ...p,
+        merk: cap(v.merk) || p.merk,
+        model: v.handelsbenaming || p.model,
+        bouwjaar: v.datum_eerste_toelating ? v.datum_eerste_toelating.substring(0, 4) : p.bouwjaar,
+      }));
+    } catch { setRdwFout("Ophalen mislukt, vul handmatig in."); }
+    setRdwBezig(false);
+  };
+
   const voegMotorToe = async () => {
     if (!motorForm.merk || !motorForm.model || !motorForm.kenteken) { setMotorFout("Vul merk, model en kenteken in."); return; }
     setMotorBezig(true); setMotorFout(null);
@@ -502,9 +504,17 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
     setMotorBezig(false);
     if (err) { setMotorFout(err); return; }
     setMotorOk(true);
-    setMotorForm({ merk: "", model: "", kenteken: "", bouwjaar: "" });
+    setMotorForm(leegMotorForm);
     setToonMotorForm(false);
     setTimeout(() => setMotorOk(false), 2500);
+  };
+
+  const verwijderMotor = async (motorId) => {
+    setVerwijderBezig(true); setVerwijderFout(null);
+    const err = await onVerwijderMotor(motorId);
+    setVerwijderBezig(false);
+    if (err) { setVerwijderFout(err); return; }
+    setVerwijderBevestigId(null);
   };
 
   const lbl = { fontSize: 12, color: T.muted, marginBottom: 4, display: "block" };
@@ -525,20 +535,20 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
         <input style={veld} type="text" autoComplete="street-address" value={profiel.adres}
           onChange={e => setProfiel(p => ({...p, adres: e.target.value}))} placeholder="Straat en huisnummer" />
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <div style={{ flex: "0 0 40%" }}>
+          <div style={{ flex: "0 0 42%" }}>
             <label style={lbl}>Postcode</label>
-            <input style={{ ...css.input }} type="text" autoComplete="postal-code" value={profiel.postcode}
+            <input style={css.input} type="text" autoComplete="postal-code" value={profiel.postcode}
               onChange={e => setProfiel(p => ({...p, postcode: e.target.value}))} placeholder="1234 AB" />
           </div>
           <div style={{ flex: 1 }}>
             <label style={lbl}>Woonplaats</label>
-            <input style={{ ...css.input }} type="text" autoComplete="address-level2" value={profiel.woonplaats}
+            <input style={css.input} type="text" autoComplete="address-level2" value={profiel.woonplaats}
               onChange={e => setProfiel(p => ({...p, woonplaats: e.target.value}))} placeholder="Tholen" />
           </div>
         </div>
         {profielFout && <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>{profielFout}</div>}
         {profielOk ? (
-          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, cursor: "default" }}>✓ Opgeslagen!</div>
+          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, borderRadius: 8, cursor: "default" }}>✓ Opgeslagen!</div>
         ) : (
           <button style={{ ...css.btn, opacity: profielBezig ? 0.5 : 1 }} onClick={slaProfielOp} disabled={profielBezig}>
             {profielBezig ? "Opslaan..." : "Wijzigingen opslaan"}
@@ -553,11 +563,11 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
         <input style={veld} type="password" autoComplete="new-password" value={ww.nieuw}
           onChange={e => setWw(p => ({...p, nieuw: e.target.value}))} placeholder="Minimaal 8 tekens" />
         <label style={lbl}>Herhaal nieuw wachtwoord</label>
-        <input style={{ ...css.input }} type="password" autoComplete="new-password" value={ww.herhaal}
+        <input style={css.input} type="password" autoComplete="new-password" value={ww.herhaal}
           onChange={e => setWw(p => ({...p, herhaal: e.target.value}))} placeholder="Zelfde wachtwoord" />
         {wwFout && <div style={{ fontSize: 12, color: T.red, marginTop: 10 }}>{wwFout}</div>}
         {wwOk ? (
-          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, marginTop: 12, cursor: "default" }}>✓ Wachtwoord gewijzigd!</div>
+          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, borderRadius: 8, marginTop: 12, cursor: "default" }}>✓ Wachtwoord gewijzigd!</div>
         ) : (
           <button style={{ ...css.btn, marginTop: 12, opacity: (!ww.nieuw || wwBezig) ? 0.5 : 1 }} onClick={wijzigWw} disabled={!ww.nieuw || wwBezig}>
             {wwBezig ? "Wijzigen..." : "Wachtwoord wijzigen"}
@@ -565,55 +575,116 @@ function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWacht
         )}
       </div>
 
-      {/* Motoren */}
+      {/* Motoren beheren */}
       <div style={css.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 2, color: T.muted, textTransform: "uppercase" }}>Mijn motoren</div>
-          <button onClick={() => { setToonMotorForm(v => !v); setMotorFout(null); }}
+          <div style={css.sectionTitle} >Mijn motoren</div>
+          <button onClick={() => { setToonMotorForm(v => !v); setMotorFout(null); setRdwFout(null); setMotorForm(leegMotorForm); }}
             style={{ background: toonMotorForm ? "transparent" : T.accentSoft, border: `1px solid ${toonMotorForm ? T.border : T.accent}40`, borderRadius: 6, padding: "6px 12px", color: toonMotorForm ? T.muted : T.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
             {toonMotorForm ? "Annuleren" : "+ Toevoegen"}
           </button>
         </div>
 
         {motoren.length === 0 && !toonMotorForm && (
-          <div style={{ fontSize: 13, color: T.muted, padding: "4px 0 8px" }}>Nog geen motoren gekoppeld</div>
+          <div style={{ fontSize: 13, color: T.muted, paddingBottom: 4 }}>Nog geen motoren gekoppeld</div>
         )}
 
         {motoren.map((m, i) => (
-          <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < motoren.length - 1 || toonMotorForm ? `1px solid ${T.border}` : "none" }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{m.merk} {m.model}</div>
-              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{m.kenteken}{m.bouwjaar ? ` · ${m.bouwjaar}` : ""}</div>
+          <div key={m.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: (i < motoren.length - 1 || toonMotorForm || verwijderBevestigId === m.id) ? `1px solid ${T.border}` : "none" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{m.merk} {m.model}</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{m.kenteken}{m.bouwjaar ? ` · ${m.bouwjaar}` : ""}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={css.badge(T.accent)}>{m.kenteken}</span>
+                <button onClick={() => { setVerwijderBevestigId(verwijderBevestigId === m.id ? null : m.id); setVerwijderFout(null); }}
+                  style={{ background: "none", border: "none", color: verwijderBevestigId === m.id ? T.red : T.muted, fontSize: 16, cursor: "pointer", padding: "4px 2px", lineHeight: 1 }}
+                  title="Motor verwijderen">🗑</button>
+              </div>
             </div>
-            <span style={css.badge(T.accent)}>{m.kenteken}</span>
+            {verwijderBevestigId === m.id && (
+              <div style={{ background: `${T.red}12`, border: `1px solid ${T.red}35`, borderRadius: 6, padding: "10px 12px", margin: "6px 0 8px" }}>
+                <div style={{ fontSize: 13, color: T.red, marginBottom: 8, fontWeight: 600 }}>
+                  {m.merk} {m.model} verwijderen?
+                </div>
+                {verwijderFout && <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>{verwijderFout}</div>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => verwijderMotor(m.id)} disabled={verwijderBezig}
+                    style={{ flex: 1, padding: "8px", background: T.red, color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif", opacity: verwijderBezig ? 0.6 : 1 }}>
+                    {verwijderBezig ? "Verwijderen..." : "Ja, verwijder"}
+                  </button>
+                  <button onClick={() => { setVerwijderBevestigId(null); setVerwijderFout(null); }}
+                    style={{ flex: 1, padding: "8px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
+                    Annuleer
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
         {toonMotorForm && (
           <div style={{ paddingTop: 14 }}>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
+              Vul het kenteken in en druk op Ophalen om gegevens automatisch in te vullen.
+            </div>
+
+            {/* Kenteken + RDW ophalen */}
+            <label style={lbl}>Kenteken</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <input style={{ ...css.input, flex: 1 }} type="text" value={motorForm.kenteken}
+                onChange={e => { setMotorForm(p => ({...p, kenteken: e.target.value.toUpperCase()})); setRdwFout(null); }}
+                placeholder="AA-123-BB" />
+              <button onClick={rdwOphalen} disabled={rdwBezig}
+                style={{ flexShrink: 0, padding: "11px 14px", background: T.accentSoft, border: `1px solid ${T.accent}40`, borderRadius: 6, color: T.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif", opacity: rdwBezig ? 0.6 : 1, whiteSpace: "nowrap" }}>
+                {rdwBezig ? "..." : "Ophalen ↗"}
+              </button>
+            </div>
+            {rdwFout && <div style={{ fontSize: 12, color: T.yellow, marginBottom: 10 }}>{rdwFout}</div>}
+
             <label style={lbl}>Merk</label>
             <input style={veld} type="text" value={motorForm.merk}
               onChange={e => setMotorForm(p => ({...p, merk: e.target.value}))} placeholder="bijv. Honda" />
+
             <label style={lbl}>Model</label>
             <input style={veld} type="text" value={motorForm.model}
-              onChange={e => setMotorForm(p => ({...p, model: e.target.value}))} placeholder="bijv. CBR 600" />
-            <label style={lbl}>Kenteken</label>
-            <input style={veld} type="text" value={motorForm.kenteken}
-              onChange={e => setMotorForm(p => ({...p, kenteken: e.target.value.toUpperCase()}))} placeholder="AA-123-BB" />
-            <label style={lbl}>Bouwjaar</label>
-            <input style={{ ...css.input }} type="number" value={motorForm.bouwjaar}
-              onChange={e => setMotorForm(p => ({...p, bouwjaar: e.target.value}))} placeholder="bijv. 2018" />
-            {motorFout && <div style={{ fontSize: 12, color: T.red, marginTop: 10 }}>{motorFout}</div>}
+              onChange={e => setMotorForm(p => ({...p, model: e.target.value}))} placeholder="bijv. CBR 600 F" />
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Bouwjaar</label>
+                <input style={css.input} type="number" value={motorForm.bouwjaar}
+                  onChange={e => setMotorForm(p => ({...p, bouwjaar: e.target.value}))} placeholder="bijv. 2018" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>In bezit sinds</label>
+                <input style={css.input} type="date" value={motorForm.aankoopdatum}
+                  onChange={e => setMotorForm(p => ({...p, aankoopdatum: e.target.value}))} />
+              </div>
+            </div>
+
+            <label style={lbl}>Kilometerstand bij aankoop</label>
+            <input style={veld} type="number" value={motorForm.beginkm}
+              onChange={e => setMotorForm(p => ({...p, beginkm: e.target.value}))} placeholder="bijv. 12500" />
+
+            {motorFout && <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>{motorFout}</div>}
             {motorOk ? (
-              <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, marginTop: 12, cursor: "default" }}>✓ Motor toegevoegd!</div>
+              <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, borderRadius: 8, cursor: "default" }}>✓ Motor toegevoegd!</div>
             ) : (
-              <button style={{ ...css.btn, marginTop: 12, opacity: (!motorForm.merk || !motorForm.model || !motorForm.kenteken || motorBezig) ? 0.5 : 1 }} onClick={voegMotorToe} disabled={motorBezig}>
+              <button style={{ ...css.btn, opacity: (!motorForm.merk || !motorForm.model || !motorForm.kenteken || motorBezig) ? 0.5 : 1 }} onClick={voegMotorToe} disabled={motorBezig}>
                 {motorBezig ? "Toevoegen..." : "Motor toevoegen"}
               </button>
             )}
           </div>
         )}
       </div>
+
+      {/* Uitloggen */}
+      <button onClick={() => import("../lib/supabase.js").then(m => m.uitloggen())}
+        style={{ ...css.btnGhost, marginTop: 4 }}>
+        Uitloggen
+      </button>
     </div>
   );
 }
@@ -649,12 +720,11 @@ export default function KlantApp({ userId }) {
             sb.from("km_historie").select("*").in("motor_id", motorIds).order("datum"),
             sb.from("service_beurten").select("*").in("motor_id", motorIds).order("datum", { ascending: false }),
           ]);
-          const verrijkt = (motorenData||[]).map(m => ({
+          setMotoren((motorenData||[]).map(m => ({
             ...m,
             kmHistory: (kmData||[]).filter(k => k.motor_id === m.id).map(k => ({ datum: k.datum, km: k.km })),
             service: (svcData||[]).filter(s => s.motor_id === m.id),
-          }));
-          setMotoren(verrijkt);
+          })));
         } else {
           setMotoren([]);
         }
@@ -682,8 +752,7 @@ export default function KlantApp({ userId }) {
     const { error } = await sb.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
     if (error) { console.error("Km opslaan mislukt:", error); return; }
     setMotoren(prev => prev.map(m => m.id === motorId
-      ? { ...m, kmHistory: [...m.kmHistory, { datum: TODAY, km }] }
-      : m
+      ? { ...m, kmHistory: [...m.kmHistory, { datum: TODAY, km }] } : m
     ));
   };
 
@@ -691,11 +760,8 @@ export default function KlantApp({ userId }) {
     const sb = (await import("../lib/supabase.js")).supabase;
     const motor = motoren.find(m => m.id === f.motorId);
     await sb.from("afspraken").insert({
-      klant_id: klant.id,
-      motor_id: motor?.id || null,
-      datum: f.datum,
-      opmerking: f.opmerking || "",
-      status: "aangevraagd",
+      klant_id: klant.id, motor_id: motor?.id || null,
+      datum: f.datum, opmerking: f.opmerking || "", status: "aangevraagd",
     });
     setBezetteDagen(prev => [...prev, f.datum]);
   };
@@ -723,9 +789,32 @@ export default function KlantApp({ userId }) {
       model: data.model,
       kenteken: data.kenteken,
       bouwjaar: data.bouwjaar ? parseInt(data.bouwjaar) : null,
+      aankoopdatum: data.aankoopdatum || null,
     }).select().single();
     if (error) return error.message;
-    if (nieuw) setMotoren(prev => [...prev, { ...nieuw, kmHistory: [], service: [] }]);
+    if (nieuw && data.beginkm && parseInt(data.beginkm) > 0) {
+      await sb.from("km_historie").insert({
+        motor_id: nieuw.id,
+        km: parseInt(data.beginkm),
+        datum: data.aankoopdatum || TODAY,
+      });
+    }
+    const beginkm = data.beginkm ? parseInt(data.beginkm) : 0;
+    setMotoren(prev => [...prev, {
+      ...nieuw,
+      kmHistory: beginkm > 0 ? [{ datum: data.aankoopdatum || TODAY, km: beginkm }] : [],
+      service: [],
+    }]);
+    return null;
+  };
+
+  const verwijderMotor = async (motorId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    // km_historie verwijderen (klant mag dit)
+    await sb.from("km_historie").delete().eq("motor_id", motorId);
+    const { error } = await sb.from("motoren").delete().eq("id", motorId);
+    if (error) return "Verwijderen mislukt. Neem contact op met De Jonge Motoren als de motor servicehistorie heeft.";
+    setMotoren(prev => prev.filter(m => m.id !== motorId));
     return null;
   };
 
@@ -735,9 +824,8 @@ export default function KlantApp({ userId }) {
     { id: "km", icon: "📍", label: "Km Stand" },
     { id: "afspraak", icon: "📅", label: "Afspraak" },
     { id: "contact", icon: "📞", label: "Contact" },
-    { id: "gegevens", icon: "👤", label: "Gegevens" },
   ];
-  const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", gegevens: "Mijn Gegevens" };
+  const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", instellingen: "Instellingen" };
 
   if (laden) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg }}>
@@ -754,8 +842,7 @@ export default function KlantApp({ userId }) {
       <div>
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
         <div style={{ fontSize:13, color:T.muted, marginTop:16, lineHeight:1.8 }}>
-          Je account is nog niet gekoppeld aan een klantprofiel.<br/>
-          Neem contact op met De Jonge Motoren.
+          Je account is nog niet gekoppeld aan een klantprofiel.<br/>Neem contact op met De Jonge Motoren.
         </div>
         <a href="https://wa.me/31140000000" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
           Stuur een bericht →
@@ -773,7 +860,7 @@ export default function KlantApp({ userId }) {
         <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
           Je aanmelding is ontvangen. De Jonge Motoren geeft je zo snel mogelijk toegang.
         </div>
-        <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())}
+        <button onClick={() => import("../lib/supabase.js").then(m => m.uitloggen())}
           style={{ marginTop:24, padding:"10px 20px", background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:8, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
           Uitloggen
         </button>
@@ -798,39 +885,57 @@ export default function KlantApp({ userId }) {
 
   return (
     <div style={css.app}>
+      {/* Top bar */}
       <div style={css.topBar}>
         <div style={css.logoWrap}>
           <div style={css.logoTop}>DE JONGE MOTOREN</div>
           <div style={css.logoSub}>MIJN GARAGE</div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{klant.naam?.split(" ")[0] || klant.naam}</div>
             <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
           </div>
-          <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{background:"none",border:"none",color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
+          {/* Instellingen knop */}
+          <button onClick={() => setTab(tab === "instellingen" ? "motor" : "instellingen")}
+            style={{ background: tab === "instellingen" ? T.accentSoft : "transparent", border: `1px solid ${tab === "instellingen" ? T.accent + "50" : T.border}`, borderRadius: 8, padding: "7px 9px", color: tab === "instellingen" ? T.accent : T.muted, fontSize: 17, cursor: "pointer", lineHeight: 1, marginLeft: 4 }}
+            title="Instellingen">
+            ⚙
+          </button>
         </div>
       </div>
 
+      {/* Pagina titel */}
       <div style={{ padding: "14px 20px 0" }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 26, letterSpacing: 0.5 }}>
-          {titles[tab]}
+          {titles[tab] || titles.motor}
         </div>
       </div>
 
+      {/* Inhoud */}
       <div style={css.scroll}>
         {tab === "motor" && <MijnMotor motoren={motoren} />}
         {tab === "service" && <Servicegeschiedenis motoren={motoren} />}
         {tab === "km" && <KmStand motoren={motoren} onSlaOp={slaKmOp} />}
         {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
-        {tab === "gegevens" && <Gegevens klant={klant} motoren={motoren} onUpdateKlant={updateKlantProfiel} onVoegMotorToe={voegMotorToeVanKlant} onWijzigWachtwoord={wijzigWachtwoord} />}
+        {tab === "instellingen" && (
+          <Instellingen
+            klant={klant}
+            motoren={motoren}
+            onUpdateKlant={updateKlantProfiel}
+            onVoegMotorToe={voegMotorToeVanKlant}
+            onVerwijderMotor={verwijderMotor}
+            onWijzigWachtwoord={wijzigWachtwoord}
+          />
+        )}
       </div>
 
+      {/* Bottom nav (5 tabs, instellingen via tandwiel) */}
       <nav style={css.bottomNav}>
         {nav.map(n => (
           <button key={n.id} style={css.navBtn(tab === n.id)} onClick={() => setTab(n.id)}>
-            <span style={css.navIcon}>{n.icon}</span>
+            <span style={{ fontSize: 20 }}>{n.icon}</span>
             <span style={{ fontSize: 9, letterSpacing: 0.3, fontWeight: tab === n.id ? 600 : 400 }}>{n.label}</span>
           </button>
         ))}
