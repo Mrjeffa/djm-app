@@ -38,7 +38,7 @@ const getBeschikbareDagen = (bezet = []) => {
 
 // ── Shared UI ──────────────────────────────────────────────────────────────
 const css = {
-  app: { maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: T.bg, fontFamily: "Barlow, sans-serif", color: T.text, display: "flex", flexDirection: "column", position: "relative" },
+  app: { maxWidth: 430, margin: "0 auto", minHeight: "100dvh", background: T.bg, fontFamily: "Barlow, sans-serif", color: T.text, display: "flex", flexDirection: "column", position: "relative" },
   topBar: { padding: "18px 20px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
   logoWrap: { display: "flex", flexDirection: "column" },
   logoTop: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 2, color: T.text, lineHeight: 1 },
@@ -549,7 +549,7 @@ export default function KlantApp({ userId }) {
   const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact" };
 
   if (laden) return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg }}>
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
         <div style={{ width:28, height:28, border:`3px solid ${T.accent}`, borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
         <div style={{ color:T.muted, fontSize:13, fontFamily:"Barlow, sans-serif" }}>Laden...</div>
@@ -559,7 +559,7 @@ export default function KlantApp({ userId }) {
   );
 
   if (!klant) return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
       <div>
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
         <div style={{ fontSize:13, color:T.muted, marginTop:16, lineHeight:1.8 }}>
@@ -574,7 +574,7 @@ export default function KlantApp({ userId }) {
   );
 
   if (klant.status === 'in_afwachting') return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
       <div>
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
         <div style={{ fontSize:36, margin:"20px 0 12px" }}>⏳</div>
@@ -591,7 +591,7 @@ export default function KlantApp({ userId }) {
   );
 
   if (klant.status === 'afgewezen') return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
       <div>
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
         <div style={{ fontSize:36, margin:"20px 0 12px" }}>❌</div>
