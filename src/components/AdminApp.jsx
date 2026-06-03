@@ -345,10 +345,13 @@ function MotorModal({onSave,onClose}){
 }
 
 function ServiceModal({onSave,onClose}){
-  const [f,setF]=useState({datum:TODAY,omschrijving:""});
+  const [f,setF]=useState({datum:TODAY,omschrijving:"",km:""});
   return(
     <Modal title="SERVICE TOEVOEGEN" onClose={onClose}>
-      <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value}))}/></Field>
+      <Grid2>
+        <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value}))}/></Field>
+        <Field label="Kilometerstand"><input style={s.input} type="number" value={f.km} onChange={e=>setF(p=>({...p,km:e.target.value}))} placeholder="bijv. 35000"/></Field>
+      </Grid2>
       <Field label="Omschrijving">
         <textarea style={{...s.input,height:90,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat is er gedaan?"/>
       </Field>
@@ -539,12 +542,20 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUitnodig,onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
+  const [editIntervalId,setEditIntervalId]=useState(null);
+  const [intervalVal,setIntervalVal]=useState("");
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
+  const slaIntervalOp=async(motorId)=>{
+    const km=parseInt(intervalVal);
+    if(!km||km<100) return;
+    await onUpdateMotorInterval(motorId,km);
+    setEditIntervalId(null);
+  };
   return(
     <div>
       {isMobile&&(
@@ -592,13 +603,38 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUitnodig,onB
             </div>
             <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
           </div>
+          {/* Onderhoudsinterval */}
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surf2,borderRadius:4,marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:T.muted}}>Onderhoudsinterval:</span>
+            {editIntervalId===motor.id?(
+              <>
+                <input style={{...s.input,width:90,padding:"4px 8px",fontSize:12}} type="number"
+                  value={intervalVal} onChange={e=>setIntervalVal(e.target.value)} placeholder="5000"
+                  onKeyDown={e=>e.key==="Enter"&&slaIntervalOp(motor.id)}/>
+                <span style={{fontSize:11,color:T.muted}}>km</span>
+                <button onClick={()=>slaIntervalOp(motor.id)} style={{...s.btn,padding:"4px 12px",fontSize:11}}>Opslaan</button>
+                <button onClick={()=>setEditIntervalId(null)} style={{...s.btnGhost,padding:"4px 10px",fontSize:11}}>Annuleer</button>
+              </>
+            ):(
+              <>
+                <span style={{fontSize:12,fontWeight:600}}>{(motor.interval_km||5000).toLocaleString()} km</span>
+                <button onClick={()=>{setEditIntervalId(motor.id);setIntervalVal(String(motor.interval_km||5000));}}
+                  style={{background:"none",border:"none",color:T.accent,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",padding:0}}>
+                  ✏ Bewerken
+                </button>
+              </>
+            )}
+          </div>
           {(motor.service||[]).length===0?(
             <div style={{fontSize:12,color:T.muted,padding:"6px 0"}}>Nog geen servicemeldingen</div>
           ):(
             (motor.service||[]).slice().reverse().map(sv=>(
               <div key={sv.id} style={{display:"flex",gap:14,padding:"8px 0",borderTop:`1px solid ${T.border}`}}>
                 <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
-                <div style={{fontSize:13}}>{sv.omschrijving}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13}}>{sv.omschrijving}</div>
+                  {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>bij {sv.km.toLocaleString()} km</div>}
+                </div>
               </div>
             ))
           )}
@@ -610,7 +646,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUitnodig,onB
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateMotorInterval,voorraad=[]}){
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("alle");
@@ -671,6 +707,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
             onUpdateKlant={onUpdateKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
+            onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
             isMobile={true}/>
@@ -693,6 +730,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,v
             onUpdateKlant={onUpdateKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
+            onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
             isMobile={false}/>
@@ -1353,6 +1391,12 @@ export default function AdminApp(){
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,service:[svc,...m.service],last_service_km:f.km||0}:m)}:k));
   };
 
+  const updateMotorInterval = async (motorId, intervalKm) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("motoren").update({ interval_km: intervalKm }).eq("id", motorId);
+    setKlanten(p=>p.map(k=>({...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,interval_km:intervalKm}:m)})));
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
@@ -1474,7 +1518,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}

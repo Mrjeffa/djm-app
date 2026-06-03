@@ -332,13 +332,15 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
       </div>
 
       <div style={css.card}>
-        <div style={css.sectionTitle}>Opmerking (optioneel)</div>
+        <div style={css.sectionTitle}>Beschrijving werkzaamheden</div>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Verplicht — zo kunnen we de juiste tijd inplannen.</div>
         <textarea style={{ ...css.input, height: 80, resize: "none" }}
-          placeholder="Beschrijf kort wat je wil laten doen..."
+          placeholder="Bijv. grote beurt, remmen controleren, bandenwissel..."
           value={notitie} onChange={e => setNotitie(e.target.value)} />
       </div>
 
-      <button style={{ ...css.btn, opacity: !selDatum || bezig ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}>
+      <button style={{ ...css.btn, opacity: !selDatum || !notitie.trim() || bezig ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}
+        disabled={!selDatum || !notitie.trim() || bezig}>
         {bezig ? "Versturen..." : "Afspraak aanvragen"}
       </button>
     </div>
@@ -422,7 +424,11 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}10)`, border: `1px solid ${T.accent}30`, marginBottom: 20 }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>DE JONGE</div>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 12, letterSpacing: 3, color: T.accent, marginTop: 2 }}>MOTOREN</div>
-        <div style={{ fontSize: 13, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Motorspecialist · Tholen</div>
+        <a href="https://www.google.com/maps/dir/?api=1&destination=Stevinweg+14,+Tholen"
+          target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 13, color: T.accent, marginTop: 10, lineHeight: 1.8, display: "block", textDecoration: "none" }}>
+          📍 Stevinweg 14, Tholen →
+        </a>
       </div>
       {[
         { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
