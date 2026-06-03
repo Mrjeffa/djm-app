@@ -17,8 +17,6 @@ const fmtDatum = d => {
   return `${dt.getDate()} ${MAANDEN_NL[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 
-// Haal beschikbare wo/do/vr dagen op voor de komende 4 weken
-// bezet bevat zowel bestaande afspraken als gesloten_dagen uit instellingen
 const getBeschikbareDagen = (bezet = []) => {
   const dagen = [];
   const start = new Date(TODAY);
@@ -54,7 +52,7 @@ const css = {
   bigNum: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 38, color: T.accent, lineHeight: 1 },
   motorTitle: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 24, lineHeight: 1 },
   badge: (c) => ({ display: "inline-block", padding: "3px 9px", borderRadius: 3, fontSize: 11, fontWeight: 700, background: `${c}22`, color: c, letterSpacing: 0.5 }),
-  input: { background: T.surf2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "11px 14px", color: T.text, fontSize: 15, fontFamily: "Barlow, sans-serif", outline: "none", width: "100%", boxSizing: "border-box" },
+  input: { background: T.surf2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "11px 14px", color: T.text, fontSize: 16, fontFamily: "Barlow, sans-serif", outline: "none", width: "100%", boxSizing: "border-box" },
   btn: { width: "100%", padding: "13px", background: T.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" },
   btnGhost: { width: "100%", padding: "13px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 15, cursor: "pointer", fontFamily: "Barlow, sans-serif" },
 };
@@ -90,7 +88,6 @@ function MijnMotor({ motoren, onMotorUpdate }) {
     <div>
       <MotorSelector motoren={motoren} selected={selId} onSelect={setSelId} />
 
-      {/* Motor card */}
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}12)`, border: `1px solid ${T.accent}30`, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -113,7 +110,6 @@ function MijnMotor({ motoren, onMotorUpdate }) {
         </div>
       </div>
 
-      {/* Onderhoudsinterval */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Onderhoudsinterval</div>
         {intervalPct === null ? (
@@ -132,7 +128,6 @@ function MijnMotor({ motoren, onMotorUpdate }) {
                 <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>per {intervalKm.toLocaleString()} km</div>
               </div>
             </div>
-            {/* Progress bar */}
             <div style={{ background: T.surf2, borderRadius: 4, height: 8, overflow: "hidden" }}>
               <div style={{ width: `${intervalPct}%`, height: "100%", background: statusColor, borderRadius: 4, transition: "width 0.4s" }} />
             </div>
@@ -143,7 +138,6 @@ function MijnMotor({ motoren, onMotorUpdate }) {
         )}
       </div>
 
-      {/* Laatste service */}
       {motor.service.length > 0 && (
         <div style={css.card}>
           <div style={css.sectionTitle}>Laatste service</div>
@@ -176,7 +170,6 @@ function Servicegeschiedenis({ motoren }) {
       ) : (
         motor.service.slice().reverse().map((sv, i) => (
           <div key={sv.id} style={{ display: "flex", gap: 14, marginBottom: 4 }}>
-            {/* Timeline lijn */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.accent, marginTop: 4, flexShrink: 0 }} />
               {i < motor.service.length - 1 && <div style={{ width: 1, flex: 1, background: T.border, minHeight: 20, marginTop: 4 }} />}
@@ -221,14 +214,12 @@ function KmStand({ motoren, onSlaOp }) {
     <div>
       <MotorSelector motoren={motoren} selected={selId} onSelect={id => { setSelId(id); setOpgeslagen(false); }} />
 
-      {/* Huidige stand */}
       <div style={css.cardAccent}>
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Huidige kilometerstand</div>
         <div style={css.bigNum}>{huidigKm.toLocaleString()}</div>
         <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>km · {motor.merk} {motor.model}</div>
       </div>
 
-      {/* Invoer */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Nieuwe stand invoeren</div>
         <input style={{ ...css.input, fontSize: 22, fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, letterSpacing: 1, textAlign: "center", marginBottom: 12 }}
@@ -246,7 +237,6 @@ function KmStand({ motoren, onSlaOp }) {
         )}
       </div>
 
-      {/* Historie */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Kilometerhistorie</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
@@ -266,7 +256,7 @@ function KmStand({ motoren, onSlaOp }) {
 function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
   const [selId, setSelId] = useState(motoren[0]?.id);
   const [selDatum, setSelDatum] = useState(null);
-  const [opmerking, setOpmerking] = useState("");
+  const [notitie, setNotitie] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selId) || motoren[0];
@@ -275,7 +265,7 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
   const verstuur = async () => {
     if (!selDatum || bezig) return;
     setBezig(true);
-    await onSlaOp({ motorId: selId, datum: selDatum, opmerking });
+    await onSlaOp({ motorId: selId, datum: selDatum, opmerking: notitie });
     setBezig(false);
     setVerstuurd(true);
   };
@@ -292,9 +282,9 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
           <div style={{ fontSize: 12, color: T.accent, marginBottom: 4 }}>Gevraagde datum</div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{fmtDatum(selDatum)}</div>
           {motor && <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{motor.merk} {motor.model} · {motor.kenteken}</div>}
-          {opmerking && <div style={{ fontSize: 13, color: T.muted, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>{opmerking}</div>}
+          {notitie && <div style={{ fontSize: 13, color: T.muted, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>{notitie}</div>}
         </div>
-        <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => { setVerstuurd(false); setSelDatum(null); setOpmerking(""); }}>
+        <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => { setVerstuurd(false); setSelDatum(null); setNotitie(""); }}>
           Nieuwe aanvraag
         </button>
       </div>
@@ -305,18 +295,16 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
     <div>
       <MotorSelector motoren={motoren} selected={selId} onSelect={setSelId} />
 
-      {/* Info banner */}
       <div style={{ background: T.accentSoft, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 13, lineHeight: 1.7, color: T.text }}>
         Door drukte kan de tijd uitlopen — we bellen je als de motor klaar is. 🔧
       </div>
 
-      {/* Datum kiezen */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Kies een dag</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {beschikbaar.map(d => (
             <button key={d.datum} onClick={() => !d.bezet && setSelDatum(d.datum)} disabled={d.bezet}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 6, border: `1px solid ${selDatum === d.datum ? T.accent : d.bezet ? T.border : T.border}`, background: selDatum === d.datum ? T.accentSoft : d.bezet ? T.surf2 : "transparent", cursor: d.bezet ? "default" : "pointer", fontFamily: "Barlow, sans-serif" }}>
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 6, border: `1px solid ${selDatum === d.datum ? T.accent : T.border}`, background: selDatum === d.datum ? T.accentSoft : d.bezet ? T.surf2 : "transparent", cursor: d.bezet ? "default" : "pointer", fontFamily: "Barlow, sans-serif" }}>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, color: d.bezet ? T.muted : selDatum === d.datum ? T.accent : T.text, textTransform: "uppercase", width: 24 }}>
                   {d.dag}
@@ -335,12 +323,11 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
         </div>
       </div>
 
-      {/* Opmerking */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Opmerking (optioneel)</div>
         <textarea style={{ ...css.input, height: 80, resize: "none" }}
           placeholder="Beschrijf kort wat je wil laten doen..."
-          value={opmerking} onChange={e => setOpmerking(e.target.value)} />
+          value={notitie} onChange={e => setNotitie(e.target.value)} />
       </div>
 
       <button style={{ ...css.btn, opacity: !selDatum || bezig ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}>
@@ -351,7 +338,6 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
 }
 
 // ── Scherm: Contact ────────────────────────────────────────────────────────
-const DAGMAP_KORT = ["zo","ma","di","wo","do","vr","za"];
 const DEFAULT_TIJDEN = { ma:"09–17", di:"09–17", wo:"09–17", do:"09–17", vr:"09–17", za:"10–15", zo:null };
 
 function WeekKalender({ openingstijden, geslotenDagen = [] }) {
@@ -363,7 +349,6 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
     return `${o.replace(":",".")}–${s.replace(":",".")}`;
   };
 
-  // Bouw 2 weken op
   const ma = new Date(TODAY);
   const dow = ma.getDay();
   ma.setDate(ma.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -390,7 +375,6 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
       <div style={css.sectionTitle}>Openingstijden</div>
       {weken.map((week, wi) => (
         <div key={wi} style={{ marginBottom: wi === 0 ? 18 : 0 }}>
-          {/* Week header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div>
               <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{week.label}</span>
@@ -398,7 +382,6 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
             </div>
             {week.weekGesloten && <span style={{ ...css.badge(T.red), fontSize: 10 }}>Gesloten</span>}
           </div>
-          {/* Dag blokjes */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
             {week.dagen.map(d => (
               <div key={d.dag} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
@@ -427,14 +410,20 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
   );
 }
 
-function Contact({ openingstijden, geslotenDagen }) {
+function Contact({ openingstijden, geslotenDagen, opmerking }) {
   return (
     <div>
+      {opmerking ? (
+        <div style={{ background: `${T.red}18`, border: `1px solid ${T.red}50`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 13, lineHeight: 1.7, color: T.red, fontWeight: 600 }}>
+          ⚠ {opmerking}
+        </div>
+      ) : null}
+
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}10)`, border: `1px solid ${T.accent}30`, marginBottom: 20 }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>DE JONGE</div>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 12, letterSpacing: 3, color: T.accent, marginTop: 2 }}>MOTOREN</div>
         <div style={{ fontSize: 13, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-          Tholen · Ma–Za 09:00–17:00
+          Motorspecialist · Tholen
         </div>
       </div>
 
@@ -461,6 +450,174 @@ function Contact({ openingstijden, geslotenDagen }) {
   );
 }
 
+// ── Scherm: Gegevens ───────────────────────────────────────────────────────
+function Gegevens({ klant, motoren, onUpdateKlant, onVoegMotorToe, onWijzigWachtwoord }) {
+  const [profiel, setProfiel] = useState({
+    naam: klant.naam || "",
+    telefoon: klant.telefoon || "",
+    adres: klant.adres || "",
+    postcode: klant.postcode || "",
+    woonplaats: klant.woonplaats || "",
+  });
+  const [profielBezig, setProfielBezig] = useState(false);
+  const [profielOk, setProfielOk] = useState(false);
+  const [profielFout, setProfielFout] = useState(null);
+
+  const [ww, setWw] = useState({ nieuw: "", herhaal: "" });
+  const [wwBezig, setWwBezig] = useState(false);
+  const [wwOk, setWwOk] = useState(false);
+  const [wwFout, setWwFout] = useState(null);
+
+  const [motorForm, setMotorForm] = useState({ merk: "", model: "", kenteken: "", bouwjaar: "" });
+  const [motorBezig, setMotorBezig] = useState(false);
+  const [motorOk, setMotorOk] = useState(false);
+  const [motorFout, setMotorFout] = useState(null);
+  const [toonMotorForm, setToonMotorForm] = useState(false);
+
+  const slaProfielOp = async () => {
+    setProfielBezig(true); setProfielFout(null);
+    const err = await onUpdateKlant(profiel);
+    setProfielBezig(false);
+    if (err) { setProfielFout(err); return; }
+    setProfielOk(true);
+    setTimeout(() => setProfielOk(false), 2500);
+  };
+
+  const wijzigWw = async () => {
+    if (!ww.nieuw || ww.nieuw.length < 8) { setWwFout("Wachtwoord minimaal 8 tekens."); return; }
+    if (ww.nieuw !== ww.herhaal) { setWwFout("Wachtwoorden komen niet overeen."); return; }
+    setWwBezig(true); setWwFout(null);
+    const err = await onWijzigWachtwoord(ww.nieuw);
+    setWwBezig(false);
+    if (err) { setWwFout(err); return; }
+    setWwOk(true);
+    setWw({ nieuw: "", herhaal: "" });
+    setTimeout(() => setWwOk(false), 3000);
+  };
+
+  const voegMotorToe = async () => {
+    if (!motorForm.merk || !motorForm.model || !motorForm.kenteken) { setMotorFout("Vul merk, model en kenteken in."); return; }
+    setMotorBezig(true); setMotorFout(null);
+    const err = await onVoegMotorToe(motorForm);
+    setMotorBezig(false);
+    if (err) { setMotorFout(err); return; }
+    setMotorOk(true);
+    setMotorForm({ merk: "", model: "", kenteken: "", bouwjaar: "" });
+    setToonMotorForm(false);
+    setTimeout(() => setMotorOk(false), 2500);
+  };
+
+  const lbl = { fontSize: 12, color: T.muted, marginBottom: 4, display: "block" };
+  const veld = { ...css.input, marginBottom: 10 };
+
+  return (
+    <div>
+      {/* Profielgegevens */}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Mijn gegevens</div>
+        <label style={lbl}>Naam</label>
+        <input style={veld} type="text" autoComplete="name" value={profiel.naam}
+          onChange={e => setProfiel(p => ({...p, naam: e.target.value}))} placeholder="Volledige naam" />
+        <label style={lbl}>Telefoonnummer</label>
+        <input style={veld} type="tel" autoComplete="tel" value={profiel.telefoon}
+          onChange={e => setProfiel(p => ({...p, telefoon: e.target.value}))} placeholder="06-12345678" />
+        <label style={lbl}>Adres</label>
+        <input style={veld} type="text" autoComplete="street-address" value={profiel.adres}
+          onChange={e => setProfiel(p => ({...p, adres: e.target.value}))} placeholder="Straat en huisnummer" />
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: "0 0 40%" }}>
+            <label style={lbl}>Postcode</label>
+            <input style={{ ...css.input }} type="text" autoComplete="postal-code" value={profiel.postcode}
+              onChange={e => setProfiel(p => ({...p, postcode: e.target.value}))} placeholder="1234 AB" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>Woonplaats</label>
+            <input style={{ ...css.input }} type="text" autoComplete="address-level2" value={profiel.woonplaats}
+              onChange={e => setProfiel(p => ({...p, woonplaats: e.target.value}))} placeholder="Tholen" />
+          </div>
+        </div>
+        {profielFout && <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>{profielFout}</div>}
+        {profielOk ? (
+          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, cursor: "default" }}>✓ Opgeslagen!</div>
+        ) : (
+          <button style={{ ...css.btn, opacity: profielBezig ? 0.5 : 1 }} onClick={slaProfielOp} disabled={profielBezig}>
+            {profielBezig ? "Opslaan..." : "Wijzigingen opslaan"}
+          </button>
+        )}
+      </div>
+
+      {/* Wachtwoord */}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Wachtwoord wijzigen</div>
+        <label style={lbl}>Nieuw wachtwoord</label>
+        <input style={veld} type="password" autoComplete="new-password" value={ww.nieuw}
+          onChange={e => setWw(p => ({...p, nieuw: e.target.value}))} placeholder="Minimaal 8 tekens" />
+        <label style={lbl}>Herhaal nieuw wachtwoord</label>
+        <input style={{ ...css.input }} type="password" autoComplete="new-password" value={ww.herhaal}
+          onChange={e => setWw(p => ({...p, herhaal: e.target.value}))} placeholder="Zelfde wachtwoord" />
+        {wwFout && <div style={{ fontSize: 12, color: T.red, marginTop: 10 }}>{wwFout}</div>}
+        {wwOk ? (
+          <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, marginTop: 12, cursor: "default" }}>✓ Wachtwoord gewijzigd!</div>
+        ) : (
+          <button style={{ ...css.btn, marginTop: 12, opacity: (!ww.nieuw || wwBezig) ? 0.5 : 1 }} onClick={wijzigWw} disabled={!ww.nieuw || wwBezig}>
+            {wwBezig ? "Wijzigen..." : "Wachtwoord wijzigen"}
+          </button>
+        )}
+      </div>
+
+      {/* Motoren */}
+      <div style={css.card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 2, color: T.muted, textTransform: "uppercase" }}>Mijn motoren</div>
+          <button onClick={() => { setToonMotorForm(v => !v); setMotorFout(null); }}
+            style={{ background: toonMotorForm ? "transparent" : T.accentSoft, border: `1px solid ${toonMotorForm ? T.border : T.accent}40`, borderRadius: 6, padding: "6px 12px", color: toonMotorForm ? T.muted : T.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
+            {toonMotorForm ? "Annuleren" : "+ Toevoegen"}
+          </button>
+        </div>
+
+        {motoren.length === 0 && !toonMotorForm && (
+          <div style={{ fontSize: 13, color: T.muted, padding: "4px 0 8px" }}>Nog geen motoren gekoppeld</div>
+        )}
+
+        {motoren.map((m, i) => (
+          <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < motoren.length - 1 || toonMotorForm ? `1px solid ${T.border}` : "none" }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{m.merk} {m.model}</div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{m.kenteken}{m.bouwjaar ? ` · ${m.bouwjaar}` : ""}</div>
+            </div>
+            <span style={css.badge(T.accent)}>{m.kenteken}</span>
+          </div>
+        ))}
+
+        {toonMotorForm && (
+          <div style={{ paddingTop: 14 }}>
+            <label style={lbl}>Merk</label>
+            <input style={veld} type="text" value={motorForm.merk}
+              onChange={e => setMotorForm(p => ({...p, merk: e.target.value}))} placeholder="bijv. Honda" />
+            <label style={lbl}>Model</label>
+            <input style={veld} type="text" value={motorForm.model}
+              onChange={e => setMotorForm(p => ({...p, model: e.target.value}))} placeholder="bijv. CBR 600" />
+            <label style={lbl}>Kenteken</label>
+            <input style={veld} type="text" value={motorForm.kenteken}
+              onChange={e => setMotorForm(p => ({...p, kenteken: e.target.value.toUpperCase()}))} placeholder="AA-123-BB" />
+            <label style={lbl}>Bouwjaar</label>
+            <input style={{ ...css.input }} type="number" value={motorForm.bouwjaar}
+              onChange={e => setMotorForm(p => ({...p, bouwjaar: e.target.value}))} placeholder="bijv. 2018" />
+            {motorFout && <div style={{ fontSize: 12, color: T.red, marginTop: 10 }}>{motorFout}</div>}
+            {motorOk ? (
+              <div style={{ ...css.btn, background: T.green, textAlign: "center", padding: 13, fontSize: 15, fontWeight: 600, borderRadius: 8, marginTop: 12, cursor: "default" }}>✓ Motor toegevoegd!</div>
+            ) : (
+              <button style={{ ...css.btn, marginTop: 12, opacity: (!motorForm.merk || !motorForm.model || !motorForm.kenteken || motorBezig) ? 0.5 : 1 }} onClick={voegMotorToe} disabled={motorBezig}>
+                {motorBezig ? "Toevoegen..." : "Motor toevoegen"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 export default function KlantApp({ userId }) {
   const [tab, setTab] = useState("motor");
@@ -469,20 +626,20 @@ export default function KlantApp({ userId }) {
   const [bezetteDagen, setBezetteDagen] = useState([]);
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
+  const [opmerking, setOpmerking] = useState("");
   const [laden, setLaden] = useState(true);
 
   useEffect(() => {
+    const timer = setTimeout(() => setLaden(false), 12000);
     const laadData = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
 
-        // Klant ophalen op basis van user_id
         const { data: klantData } = await sb
           .from("klanten").select("*").eq("user_id", userId).single();
-        if (!klantData) { setLaden(false); return; }
+        if (!klantData) { setLaden(false); clearTimeout(timer); return; }
         setKlant(klantData);
 
-        // Motoren ophalen
         const { data: motorenData } = await sb
           .from("motoren").select("*").eq("klant_id", klantData.id);
         const motorIds = (motorenData||[]).map(m => m.id);
@@ -498,22 +655,26 @@ export default function KlantApp({ userId }) {
             service: (svcData||[]).filter(s => s.motor_id === m.id),
           }));
           setMotoren(verrijkt);
+        } else {
+          setMotoren([]);
         }
 
-        // Bezette dagen + gesloten dagen ophalen en samenvoegen
         const [{ data: afspraken }, { data: inst }] = await Promise.all([
           sb.from("afspraken").select("datum").gte("datum", TODAY),
-          sb.from("instellingen").select("gesloten_dagen,openingstijden").single(),
+          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single(),
         ]);
         const gesloten = inst?.gesloten_dagen || [];
         setGeslotenDagen(gesloten);
         setBezetteDagen([...(afspraken||[]).map(a => a.datum), ...gesloten]);
         if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
+        if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
 
       } catch(e) { console.error(e); }
       setLaden(false);
+      clearTimeout(timer);
     };
     laadData();
+    return () => clearTimeout(timer);
   }, [userId]);
 
   const slaKmOp = async (motorId, km) => {
@@ -539,14 +700,44 @@ export default function KlantApp({ userId }) {
     setBezetteDagen(prev => [...prev, f.datum]);
   };
 
+  const updateKlantProfiel = async (data) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { error } = await sb.from("klanten").update(data).eq("id", klant.id);
+    if (error) return error.message;
+    setKlant(prev => ({ ...prev, ...data }));
+    return null;
+  };
+
+  const wijzigWachtwoord = async (nieuwWachtwoord) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { error } = await sb.auth.updateUser({ password: nieuwWachtwoord });
+    if (error) return error.message;
+    return null;
+  };
+
+  const voegMotorToeVanKlant = async (data) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { data: nieuw, error } = await sb.from("motoren").insert({
+      klant_id: klant.id,
+      merk: data.merk,
+      model: data.model,
+      kenteken: data.kenteken,
+      bouwjaar: data.bouwjaar ? parseInt(data.bouwjaar) : null,
+    }).select().single();
+    if (error) return error.message;
+    if (nieuw) setMotoren(prev => [...prev, { ...nieuw, kmHistory: [], service: [] }]);
+    return null;
+  };
+
   const nav = [
-    { id: "motor", icon: "🏍", label: "Mijn Motor" },
+    { id: "motor", icon: "🏍", label: "Motor" },
     { id: "service", icon: "🔧", label: "Service" },
     { id: "km", icon: "📍", label: "Km Stand" },
     { id: "afspraak", icon: "📅", label: "Afspraak" },
     { id: "contact", icon: "📞", label: "Contact" },
+    { id: "gegevens", icon: "👤", label: "Gegevens" },
   ];
-  const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact" };
+  const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", gegevens: "Mijn Gegevens" };
 
   if (laden) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg }}>
@@ -632,7 +823,8 @@ export default function KlantApp({ userId }) {
         {tab === "service" && <Servicegeschiedenis motoren={motoren} />}
         {tab === "km" && <KmStand motoren={motoren} onSlaOp={slaKmOp} />}
         {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
-        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} />}
+        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
+        {tab === "gegevens" && <Gegevens klant={klant} motoren={motoren} onUpdateKlant={updateKlantProfiel} onVoegMotorToe={voegMotorToeVanKlant} onWijzigWachtwoord={wijzigWachtwoord} />}
       </div>
 
       <nav style={css.bottomNav}>

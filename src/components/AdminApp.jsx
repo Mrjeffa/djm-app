@@ -1076,9 +1076,12 @@ const DEFAULT_TIJDEN = {
   zo:{open:"",sluit:"",gesloten:true}
 };
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
+  const [opmTekst,setOpmTekst]=useState(opmerking);
+  const [opmOpgeslagen,setOpmOpgeslagen]=useState(false);
+  useEffect(()=>{ setOpmTekst(opmerking); },[opmerking]);
   const [periodeVan,setPeriodeVan]=useState("");
   const [periodeTot,setPeriodeTot]=useState("");
 
@@ -1124,8 +1127,31 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
     }
   }
 
+  const slaOpmOp = async () => {
+    await onSaveOpmerking(opmTekst);
+    setOpmOpgeslagen(true);
+    setTimeout(()=>setOpmOpgeslagen(false),2000);
+  };
+
   return(
     <div style={{maxWidth:600}}>
+      {/* Bericht aan klanten */}
+      <div style={{...s.card,marginBottom:16}}>
+        <div style={s.sectionLabel}>Bericht aan klanten</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:12}}>
+          Dit bericht verschijnt in het rood op de contactpagina van klanten. Leeg laten = geen bericht.
+        </div>
+        <textarea style={{...s.input,height:80,resize:"vertical",fontFamily:"Barlow, sans-serif"}}
+          value={opmTekst} onChange={e=>setOpmTekst(e.target.value)}
+          placeholder='Bijv. "Wegens de warmte sluiten wij vandaag om 15:00 uur."'/>
+        <div style={{marginTop:10,display:"flex",justifyContent:"flex-end",gap:10}}>
+          {opmTekst&&<button style={{...s.btnGhost,width:"auto",padding:"7px 14px"}} onClick={()=>{ setOpmTekst(""); onSaveOpmerking(""); }}>Wissen</button>}
+          <button style={{...s.btn,background:opmOpgeslagen?T.green:T.accent,width:"auto",padding:"9px 20px"}} onClick={slaOpmOp}>
+            {opmOpgeslagen?"✓ Opgeslagen!":"Opslaan"}
+          </button>
+        </div>
+      </div>
+
       {/* Openingstijden */}
       <div style={{...s.card,marginBottom:16}}>
         <div style={s.sectionLabel}>Openingstijden</div>
@@ -1249,9 +1275,10 @@ export default function AdminApp(){
         setAfspraken((a.data||[]).map(x=>({...x,klant:x.klanten?.naam||"Onbekend"})));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
+        if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -1389,12 +1416,44 @@ export default function AdminApp(){
 
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
+  const [opmerking, setOpmerking] = useState("");
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("instellingen").update({ openingstijden: tijden }).eq("id", 1);
     setOpeningstijden(tijden);
   };
+
+  const slaOpmerkingOp = async (tekst) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ opmerking: tekst }).eq("id", 1);
+    setOpmerking(tekst);
+  };
+
+  // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten
+  useEffect(() => {
+    let sub;
+    import("../lib/supabase.js").then(({ supabase: sb }) => {
+      sub = sb.channel("admin-afspraken")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken" }, ({ new: n }) => {
+          sb.from("afspraken").select("*, klanten(naam)").eq("id", n.id).single()
+            .then(({ data }) => {
+              if(data) setAfspraken(p => [...p, { ...data, klant: data.klanten?.naam || "Onbekend" }]);
+            });
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken" }, ({ new: n }) => {
+          sb.from("afspraken").select("*, klanten(naam)").eq("id", n.id).single()
+            .then(({ data }) => {
+              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.klanten?.naam || "Onbekend" } : a));
+            });
+        })
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "afspraken" }, ({ old: o }) => {
+          setAfspraken(p => p.filter(a => a.id !== o.id));
+        })
+        .subscribe();
+    });
+    return () => { if(sub) sub.unsubscribe(); };
+  }, []);
 
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
@@ -1418,7 +1477,7 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
   );
 

@@ -106,7 +106,9 @@ export default function App() {
     })
 
     // Vangnet: na 12s altijd doorgaan + reset bezig zodat events niet geblokkeerd raken
-    const vannet = setTimeout(() => { setLaden(false); bezig.current = false }, 12000)
+    // Na 12s altijd laden stoppen. heeftSessie op true zodat SIGNED_IN daarna
+    // nooit meer een nieuw laadscherm start — anders loopt het in cirkels.
+    const vannet = setTimeout(() => { setLaden(false); heeftSessie.current = true }, 12000)
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 
