@@ -88,9 +88,8 @@ function MotorSelector({ motoren, selected, onSelect }) {
 }
 
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
-function MijnMotor({ motoren }) {
-  const [selId, setSelId] = useState(motoren[0]?.id);
-  const motor = motoren.find(m => m.id === selId) || motoren[0];
+function MijnMotor({ motoren, selMotorId, onSelMotor }) {
+  const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
@@ -102,7 +101,7 @@ function MijnMotor({ motoren }) {
 
   return (
     <div>
-      <MotorSelector motoren={motoren} selected={selId} onSelect={setSelId} />
+      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={onSelMotor} />
 
       <div style={{ ...css.card, background: `linear-gradient(135deg, ${T.surf} 60%, ${T.accent}12)`, border: `1px solid ${T.accent}30`, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -167,14 +166,13 @@ function MijnMotor({ motoren }) {
 }
 
 // ── Scherm: Servicegeschiedenis ────────────────────────────────────────────
-function Servicegeschiedenis({ motoren }) {
-  const [selId, setSelId] = useState(motoren[0]?.id);
-  const motor = motoren.find(m => m.id === selId) || motoren[0];
+function Servicegeschiedenis({ motoren, selMotorId, onSelMotor }) {
+  const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   if (!motor) return null;
 
   return (
     <div>
-      <MotorSelector motoren={motoren} selected={selId} onSelect={setSelId} />
+      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={onSelMotor} />
       <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 16 }}>
         {motor.merk} {motor.model}
         <span style={{ ...css.badge(T.accent), marginLeft: 10, fontSize: 10 }}>{motor.kenteken}</span>
@@ -205,12 +203,11 @@ function Servicegeschiedenis({ motoren }) {
 }
 
 // ── Scherm: Km Stand ───────────────────────────────────────────────────────
-function KmStand({ motoren, onSlaOp }) {
-  const [selId, setSelId] = useState(motoren[0]?.id);
+function KmStand({ motoren, selMotorId, onSelMotor, onSlaOp }) {
   const [nieuwKm, setNieuwKm] = useState("");
   const [opgeslagen, setOpgeslagen] = useState(false);
   const [bezig, setBezig] = useState(false);
-  const motor = motoren.find(m => m.id === selId) || motoren[0];
+  const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   if (!motor) return null;
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
@@ -228,7 +225,7 @@ function KmStand({ motoren, onSlaOp }) {
 
   return (
     <div>
-      <MotorSelector motoren={motoren} selected={selId} onSelect={id => { setSelId(id); setOpgeslagen(false); }} />
+      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={id => { onSelMotor(id); setOpgeslagen(false); }} />
 
       <div style={css.cardAccent}>
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Huidige kilometerstand</div>
@@ -267,19 +264,18 @@ function KmStand({ motoren, onSlaOp }) {
 }
 
 // ── Scherm: Afspraak ───────────────────────────────────────────────────────
-function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
-  const [selId, setSelId] = useState(motoren[0]?.id);
+function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], onSlaOp }) {
   const [selDatum, setSelDatum] = useState(null);
   const [notitie, setNotitie] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
-  const motor = motoren.find(m => m.id === selId) || motoren[0];
+  const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   const beschikbaar = getBeschikbareDagen(bezetteDagen);
 
   const verstuur = async () => {
     if (!selDatum || bezig) return;
     setBezig(true);
-    await onSlaOp({ motorId: selId, datum: selDatum, opmerking: notitie });
+    await onSlaOp({ motorId: selMotorId, datum: selDatum, opmerking: notitie });
     setBezig(false);
     setVerstuurd(true);
   };
@@ -307,7 +303,7 @@ function Afspraak({ motoren, bezetteDagen = [], onSlaOp }) {
 
   return (
     <div>
-      <MotorSelector motoren={motoren} selected={selId} onSelect={setSelId} />
+      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={onSelMotor} />
 
       <div style={{ background: T.accentSoft, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 13, lineHeight: 1.7, color: T.text }}>
         Door drukte kan de tijd uitlopen — we bellen je als de motor klaar is. 🔧
@@ -707,11 +703,14 @@ export default function KlantApp({ userId }) {
   const [tab, setTab] = useState("motor");
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
+  const [selMotorId, setSelMotorId] = useState(() => sessionStorage.getItem("djm_sel_motor"));
   const [bezetteDagen, setBezetteDagen] = useState([]);
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
   const [laden, setLaden] = useState(true);
+
+  const kiesMotor = (id) => { sessionStorage.setItem("djm_sel_motor", id); setSelMotorId(id); };
 
   useEffect(() => {
     const timer = setTimeout(() => setLaden(false), 12000);
@@ -766,6 +765,8 @@ export default function KlantApp({ userId }) {
             kmHistory: (kmData||[]).filter(k => k.motor_id === m.id).map(k => ({ datum: k.datum, km: k.km })),
             service: (svcData||[]).filter(s => s.motor_id === m.id),
           })));
+          const storedId = sessionStorage.getItem("djm_sel_motor");
+          setSelMotorId(motorIds.includes(storedId) ? storedId : motorIds[0]);
         } else {
           setMotoren([]);
         }
@@ -933,10 +934,10 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={motoren} />}
-        {tab === "service" && <Servicegeschiedenis motoren={motoren} />}
-        {tab === "km" && <KmStand motoren={motoren} onSlaOp={slaKmOp} />}
-        {tab === "afspraak" && <Afspraak motoren={motoren} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
+        {tab === "motor" && <MijnMotor motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
+        {tab === "service" && <Servicegeschiedenis motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
+        {tab === "km" && <KmStand motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp} />}
+        {tab === "afspraak" && <Afspraak motoren={motoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
         {tab === "instellingen" && (
           <Instellingen
