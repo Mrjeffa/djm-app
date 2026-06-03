@@ -559,13 +559,14 @@ function Dashboard({klanten,showroom,afspraken,onNav}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
   const [intervalVal,setIntervalVal]=useState("");
   const [editSvc,setEditSvc]=useState(null);
   const [delSvcId,setDelSvcId]=useState(null);
+  const [delKlant,setDelKlant]=useState(false);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -605,8 +606,20 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
             )}
             <button style={s.btnOutline} onClick={()=>onUitnodig(klant)}>Uitnodigen</button>
             <button style={s.btn} onClick={()=>setModal("addMotor")}>+ Motor</button>
+            <button style={{...s.btnGhost,color:T.red,borderColor:T.red}} onClick={()=>setDelKlant(true)}>Verwijder klant</button>
           </div>
         </div>
+        {delKlant&&(
+          <div style={{marginTop:14,padding:"12px 14px",background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:6}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:8}}>
+              Klant <span style={{color:T.red}}>{klant.naam}</span> en alle bijbehorende motoren, servicehistorie en afspraken permanent verwijderen?
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button style={{...s.btn,background:T.red,flex:"none",padding:"8px 16px",fontSize:13}} onClick={()=>{onDeleteKlant(klant);onBack();}}>Ja, verwijder alles</button>
+              <button style={{...s.btnGhost,flex:"none",padding:"8px 16px",fontSize:13}} onClick={()=>setDelKlant(false)}>Annuleer</button>
+            </div>
+          </div>
+        )}
       </div>
       {klantMotoren.map(motor=>(
         <div key={motor.id} style={{...s.card,marginBottom:12}}>
@@ -680,7 +693,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onUpdateMotorInterval,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,voorraad=[]}){
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("alle");
@@ -743,6 +756,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onAddService={onAddService}
             onUpdateService={onUpdateService}
             onDeleteService={onDeleteService}
+            onDeleteKlant={onDeleteKlant}
             onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
@@ -768,6 +782,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onAddService={onAddService}
             onUpdateService={onUpdateService}
             onDeleteService={onDeleteService}
+            onDeleteKlant={onDeleteKlant}
             onUpdateMotorInterval={onUpdateMotorInterval}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
@@ -1439,6 +1454,23 @@ export default function AdminApp(){
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,service:m.service.filter(sv=>sv.id!==svcId)}:m)}:k));
   };
 
+  const deleteKlant = async (klant) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const motorIds = (klant.motoren||[]).map(m=>m.id);
+    // Verwijder in volgorde: service → km → motoren → afspraken → klant
+    if(motorIds.length>0){
+      await Promise.all([
+        sb.from("service_beurten").delete().in("motor_id",motorIds),
+        sb.from("km_historie").delete().in("motor_id",motorIds),
+      ]);
+      await sb.from("motoren").delete().in("id",motorIds);
+    }
+    await sb.from("afspraken").delete().eq("klant_id",klant.id);
+    await sb.from("klanten").delete().eq("id",klant.id);
+    setKlanten(p=>p.filter(k=>k.id!==klant.id));
+    setAfspraken(p=>p.filter(a=>a.klant_id!==klant.id));
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
@@ -1560,7 +1592,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
