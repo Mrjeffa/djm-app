@@ -1387,8 +1387,16 @@ export default function AdminApp(){
       motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null
     }).select().single();
     if(!svc) return;
-    await sb.from("motoren").update({last_service_km:f.km||0}).eq("id",motorId);
-    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,service:[svc,...m.service],last_service_km:f.km||0}:m)}:k));
+    const kmVal = f.km ? parseInt(f.km) : 0;
+    const updates = [sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId)];
+    if(kmVal>0) updates.push(sb.from("km_historie").insert({motor_id:motorId, km:kmVal, datum:f.datum}));
+    await Promise.all(updates);
+    setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{
+      ...m,
+      service:[svc,...m.service],
+      last_service_km:kmVal,
+      kmHistory: kmVal>0 ? [...(m.kmHistory||[]), {datum:f.datum, km:kmVal}] : m.kmHistory
+    }:m)}:k));
   };
 
   const updateMotorInterval = async (motorId, intervalKm) => {
