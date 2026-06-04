@@ -959,11 +959,12 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
+function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop,onDelete}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
   const [lichtbakFoto,setLichtbakFoto]=useState(null);
+  const [delMotor,setDelMotor]=useState(null);
 
   return(
     <div>
@@ -1024,9 +1025,14 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
               )}
 
               {/* Acties */}
-              <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,width:"100%",marginBottom:10}}>
-                Verkopen aan klant →
-              </button>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}>
+                  Verkopen aan klant →
+                </button>
+                <button onClick={()=>setDelMotor(m)} style={{padding:"8px 12px",background:"none",border:`1px solid ${T.red}`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
+                  🗑
+                </button>
+              </div>
 
               {/* Platform knoppen */}
               <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10}}>
@@ -1069,6 +1075,24 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
           </Field>
           <ModalFooter onClose={()=>setVerkoopMotor(null)} label="Verkopen"
             onClick={()=>{if(verkoopKlant){onVerkoop(verkoopMotor,verkoopKlant);setVerkoopMotor(null);}}}/>
+        </Modal>
+      )}
+
+      {delMotor&&(
+        <Modal title="MOTOR VERWIJDEREN" onClose={()=>setDelMotor(null)}>
+          <div style={{padding:"14px 0 10px"}}>
+            <div style={{fontSize:14,marginBottom:6}}>{delMotor.merk} {delMotor.model} — <span style={{fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{delMotor.kenteken}</span></div>
+            <div style={{fontSize:13,color:T.muted}}>
+              Dit verwijdert de motor uit de voorraad.
+              {(delMotor.fotos||[]).length>0&&<> De {delMotor.fotos.length} foto{delMotor.fotos.length>1?"'s":""} worden ook verwijderd uit Cloudinary.</>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+            <button onClick={()=>setDelMotor(null)} style={{...s.btnOutline,padding:"8px 14px"}}>Annuleer</button>
+            <button onClick={()=>{onDelete(delMotor);setDelMotor(null);}} style={{background:T.red,color:"#fff",border:"none",borderRadius:3,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600}}>
+              Ja, verwijderen
+            </button>
+          </div>
         </Modal>
       )}
     </div>
@@ -1702,6 +1726,13 @@ export default function AdminApp(){
     setAfspraken(p=>p.filter(a=>a.klant_id!==klant.id));
   };
 
+  const verwijderCloudinaryFotos = async (fotos) => {
+    const urls = (fotos||[]).filter(Boolean);
+    if(!urls.length) return;
+    const sb = (await import("../lib/supabase.js")).supabase;
+    sb.functions.invoke("cloudinary-delete", { body: { urls } });
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
@@ -1726,6 +1757,14 @@ export default function AdminApp(){
       setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:[]}]}:k));
     }
     setShowroom(p=>p.filter(m=>m.id!==motor.id));
+    verwijderCloudinaryFotos(motor.fotos);
+  };
+
+  const deleteVoorraadMotor = async (motor) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("voorraad").delete().eq("id",motor.id);
+    setShowroom(p=>p.filter(m=>m.id!==motor.id));
+    verwijderCloudinaryFotos(motor.fotos);
   };
 
   const addAfspraak = async (f) => {
@@ -1825,7 +1864,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
