@@ -386,15 +386,17 @@ function MotorModal({onSave,onClose}){
 
 function BandInput({value, onChange}) {
   const parts = (value||"").split("/");
-  const w = parts[0]||"", y = parts[1]||"";
-  const set = (newW, newY) => { onChange(newW&&newY ? `${newW}/${newY}` : ""); };
+  const [w, setW] = useState(parts[0]||"");
+  const [y, setY] = useState(parts[1]||"");
+  const handleW = (v) => { setW(v); onChange(v && y ? `${v}/${y}` : ""); };
+  const handleY = (v) => { setY(v); onChange(w && v ? `${w}/${v}` : ""); };
   return (
     <div style={{display:"flex",gap:6,alignItems:"center"}}>
       <input style={{...s.input,width:62,padding:"8px 6px",textAlign:"center"}} type="number"
-        min="1" max="53" value={w} onChange={e=>set(e.target.value,y)} placeholder="24"/>
+        min="1" max="53" value={w} onChange={e=>handleW(e.target.value)} placeholder="24"/>
       <span style={{color:T.muted,fontSize:13,flexShrink:0}}>/ week</span>
       <input style={{...s.input,width:72,padding:"8px 6px",textAlign:"center"}} type="number"
-        min="1990" max="2100" value={y} onChange={e=>set(w,e.target.value)} placeholder="2026"/>
+        min="1990" max="2100" value={y} onChange={e=>handleY(e.target.value)} placeholder="2026"/>
     </div>
   );
 }
