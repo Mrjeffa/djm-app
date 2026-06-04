@@ -440,7 +440,7 @@ function ServiceModal({onSave,onClose,initial}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,voorband_datum:"",achterband_datum:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:""});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoFiles,setFotoFiles]=useState([]);
   const [fotoPreviews,setFotoPreviews]=useState([]);
@@ -525,6 +525,7 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
+      <Field label="Chassisnummer (optioneel)"><input style={s.input} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456" style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}/></Field>
 
       {/* Stap 3: bandendatums */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
@@ -561,6 +562,99 @@ function VoorraadModal({onSave,onClose}){
 
       <ModalFooter onClose={onClose} label={uploadStatus==="laden"?"Bezig…":"Toevoegen aan voorraad"}
         onClick={opslaan}/>
+    </Modal>
+  );
+}
+
+function VoorraadEditModal({motor, onSave, onClose}){
+  const [f,setF]=useState({
+    merk:motor.merk||"", model:motor.model||"", bouwjaar:motor.bouwjaar||"",
+    km:motor.km||"", prijs:motor.prijs||"", datum_in:motor.datum_in||TODAY,
+    chassis_nummer:motor.chassis_nummer||"",
+    voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
+  });
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  const [behoudeFotos,setBehoudeFotos]=useState(Array.isArray(motor.fotos)?motor.fotos:[]);
+  const [nieuweFotoFiles,setNieuweFotoFiles]=useState([]);
+  const [nieuweFotoPreviews,setNieuweFotoPreviews]=useState([]);
+  const [uploadStatus,setUploadStatus]=useState(null);
+
+  const voegFotosToe=(e)=>{
+    const files=Array.from(e.target.files||[]);
+    if(!files.length) return;
+    setNieuweFotoFiles(p=>[...p,...files]);
+    setNieuweFotoPreviews(p=>[...p,...files.map(fi=>URL.createObjectURL(fi))]);
+    e.target.value="";
+  };
+  const verwijderNieuw=(i)=>{
+    URL.revokeObjectURL(nieuweFotoPreviews[i]);
+    setNieuweFotoFiles(p=>p.filter((_,j)=>j!==i));
+    setNieuweFotoPreviews(p=>p.filter((_,j)=>j!==i));
+  };
+  const opslaan=async()=>{
+    if(!f.merk) return;
+    setUploadStatus("laden");
+    try{
+      const nieuweUrls=nieuweFotoFiles.length>0
+        ? await Promise.all(nieuweFotoFiles.map(fi=>uploadFoto(fi)))
+        : [];
+      const verwijderdeUrls=(motor.fotos||[]).filter(u=>!behoudeFotos.includes(u));
+      onSave(motor.id, f, behoudeFotos, nieuweUrls, verwijderdeUrls);
+      onClose();
+    }catch(e){ setUploadStatus("fout: "+e.message); }
+  };
+
+  return(
+    <Modal title="MOTOR WIJZIGEN" onClose={onClose}>
+      <Grid2>
+        <Field label="Merk *"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
+        <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
+        <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
+        <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
+        <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
+        <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
+      </Grid2>
+      <Field label="Chassisnummer">
+        <input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/>
+      </Field>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <div style={s.sectionLabel}>Bandendatums</div>
+      <Grid2>
+        <Field label="Voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
+        <Field label="Achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <div style={s.sectionLabel}>Foto's</div>
+      {behoudeFotos.length>0&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {behoudeFotos.map((url,i)=>(
+            <div key={i} style={{position:"relative",flexShrink:0}}>
+              <img src={clImg(url,200)} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
+              <button onClick={()=>setBehoudeFotos(p=>p.filter((_,j)=>j!==i))}
+                style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {nieuweFotoPreviews.length>0&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {nieuweFotoPreviews.map((url,i)=>(
+            <div key={i} style={{position:"relative",flexShrink:0}}>
+              <img src={url} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px dashed ${T.accent}`}}/>
+              <button onClick={()=>verwijderNieuw(i)}
+                style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:`1px dashed ${T.border}`,borderRadius:4,cursor:"pointer",marginBottom:12}}>
+        <span style={{fontSize:20}}>📷</span>
+        <div style={{fontSize:13,color:T.muted}}>Foto's toevoegen</div>
+        <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={voegFotosToe}/>
+      </label>
+      {uploadStatus==="laden"&&<div style={{fontSize:12,color:T.accent,marginBottom:10}}>⬆ Uploaden…</div>}
+      {uploadStatus&&uploadStatus.startsWith("fout")&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ {uploadStatus}</div>}
+      <ModalFooter onClose={onClose} label={uploadStatus==="laden"?"Bezig…":"Opslaan"} onClick={opslaan}/>
     </Modal>
   );
 }
@@ -961,12 +1055,13 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop,onDelete}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
   const [lichtbakFoto,setLichtbakFoto]=useState(null);
   const [delMotor,setDelMotor]=useState(null);
+  const [editMotor,setEditMotor]=useState(null);
 
   return(
     <div>
@@ -998,11 +1093,18 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop,onDelete}){
 
               {/* Motor info */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                <div>
+                <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
-                  <span style={{...s.badge(T.muted),marginTop:4,display:"inline-block"}}>{m.kenteken}</span>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
+                    <span style={{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:12,fontWeight:700,background:`${T.yellow}15`,color:T.text,border:`1px solid ${T.yellow}70`,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{m.kenteken}</span>
+                    {m.chassis_nummer&&(
+                      <span style={{fontSize:11,color:T.muted,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:0.5}}>
+                        {m.chassis_nummer.slice(0,-4)}<span style={{color:T.yellow,fontWeight:700}}>{m.chassis_nummer.slice(-4)}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent}}>€{m.prijs.toLocaleString()}</div>
+                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent,flexShrink:0}}>€{m.prijs.toLocaleString()}</div>
               </div>
               <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
                 {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
@@ -1031,9 +1133,8 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop,onDelete}){
                 <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}>
                   Verkopen aan klant →
                 </button>
-                <button onClick={()=>setDelMotor(m)} style={{padding:"8px 12px",background:"none",border:`1px solid ${T.red}`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
-                  🗑
-                </button>
+                <button onClick={()=>setEditMotor(m)} title="Wijzigen" style={{padding:"8px 12px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.accent,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>✏</button>
+                <button onClick={()=>setDelMotor(m)} title="Verwijderen" style={{padding:"8px 12px",background:"none",border:`1px solid ${T.red}`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>🗑</button>
               </div>
 
               {/* Platform knoppen */}
@@ -1054,6 +1155,7 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop,onDelete}){
       </div>
 
       {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
+      {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
 
       {/* Lichtbak voor foto's */}
       {lichtbakFoto&&(
@@ -1742,8 +1844,29 @@ export default function AdminApp(){
       bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
       prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      chassis_nummer:f.chassis_nummer||null,
     }).select().single();
     if(v) setShowroom(p=>[v,...p]);
+  };
+
+  const updateVoorraadMotor = async (id, f, behoudeFotos, nieuweUrls, verwijderdeUrls) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const alleFotos = [...behoudeFotos, ...nieuweUrls];
+    await sb.from("voorraad").update({
+      merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
+      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
+      chassis_nummer:f.chassis_nummer||null,
+      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      fotos:alleFotos,
+    }).eq("id",id);
+    setShowroom(p=>p.map(m=>m.id===id?{
+      ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
+      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
+      chassis_nummer:f.chassis_nummer||null,
+      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      fotos:alleFotos,
+    }:m));
+    if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
   };
 
   const verkoop = async (motor, klantId) => {
@@ -1866,7 +1989,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
