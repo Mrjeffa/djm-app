@@ -52,6 +52,46 @@ const TODAY = new Date().toISOString().split("T")[0];
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
+// ── Cloudinary ──────────────────────────────────────────────────────────────
+const CL_CLOUD = "dkfdwnep4";
+const CL_PRESET = "Djm app";
+
+const uploadFoto = async (file) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", CL_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_CLOUD}/image/upload`, {
+    method: "POST", body: fd,
+  });
+  const data = await res.json();
+  if(data.error) throw new Error(data.error.message);
+  return data.secure_url;
+};
+
+const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
+
+// ── Band-utils ──────────────────────────────────────────────────────────────
+const getWeekNr = (d) => {
+  const start = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7);
+};
+
+const bandLeeftijd = (datumStr) => {
+  if(!datumStr) return null;
+  const [w, y] = datumStr.split("/").map(Number);
+  if(!w || !y || w < 1 || w > 53 || y < 1990) return null;
+  const now = new Date();
+  return (now.getFullYear() - y) + (getWeekNr(now) - w) / 52;
+};
+
+const bandStatus = (jaren) => {
+  if(jaren === null) return null;
+  if(jaren >= 10) return { kleur: T.red,    icon: "✕", label: "vervangen!" };
+  if(jaren >= 8)  return { kleur: T.red,    icon: "⚠", label: `${jaren.toFixed(1)} jr` };
+  if(jaren >= 5)  return { kleur: "#F59E0B", icon: "⚠", label: `${jaren.toFixed(1)} jr` };
+  return               { kleur: "#22C55E",  icon: "✓", label: `${jaren.toFixed(1)} jr` };
+};
+
 const getWeekDates = base => {
   const d = new Date(base); const day = d.getDay();
   const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
@@ -344,8 +384,37 @@ function MotorModal({onSave,onClose}){
   );
 }
 
+function BandInput({value, onChange}) {
+  const parts = (value||"").split("/");
+  const w = parts[0]||"", y = parts[1]||"";
+  const set = (newW, newY) => { onChange(newW&&newY ? `${newW}/${newY}` : ""); };
+  return (
+    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+      <input style={{...s.input,width:62,padding:"8px 6px",textAlign:"center"}} type="number"
+        min="1" max="53" value={w} onChange={e=>set(e.target.value,y)} placeholder="24"/>
+      <span style={{color:T.muted,fontSize:13,flexShrink:0}}>/ week</span>
+      <input style={{...s.input,width:72,padding:"8px 6px",textAlign:"center"}} type="number"
+        min="1990" max="2100" value={y} onChange={e=>set(w,e.target.value)} placeholder="2026"/>
+    </div>
+  );
+}
+
+function BandTag({datum}) {
+  if(!datum) return null;
+  const jaren = bandLeeftijd(datum);
+  const bs = bandStatus(jaren);
+  if(!bs) return <span style={{fontSize:11,color:T.muted}}>{datum}</span>;
+  return <span style={{fontSize:11,color:bs.kleur,fontWeight:600}}>{bs.icon} {datum} ({bs.label})</span>;
+}
+
 function ServiceModal({onSave,onClose,initial}){
-  const [f,setF]=useState(initial?{datum:initial.datum,omschrijving:initial.omschrijving,km:initial.km||""}:{datum:TODAY,omschrijving:"",km:""});
+  const [f,setF]=useState({
+    datum: initial?.datum||TODAY,
+    omschrijving: initial?.omschrijving||"",
+    km: initial?.km||"",
+    voorband_datum: initial?.voorband_datum||"",
+    achterband_datum: initial?.achterband_datum||"",
+  });
   return(
     <Modal title={initial?"SERVICE BEWERKEN":"SERVICE TOEVOEGEN"} onClose={onClose}>
       <Grid2>
@@ -355,6 +424,13 @@ function ServiceModal({onSave,onClose,initial}){
       <Field label="Omschrijving">
         <textarea style={{...s.input,height:90,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat is er gedaan?"/>
       </Field>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <div style={s.sectionLabel}>Bandendatums (optioneel)</div>
+      <div style={{fontSize:11,color:T.muted,marginBottom:10,marginTop:-8}}>Weeknummer / jaar van productie (staat op de zijkant van de band)</div>
+      <Grid2>
+        <Field label="Voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
+        <Field label="Achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
       <ModalFooter onClose={onClose} onClick={()=>{if(f.omschrijving){onSave(f);onClose();}}}/>
     </Modal>
   );
@@ -362,8 +438,11 @@ function ServiceModal({onSave,onClose,initial}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY});
-  const [status,setStatus]=useState(null); // null | "laden" | "gevonden" | "niet_gevonden" | "fout"
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,voorband_datum:"",achterband_datum:""});
+  const [rdwStatus,setRdwStatus]=useState(null);
+  const [fotoFiles,setFotoFiles]=useState([]);
+  const [fotoPreviews,setFotoPreviews]=useState([]);
+  const [uploadStatus,setUploadStatus]=useState(null);
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
 
   const normKenteken = k => k.replace(/-/g,"").toUpperCase();
@@ -371,42 +450,69 @@ function VoorraadModal({onSave,onClose}){
   const haalRDWOp = async () => {
     const ken = normKenteken(kenteken);
     if(!ken) return;
-    setStatus("laden");
+    setRdwStatus("laden");
     try {
       const res = await fetch(`https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${ken}`);
       const data = await res.json();
-      if(!data||data.length===0){ setStatus("niet_gevonden"); return; }
+      if(!data||data.length===0){ setRdwStatus("niet_gevonden"); return; }
       const v = data[0];
-      setF(p=>({
-        ...p,
+      setF(p=>({...p,
         merk: v.merk ? v.merk.charAt(0)+v.merk.slice(1).toLowerCase() : "",
         model: v.handelsbenaming || "",
         bouwjaar: v.datum_eerste_toelating ? v.datum_eerste_toelating.substring(0,4) : "",
       }));
-      setStatus("gevonden");
-    } catch(e){ setStatus("fout"); }
+      setRdwStatus("gevonden");
+    } catch{ setRdwStatus("fout"); }
+  };
+
+  const voegFotosToe = (e) => {
+    const files = Array.from(e.target.files||[]);
+    if(!files.length) return;
+    setFotoFiles(p=>[...p,...files]);
+    setFotoPreviews(p=>[...p,...files.map(f=>URL.createObjectURL(f))]);
+    e.target.value = "";
+  };
+
+  const verwijderFoto = (i) => {
+    URL.revokeObjectURL(fotoPreviews[i]);
+    setFotoFiles(p=>p.filter((_,j)=>j!==i));
+    setFotoPreviews(p=>p.filter((_,j)=>j!==i));
+  };
+
+  const opslaan = async () => {
+    const ken = normKenteken(kenteken);
+    if(!ken||!f.merk) return;
+    setUploadStatus("laden");
+    try {
+      const urls = fotoFiles.length > 0
+        ? await Promise.all(fotoFiles.map(file=>uploadFoto(file)))
+        : [];
+      onSave({...f, kenteken:ken, fotos:urls});
+      onClose();
+    } catch(e){
+      setUploadStatus("fout: "+e.message);
+    }
   };
 
   const kentekenGeformateerd = normKenteken(kenteken);
-  const rdwGegevensGeladen = status==="gevonden";
 
   return(
     <Modal title="MOTOR TOEVOEGEN — VOORRAAD" onClose={onClose}>
-      {/* Stap 1: kenteken */}
+      {/* Stap 1 */}
       <div style={s.sectionLabel}>Stap 1 — Kenteken opzoeken via RDW</div>
       <div style={{display:"flex",gap:8,marginBottom:6}}>
         <input style={{...s.input,flex:1,fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:16,letterSpacing:2,textTransform:"uppercase"}}
           value={kenteken} onChange={e=>setKenteken(e.target.value)}
           placeholder="AB-123-C" onKeyDown={e=>e.key==="Enter"&&haalRDWOp()}/>
-        <button style={{...s.btn,flexShrink:0}} onClick={haalRDWOp} disabled={status==="laden"}>
-          {status==="laden"?"Laden...":"Ophalen →"}
+        <button style={{...s.btn,flexShrink:0}} onClick={haalRDWOp} disabled={rdwStatus==="laden"}>
+          {rdwStatus==="laden"?"Laden...":"Ophalen →"}
         </button>
       </div>
-      {status==="niet_gevonden"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Kenteken niet gevonden in RDW — vul gegevens handmatig in.</div>}
-      {status==="fout"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Verbinding mislukt — vul gegevens handmatig in.</div>}
-      {status==="gevonden"&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>✓ Gegevens opgehaald uit RDW — controleer en pas aan indien nodig.</div>}
+      {rdwStatus==="niet_gevonden"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Kenteken niet gevonden — vul handmatig in.</div>}
+      {rdwStatus==="fout"&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ Verbinding mislukt — vul handmatig in.</div>}
+      {rdwStatus==="gevonden"&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>✓ Gegevens opgehaald uit RDW.</div>}
 
-      {/* Stap 2: details (altijd zichtbaar, invulbaar) */}
+      {/* Stap 2 */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Stap 2 — Gegevens controleren / aanvullen</div>
       <Grid2>
@@ -417,8 +523,42 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
-      <ModalFooter onClose={onClose} label="Toevoegen aan voorraad"
-        onClick={()=>{if(kentekenGeformateerd&&f.merk){onSave({...f,kenteken:kentekenGeformateerd});onClose();}}}/>
+
+      {/* Stap 3: bandendatums */}
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Stap 3 — Bandendatums (optioneel)</div>
+      <div style={{fontSize:11,color:T.muted,marginBottom:12,marginTop:-8}}>Productieweek / jaar (staat op de zijkant van de band)</div>
+      <Grid2>
+        <Field label="Voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
+        <Field label="Achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
+
+      {/* Stap 4: foto's */}
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Stap 4 — Foto's (optioneel)</div>
+      <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:`1px dashed ${T.border}`,borderRadius:4,cursor:"pointer",marginBottom:12}}>
+        <span style={{fontSize:22}}>📷</span>
+        <div>
+          <div style={{fontSize:13,color:T.text,fontWeight:500}}>Foto's toevoegen</div>
+          <div style={{fontSize:11,color:T.muted}}>Meerdere tegelijk mogelijk · worden automatisch verkleind</div>
+        </div>
+        <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={voegFotosToe}/>
+      </label>
+      {fotoPreviews.length>0&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {fotoPreviews.map((url,i)=>(
+            <div key={i} style={{position:"relative",flexShrink:0}}>
+              <img src={url} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
+              <button onClick={()=>verwijderFoto(i)} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {uploadStatus==="laden"&&<div style={{fontSize:12,color:T.accent,marginBottom:10}}>⬆ Foto's uploaden…</div>}
+      {uploadStatus&&uploadStatus.startsWith("fout")&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ {uploadStatus}</div>}
+
+      <ModalFooter onClose={onClose} label={uploadStatus==="laden"?"Bezig…":"Toevoegen aan voorraad"}
+        onClick={opslaan}/>
     </Modal>
   );
 }
@@ -694,6 +834,10 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
                     <div style={{flex:1}}>
                       <div style={{fontSize:13}}>{sv.omschrijving}</div>
                       {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>bij {sv.km.toLocaleString()} km</div>}
+                      {(sv.voorband_datum||sv.achterband_datum)&&<div style={{display:"flex",gap:10,marginTop:3}}>
+                        {sv.voorband_datum&&<span style={{fontSize:10,color:T.muted}}>V: <BandTag datum={sv.voorband_datum}/></span>}
+                        {sv.achterband_datum&&<span style={{fontSize:10,color:T.muted}}>A: <BandTag datum={sv.achterband_datum}/></span>}
+                      </div>}
                     </div>
                     <div style={{display:"flex",gap:4,flexShrink:0}}>
                       <button onClick={()=>setEditSvc({...sv,motorId:motor.id})} style={{background:"none",border:"none",color:T.accent,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>✏</button>
@@ -819,6 +963,7 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
+  const [lichtbakFoto,setLichtbakFoto]=useState(null);
 
   return(
     <div>
@@ -826,27 +971,89 @@ function VoorraadPage({showroom,onAddMotor,klanten,onVerkoop}){
         <button style={s.btn} onClick={()=>setModal("add")}>+ Motor Toevoegen</button>
       </div>
       {showroom.length===0&&<div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>Geen motors in voorraad</div>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:14}}>
-        {showroom.map(m=>(
-          <div key={m.id} style={s.card}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div>
-                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
-                <span style={{...s.badge(T.muted),marginTop:4,display:"inline-block"}}>{m.kenteken}</span>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+        {showroom.map(m=>{
+          const fotos = Array.isArray(m.fotos) ? m.fotos : [];
+          const vbJaren = bandLeeftijd(m.voorband_datum);
+          const abJaren = bandLeeftijd(m.achterband_datum);
+          const vbStatus = bandStatus(vbJaren);
+          const abStatus = bandStatus(abJaren);
+          return(
+            <div key={m.id} style={s.card}>
+              {/* Foto strip */}
+              {fotos.length>0&&(
+                <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:12,marginLeft:-20,marginRight:-20,paddingLeft:20,paddingRight:20,paddingBottom:2}}>
+                  {fotos.map((url,i)=>(
+                    <img key={i} src={clImg(url,400)} alt="" onClick={()=>setLichtbakFoto(url)}
+                      style={{height:130,width:"auto",objectFit:"cover",borderRadius:4,flexShrink:0,cursor:"pointer",border:`1px solid ${T.border}`}}/>
+                  ))}
+                </div>
+              )}
+              {fotos.length===0&&(
+                <div style={{height:90,background:T.surf2,borderRadius:4,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12}}>Geen foto's</div>
+              )}
+
+              {/* Motor info */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div>
+                  <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
+                  <span style={{...s.badge(T.muted),marginTop:4,display:"inline-block"}}>{m.kenteken}</span>
+                </div>
+                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent}}>€{m.prijs.toLocaleString()}</div>
               </div>
-              <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,color:T.accent}}>€{m.prijs.toLocaleString()}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
+                {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
+              </div>
+
+              {/* Bandendatums */}
+              {(m.voorband_datum||m.achterband_datum)&&(
+                <div style={{background:T.surf2,borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12}}>
+                  {m.voorband_datum&&(
+                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:m.achterband_datum?4:0}}>
+                      <span style={{color:T.muted,minWidth:70}}>Voorband:</span>
+                      <BandTag datum={m.voorband_datum}/>
+                    </div>
+                  )}
+                  {m.achterband_datum&&(
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span style={{color:T.muted,minWidth:70}}>Achterband:</span>
+                      <BandTag datum={m.achterband_datum}/>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Acties */}
+              <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,width:"100%",marginBottom:10}}>
+                Verkopen aan klant →
+              </button>
+
+              {/* Platform knoppen */}
+              <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10}}>
+                <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Publiceren op</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {[{naam:"Motoroccasion.nl",kleur:"#1a6bc4"},{naam:"Autoscout24.nl",kleur:"#f50c30"},{naam:"Marktplaats.nl",kleur:"#ed7d00"}].map(p=>(
+                    <button key={p.naam} title="Binnenkort beschikbaar"
+                      style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:"transparent",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"not-allowed",fontFamily:"Barlow, sans-serif",opacity:0.6}}>
+                      {p.naam} ↗
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:12}}>
-              {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
-            </div>
-            <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={s.btnOutline}>
-              Verkopen aan klant →
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
+
+      {/* Lichtbak voor foto's */}
+      {lichtbakFoto&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:20}} onClick={()=>setLichtbakFoto(null)}>
+          <img src={clImg(lichtbakFoto,1600)} alt="" style={{maxWidth:"100%",maxHeight:"90vh",objectFit:"contain",borderRadius:4}}/>
+          <button onClick={()=>setLichtbakFoto(null)} style={{position:"absolute",top:16,right:20,background:"none",border:"none",color:"#fff",fontSize:28,cursor:"pointer"}}>✕</button>
+        </div>
+      )}
 
       {verkoopMotor&&(
         <Modal title="MOTOR VERKOPEN" onClose={()=>setVerkoopMotor(null)}>
@@ -1435,7 +1642,8 @@ export default function AdminApp(){
   const addService = async (klantId, motorId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:svc} = await sb.from("service_beurten").insert({
-      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null
+      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null,
+      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
     }).select().single();
     if(!svc) return;
     const kmVal = f.km ? parseInt(f.km) : 0;
@@ -1459,11 +1667,14 @@ export default function AdminApp(){
   const updateService = async (klantId, motorId, svcId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const kmVal = f.km ? parseInt(f.km) : null;
-    await sb.from("service_beurten").update({datum:f.datum,omschrijving:f.omschrijving,km:kmVal}).eq("id",svcId);
+    await sb.from("service_beurten").update({
+      datum:f.datum, omschrijving:f.omschrijving, km:kmVal,
+      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+    }).eq("id",svcId);
     if(kmVal) await sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId);
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{
       ...m,
-      service:m.service.map(sv=>sv.id===svcId?{...sv,datum:f.datum,omschrijving:f.omschrijving,km:kmVal}:sv),
+      service:m.service.map(sv=>sv.id===svcId?{...sv,datum:f.datum,omschrijving:f.omschrijving,km:kmVal,voorband_datum:f.voorband_datum||null,achterband_datum:f.achterband_datum||null}:sv),
       last_service_km:kmVal||m.last_service_km
     }:m)}:k));
   };
@@ -1496,7 +1707,8 @@ export default function AdminApp(){
     const {data:v} = await sb.from("voorraad").insert({
       kenteken:f.kenteken, merk:f.merk, model:f.model||"",
       bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
-      prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY
+      prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
+      fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
     }).select().single();
     if(v) setShowroom(p=>[v,...p]);
   };
