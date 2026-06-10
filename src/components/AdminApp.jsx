@@ -670,12 +670,20 @@ function VoorraadEditModal({motor, onSave, onClose}){
   );
 }
 
-function AfspraakModal({afspraken,klanten,onSave,onClose}){
+function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null}){
+  const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
+  const isDatumGesloten=(datum)=>{
+    if(!datum) return false;
+    if(geslotenDagen.includes(datum)) return true;
+    if(openingstijden){const dow=new Date(datum).getDay();return openingstijden[DAGMAP_AM[dow]]?.gesloten===true;}
+    return false;
+  };
   const [f,setF]=useState({klant:"",motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
   const selectedKlant=klanten.find(k=>k.naam===f.klant);
-  const serviceSlots=f.datum&&f.duur?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
-  const kanOpslaan=f.klant&&f.tijd;
+  const datumGesloten=isDatumGesloten(f.datum);
+  const serviceSlots=f.datum&&f.duur&&!datumGesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
+  const kanOpslaan=f.klant&&f.tijd&&!datumGesloten;
 
   return(
     <Modal title="AFSPRAAK INPLANNEN" onClose={onClose}>
@@ -702,7 +710,11 @@ function AfspraakModal({afspraken,klanten,onSave,onClose}){
           </select>
         </Field>
       </Grid2>
-      {f.datum&&(
+      {f.datum&&(datumGesloten?(
+        <div style={{padding:"10px 12px",background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:4,color:T.red,fontSize:13,marginBottom:14}}>
+          ⚠ Gesloten op {fmtDate(f.datum)} — kies een andere dag
+        </div>
+      ):(
         <Field label={`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
           {serviceSlots.length===0?(
             <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>
@@ -719,7 +731,7 @@ function AfspraakModal({afspraken,klanten,onSave,onClose}){
             </div>
           )}
         </Field>
-      )}
+      ))}
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat moet er gedaan worden?"/>
       </Field>
@@ -728,9 +740,17 @@ function AfspraakModal({afspraken,klanten,onSave,onClose}){
   );
 }
 
-function ProefritModal({motor, afspraken, onSave, onClose}){
+function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], openingstijden=null}){
+  const DAGMAP_PM=["zo","ma","di","wo","do","vr","za"];
+  const isDatumGesloten=(datum)=>{
+    if(!datum) return false;
+    if(geslotenDagen.includes(datum)) return true;
+    if(openingstijden){const dow=new Date(datum).getDay();return openingstijden[DAGMAP_PM[dow]]?.gesloten===true;}
+    return false;
+  };
   const [f,setF]=useState({naam:"",datum:TODAY,tijd:"",omschrijving:""});
-  const slots=f.datum?getProefritSlots(afspraken,f.datum):[];
+  const datumGesloten=isDatumGesloten(f.datum);
+  const slots=f.datum&&!datumGesloten?getProefritSlots(afspraken,f.datum):[];
   return(
     <Modal title="PROEFRIT INBOEKEN" onClose={onClose}>
       <div style={{background:`${T.green}15`,border:`1px solid ${T.green}40`,borderRadius:5,padding:"8px 12px",marginBottom:14,fontSize:13,color:T.green}}>
@@ -742,7 +762,11 @@ function ProefritModal({motor, afspraken, onSave, onClose}){
       <Field label="Datum">
         <input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value,tijd:""}))}/>
       </Field>
-      {f.datum&&(
+      {f.datum&&(datumGesloten?(
+        <div style={{padding:"10px 12px",background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:4,color:T.red,fontSize:13,marginBottom:14}}>
+          ⚠ Gesloten op {fmtDate(f.datum)} — kies een andere dag
+        </div>
+      ):(
         <Field label={`Beschikbare tijden — ${fmtDate(f.datum)}`}>
           {slots.length===0?(
             <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>⚠ Beide dagdelen zijn al volgeboekt op deze dag</div>
@@ -757,12 +781,12 @@ function ProefritModal({motor, afspraken, onSave, onClose}){
             </div>
           )}
         </Field>
-      )}
+      ))}
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Eventuele opmerkingen"/>
       </Field>
       <ModalFooter onClose={onClose} label="Inplannen"
-        onClick={()=>{if(f.naam&&f.tijd){onSave({type:"proefrit",naam:f.naam,datum:f.datum,tijd:f.tijd,omschrijving:f.omschrijving,duur:1,voorraad_motor_id:motor.id});onClose();}}}/>
+        onClick={()=>{if(f.naam&&f.tijd&&!datumGesloten){onSave({type:"proefrit",naam:f.naam,datum:f.datum,tijd:f.tijd,omschrijving:f.omschrijving,duur:1,voorraad_motor_id:motor.id});onClose();}}}/>
     </Modal>
   );
 }
@@ -1102,7 +1126,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,geslotenDagen=[],openingstijden=null}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
@@ -1235,7 +1259,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
 
       {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
       {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
-      {proefritMotor&&<ProefritModal motor={proefritMotor} afspraken={afspraken||[]} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
+      {proefritMotor&&<ProefritModal motor={proefritMotor} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
 
       {/* Lichtbak voor foto's */}
       {lichtbakFoto&&(
@@ -1455,7 +1479,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
-        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
             onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
@@ -1601,7 +1625,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       )}
 
-      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
@@ -2100,7 +2124,16 @@ export default function AdminApp(){
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken" }, ({ new: n }) => {
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
             .then(({ data }) => {
-              if(data) setAfspraken(p => [...p, { ...data, klant: data.klanten?.naam || "Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null }]);
+              if(!data) return;
+              setAfspraken(p => {
+                if(p.some(a => a.id === data.id)) return p; // al toegevoegd door addAfspraak direct
+                const isProefrit=data.type==="proefrit";
+                return [...p, { ...data,
+                  klant: isProefrit?(data.naam||"Proefrit"):data.klanten?.naam||"Onbekend",
+                  naam: data.naam||"",
+                  motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null,
+                }];
+              });
             });
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken" }, ({ new: n }) => {
@@ -2137,7 +2170,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>

@@ -18,19 +18,23 @@ const fmtDatum = d => {
   return `${dt.getDate()} ${MAANDEN_NL[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 
-const getBeschikbareDagen = (bezet = []) => {
+const getBeschikbareDagen = (bezet = [], geslotenDagen = [], openingstijden = null) => {
+  const DAGMAP_KL = ["zo","ma","di","wo","do","vr","za"];
+  const isOpen = (dayOfWeek) => {
+    if (openingstijden) return openingstijden[DAGMAP_KL[dayOfWeek]]?.gesloten !== true;
+    return [3,4,5].includes(dayOfWeek); // Fallback: wo/do/vr
+  };
   const dagen = [];
   const start = new Date(TODAY);
   start.setDate(start.getDate() + 1);
-  for (let i = 0; dagen.length < 12; i++) {
+  for (let i = 0; dagen.length < 12 && i <= 60; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    if (i > 28) break;
     const dayOfWeek = d.getDay();
-    if ([3,4,5].includes(dayOfWeek)) {
-      const iso = d.toISOString().split("T")[0];
-      dagen.push({ datum: iso, bezet: bezet.includes(iso), dag: DAGEN_NL[dayOfWeek] });
-    }
+    if (!isOpen(dayOfWeek)) continue;
+    const iso = d.toISOString().split("T")[0];
+    if (geslotenDagen.includes(iso)) continue;
+    dagen.push({ datum: iso, bezet: bezet.includes(iso), dag: DAGEN_NL[dayOfWeek] });
   }
   return dagen;
 };
@@ -264,13 +268,13 @@ function KmStand({ motoren, selMotorId, onSelMotor, onSlaOp }) {
 }
 
 // ── Scherm: Afspraak ───────────────────────────────────────────────────────
-function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], onSlaOp }) {
+function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], geslotenDagen = [], openingstijden = null, onSlaOp }) {
   const [selDatum, setSelDatum] = useState(null);
   const [notitie, setNotitie] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
-  const beschikbaar = getBeschikbareDagen(bezetteDagen);
+  const beschikbaar = getBeschikbareDagen(bezetteDagen, geslotenDagen, openingstijden);
 
   const verstuur = async () => {
     if (!selDatum || bezig) return;
@@ -947,7 +951,7 @@ export default function KlantApp({ userId }) {
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
         {tab === "service" && <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp} />}
-        {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} onSlaOp={slaAfspraakOp} />}
+        {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp} />}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
         {tab === "instellingen" && (
           <Instellingen
