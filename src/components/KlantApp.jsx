@@ -569,22 +569,59 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
   );
 }
 
-function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren = [], dienstenTarieven = {}, onVerzendAanvraag }) {
+function DatumKiezer({ bezetteDagen, geslotenDagen, openingstijden, value, onChange }) {
+  const beschikbaar = getBeschikbareDagen(bezetteDagen, geslotenDagen, openingstijden);
+  if (!beschikbaar.length) return (
+    <div style={{ fontSize: 13, color: T.muted, padding: "10px 0" }}>Geen beschikbare dagen in de komende 60 dagen.</div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+      {beschikbaar.map(d => (
+        <button key={d.datum} disabled={d.bezet} onClick={() => !d.bezet && onChange(d.datum)}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderRadius: 6, border: `1px solid ${value === d.datum ? T.accent : T.border}`, background: value === d.datum ? T.accentSoft : d.bezet ? T.surf2 : "transparent", cursor: d.bezet ? "default" : "pointer", fontFamily: "Barlow, sans-serif", textAlign: "left" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 1, color: d.bezet ? T.muted : value === d.datum ? T.accent : T.text, textTransform: "uppercase", width: 22 }}>{d.dag}</div>
+            <div style={{ fontSize: 14, color: d.bezet ? T.muted : T.text }}>{fmtDatum(d.datum)}</div>
+          </div>
+          {d.bezet ? <span style={css.badge(T.muted)}>Vol</span> : value === d.datum ? <span style={css.badge(T.accent)}>✓</span> : <span style={{ fontSize: 12, color: T.muted }}>Vrij</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, klant = {}, motoren = [], dienstenTarieven = {}, onVerzendAanvraag }) {
   const [view, setView] = useState(null);
   const [f, setF] = useState({});
   const [winOpts, setWinOpts] = useState([]);
+  const [fotos, setFotos] = useState([]);
+  const [fotoBezig, setFotoBezig] = useState(false);
   const [bezig, setBezig] = useState(false);
   const [ok, setOk] = useState(false);
   const [fout, setFout] = useState(null);
 
-  const p = (key) => dienstenTarieven[key] ? `€ ${Number(dienstenTarieven[key]).toLocaleString("nl-NL")}` : "Op aanvraag";
+  const p = (key) => dienstenTarieven[key] ? `€ ${Number(dienstenTarieven[key]).toLocaleString("nl-NL")}` : "Op aanvraag";
   const setFld = (key, val) => setF(prev => ({ ...prev, [key]: val }));
-  const openView = (id) => { setView(id); setF({}); setWinOpts([]); setOk(false); setFout(null); };
+  const openView = (id) => { setView(id); setF({}); setWinOpts([]); setFotos([]); setOk(false); setFout(null); };
+
+  const uploadFoto = async (file) => {
+    setFotoBezig(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("upload_preset", "Djm app");
+      const res = await fetch("https://api.cloudinary.com/v1_1/dkfdwnep4/image/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (data.secure_url) setFotos(prev => [...prev, data.secure_url]);
+    } catch(e) { console.error("Foto upload mislukt", e); }
+    setFotoBezig(false);
+  };
 
   const stuur = async (soort) => {
     setBezig(true); setFout(null);
     const data = { ...f };
     if (soort === "winterstalling" && winOpts.length > 0) data.extra_opties = winOpts.join(", ");
+    if (fotos.length > 0) data.fotos = fotos;
     const err = onVerzendAanvraag ? await onVerzendAanvraag(soort, data) : null;
     setBezig(false);
     if (err) { setFout(err); return; }
@@ -593,16 +630,14 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
   };
 
   const backBtn = (
-    <button onClick={() => setView(null)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:13, padding:"0 0 16px", fontFamily:"Barlow, sans-serif" }}>
+    <button onClick={() => setView(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 13, padding: "0 0 16px", fontFamily: "Barlow, sans-serif" }}>
       ← Terug naar Contact
     </button>
   );
 
   const verzendKnop = (soort, label = "Aanvraag versturen") => (
-    <button
-      disabled={bezig || ok}
-      onClick={() => stuur(soort)}
-      style={{ ...css.btn, background: ok ? T.green : T.accent, marginTop: 12, opacity: bezig ? 0.6 : 1 }}>
+    <button disabled={bezig || ok} onClick={() => stuur(soort)}
+      style={{ ...css.btn, background: ok ? T.green : T.accent, marginTop: 14, opacity: bezig ? 0.6 : 1 }}>
       {ok ? "✓ Aanvraag verstuurd!" : bezig ? "Bezig..." : label}
     </button>
   );
@@ -611,7 +646,7 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
     <div style={{ ...css.card, marginBottom: 16 }}>
       <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Stap voor stap</div>
       {stappen.map((tekst, i) => (
-        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: i < stappen.length - 1 ? 10 : 0 }}>
+        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: i < stappen.length - 1 ? 12 : 0 }}>
           <div style={{ width: 24, height: 24, borderRadius: "50%", background: T.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
           <div style={{ fontSize: 13, lineHeight: 1.7, color: T.text }}>{tekst}</div>
         </div>
@@ -631,15 +666,43 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
     </div>
   );
 
-  const motorSelect = (
-    motoren.length > 0 ? (
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Motor</label>
-        <select style={css.input} value={f.motor_id || motoren[0]?.id || ""} onChange={e => setFld("motor_id", e.target.value)}>
-          {motoren.map(m => <option key={m.id} value={m.id}>{m.merk} {m.model}{m.kenteken ? ` (${m.kenteken})` : ""}</option>)}
-        </select>
-      </div>
-    ) : null
+  const motorSelect = motoren.length > 0 ? (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Motor</label>
+      <select style={css.input} value={f.motor_id || motoren[0]?.id || ""} onChange={e => setFld("motor_id", e.target.value)}>
+        {motoren.map(m => <option key={m.id} value={m.id}>{m.merk} {m.model}{m.kenteken ? ` (${m.kenteken})` : ""}</option>)}
+      </select>
+    </div>
+  ) : null;
+
+  const datumKiezer = (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Kies een dag</div>
+      <DatumKiezer bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} value={f.datum || ""} onChange={val => setFld("datum", val)} />
+    </div>
+  );
+
+  const fotoUpload = (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Foto's toevoegen (optioneel)</div>
+      {fotos.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          {fotos.map((url, i) => (
+            <div key={i} style={{ position: "relative", width: 72, height: 72 }}>
+              <img src={url} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: `1px solid ${T.border}` }}/>
+              <button onClick={() => setFotos(prev => prev.filter((_, j) => j !== i))}
+                style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: T.red, border: "none", color: "#fff", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, lineHeight: 1, padding: 0 }}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 16px", background: T.surf2, border: `1px solid ${T.border}`, borderRadius: 8, cursor: fotoBezig ? "default" : "pointer", fontSize: 13, color: T.muted, opacity: fotoBezig ? 0.6 : 1 }}>
+        <input type="file" accept="image/*" style={{ display: "none" }} disabled={fotoBezig} onChange={e => { if (e.target.files[0]) uploadFoto(e.target.files[0]); e.target.value = ""; }}/>
+        {fotoBezig ? "Uploaden..." : "+ Foto toevoegen"}
+      </label>
+    </div>
   );
 
   // ── Schade ──────────────────────────────────────────────────────────────
@@ -647,19 +710,38 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
     <div>
       {backBtn}
       <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>SCHADE</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Heeft u schade? Wij helpen u snel en vakkundig verder.</div>
-      {stappenLijst([
-        "Maak duidelijke foto's van de schade",
-        "Plan een afspraak via onderstaand formulier",
-        "Breng uw motor langs voor een schade-inspectie",
-        "Wij geven u een kostenraming en plannen de reparatie",
-      ])}
-      <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Gewenste datum</label>
-        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Omschrijving schade</label>
-        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Beschrijf de schade kort..."/>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>
+        Schade aan je motor? Vervelend!<br/>
+        We hopen dat het goed gaat. Hieronder stap voor stap wat je nu moet doen.
+      </div>
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        {[
+          { titel: "Meld de schade bij je verzekeraar", tekst: "Doe dit via de app of website van je verzekeraar. Stuur je ingevulde schadeformulier mee." },
+          { titel: "Vraag of je motor bij ons gerepareerd mag worden", tekst: "Dit mag bij de meeste verzekeringen of staat vermeld in je polis." },
+          { titel: "Plan een afspraak bij ons in", knop: true },
+          { titel: "Lever je motor minimaal 3 werkdagen voor het expertbezoek in", tekst: "Wij stellen een schadecalculatie op. Bij schade boven €500 schakelt je verzekeraar een expert in (zie stap 5). Daaronder handelt de verzekeraar het af op basis van onze calculatie." },
+          { titel: "Expertbezoek (alleen bij schade boven €500)", tekst: "De expert komt bij ons langs. Wij overleggen ter plekke en vragen goedkeuring voor de reparatie." },
+          { titel: "Reparatie", tekst: "Pas ná goedkeuring starten wij met de reparatie. Je eigen risico is voor jouw rekening — check je polis." },
+        ].map((s, i, arr) => (
+          <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: i < arr.length - 1 ? 16 : 0 }}>
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: T.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: s.tekst || s.knop ? 4 : 0 }}>{s.titel}</div>
+              {s.tekst && <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7 }}>{s.tekst}</div>}
+              {s.knop && (
+                <a href="#schade-form" onClick={e => { e.preventDefault(); document.getElementById("schade-form")?.scrollIntoView({ behavior: "smooth" }); }}
+                  style={{ display: "inline-block", marginTop: 6, padding: "8px 16px", background: T.accent, color: "#fff", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>
+                  Afspraak inplannen
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div id="schade-form" style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Afspraak inplannen</div>
+        {datumKiezer}
+        {fotoUpload}
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("schade", "Afspraak aanvragen")}
       </div>
@@ -671,25 +753,27 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
     <div>
       {backBtn}
       <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>CONSIGNATIE</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Wij verkopen uw motor voor u. U rijdt hem in — wij doen de rest.</div>
-      {tarievenRij([
-        { lbl: "Week 1–4", key: "consignatie_w1_4" },
-        { lbl: "Week 5–12 (verlenging)", key: "consignatie_w5_12" },
-        { lbl: "Week 13–26 (verlenging)", key: "consignatie_w13_26" },
-        { lbl: "Extra platform per 4 weken", key: "consignatie_platform" },
-      ])}
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>
+        Wij verkopen uw motor voor u.<br/>
+        Breng uw motor en wij doen de rest.
+      </div>
       {stappenLijst([
         "U rijdt uw motor langs voor een waardebepaling",
-        "Wij plaatsen uw motor in onze showroom en online",
+        "Bij akkoord poetsen wij uw motor en plaatsen hem in onze showroom en online",
         "Wij regelen de bezichtigingen en onderhandelingen",
         "Na verkoop wordt het bedrag met u verrekend",
       ])}
       <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Gewenste datum</label>
-        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
-        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw vraagprijs..."/>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Afspraak aanvragen</div>
+        {motorSelect}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Minimale te ontvangen prijs</label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 13, pointerEvents: "none" }}>€</span>
+            <input style={{ ...css.input, paddingLeft: 28, marginBottom: 0 }} type="number" min="0" value={f.min_prijs || ""} onChange={e => setFld("min_prijs", e.target.value)} placeholder="Bijv. 2500"/>
+          </div>
+        </div>
+        {datumKiezer}
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("consignatie", "Afspraak aanvragen")}
       </div>
@@ -707,13 +791,16 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
         { lbl: "Per extra 10 min rijden", key: "aankoopkeuring_extra_10min" },
       ])}
       <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Keuring aanvragen</div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Locatie van de motor</label>
-        <input style={css.input} value={f.locatie || ""} onChange={e => setFld("locatie", e.target.value)} placeholder="Stad of adres van de verkoper"/>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Gewenste datum</label>
-        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Notities</label>
-        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw opmerkingen..."/>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Keuring aanvragen</div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Locatie van de motor</label>
+          <input style={{ ...css.input, marginBottom: 0 }} value={f.locatie || ""} onChange={e => setFld("locatie", e.target.value)} placeholder="Stad of adres van de verkoper"/>
+        </div>
+        {datumKiezer}
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Notities</label>
+          <textarea style={{ ...css.input, height: 70, resize: "vertical", marginBottom: 0 }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw opmerkingen..."/>
+        </div>
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("aankoopkeuring")}
       </div>
@@ -734,8 +821,8 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
         <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Alleen in rekening gebracht bij een succesvolle aankoop.</div>
       </div>
       <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Uw zoekopdracht</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Uw zoekopdracht</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Merk</label>
             <input style={{ ...css.input, marginBottom: 0 }} value={f.merk || ""} onChange={e => setFld("merk", e.target.value)} placeholder="Bijv. Honda"/>
@@ -753,13 +840,17 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
             <input style={{ ...css.input, marginBottom: 0 }} type="number" value={f.km || ""} onChange={e => setFld("km", e.target.value)} placeholder="30000"/>
           </div>
         </div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Budget (max)</label>
-        <div style={{ position: "relative", marginBottom: 10 }}>
-          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 13, pointerEvents: "none" }}>€</span>
-          <input style={{ ...css.input, paddingLeft: 28 }} type="number" value={f.budget || ""} onChange={e => setFld("budget", e.target.value)} placeholder="5000"/>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Budget (max)</label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 13, pointerEvents: "none" }}>€</span>
+            <input style={{ ...css.input, paddingLeft: 28, marginBottom: 0 }} type="number" value={f.budget || ""} onChange={e => setFld("budget", e.target.value)} placeholder="5000"/>
+          </div>
         </div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Overige wensen</label>
-        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. kleur, type, vermogen..."/>
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Overige wensen</label>
+          <textarea style={{ ...css.input, height: 80, resize: "vertical", marginBottom: 0 }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. kleur, type, vermogen..."/>
+        </div>
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("zoekopdracht")}
       </div>
@@ -781,9 +872,9 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
         { lbl: "Poetsen & bescherming", key: "winterstalling_poetsen" },
       ])}
       <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Aanmelden voor winterstalling</div>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Aanmelden voor winterstalling</div>
         {motorSelect}
-        <div style={{ marginTop: 6 }}>
+        <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Extra opties</div>
           {[
             { id: "kleine_beurt", lbl: "Kleine onderhoudsbeurt" },
@@ -797,8 +888,11 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
             </label>
           ))}
         </div>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
-        <textarea style={{ ...css.input, height: 60, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Opmerkingen</label>
+          <textarea style={{ ...css.input, height: 60, resize: "vertical", marginBottom: 0 }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        </div>
+        {datumKiezer}
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("winterstalling", "Aanmelden winterstalling")}
       </div>
@@ -819,12 +913,13 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
         <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Inclusief vloeistoffen, accu, banden en algemene controle.</div>
       </div>
       <div style={css.card}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Afspraak aanvragen</div>
         {motorSelect}
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: motoren.length > 0 ? 10 : 0 }}>Gewenste datum</label>
-        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
-        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
-        <textarea style={{ ...css.input, height: 60, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        {datumKiezer}
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Opmerkingen</label>
+          <textarea style={{ ...css.input, height: 60, resize: "vertical", marginBottom: 0 }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        </div>
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
         {verzendKnop("seizoensklaarmaak")}
       </div>
@@ -845,12 +940,12 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
         <a href="https://www.google.com/maps/dir/?api=1&destination=Stevinweg+14,+Tholen"
           target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 13, color: T.accent, marginTop: 10, lineHeight: 1.8, display: "block", textDecoration: "none" }}>
-          📍 Stevinweg 14, Tholen →
+          \U0001f4cd Stevinweg 14, Tholen →
         </a>
       </div>
       {[
-        { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
-        { icon: "💬", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
+        { icon: "\U0001f4de", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
+        { icon: "\U0001f4ac", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
         { icon: "✉", label: "E-mail", sub: "dejongemotor@email.nl", href: "mailto:info@dejongemotor.nl", color: T.muted },
       ].map((c, i) => (
         <a key={i} href={c.href}
@@ -863,21 +958,19 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
           <div style={{ marginLeft: "auto", color: T.muted, fontSize: 16 }}>→</div>
         </a>
       ))}
-
-      {/* Overige diensten */}
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <div style={css.sectionTitle}>Overige diensten</div>
         {[
-          { id: "schade",           icon: "🔧", label: "Schade",            sub: "Reparatie & inspectie" },
-          { id: "consignatie",      icon: "🏷", label: "Consignatie",       sub: "Wij verkopen uw motor" },
-          { id: "aankoopkeuring",   icon: "🔍", label: "Aankoopkeuring",    sub: "Keuring vóór aankoop" },
-          { id: "zoekopdracht",     icon: "🔎", label: "Zoekopdracht",      sub: "Wij zoeken uw motor" },
-          { id: "winterstalling",   icon: "❄️",  label: "Winterstalling",    sub: "Veilig stallen" },
-          { id: "seizoensklaarmaak",icon: "☀️",  label: "Seizoensklaarmaak", sub: "Motor rijklaar maken" },
+          { id: "schade",            label: "Schade",             sub: "Reparatie & inspectie" },
+          { id: "consignatie",       label: "Consignatie",        sub: "Wij verkopen uw motor" },
+          { id: "aankoopkeuring",    label: "Aankoopkeuring",     sub: "Keuring vóór aankoop" },
+          { id: "zoekopdracht",      label: "Zoekopdracht",       sub: "Wij zoeken uw motor" },
+          { id: "winterstalling",    label: "Winterstalling",     sub: "Veilig stallen" },
+          { id: "seizoensklaarmaak", label: "Seizoensklaarmaak",  sub: "Motor rijklaar maken" },
         ].map(svc => (
           <button key={svc.id} onClick={() => openView(svc.id)}
             style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "Barlow, sans-serif", color: T.text }}>
-            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${T.accent}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{svc.icon}</div>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${T.accent}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, flexShrink: 0, color: T.accent, fontFamily: "Barlow Condensed, sans-serif", letterSpacing: 0.5 }}>{svc.id.substring(0,2).toUpperCase()}</div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{svc.label}</div>
               <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{svc.sub}</div>
@@ -886,7 +979,6 @@ function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren
           </button>
         ))}
       </div>
-
       <WeekKalender openingstijden={openingstijden} geslotenDagen={geslotenDagen} />
     </div>
   );
@@ -1777,6 +1869,8 @@ export default function KlantApp({ userId }) {
     if (extra.km) lines.push(`Max km-stand: ${extra.km}`);
     if (extra.budget) lines.push(`Budget: € ${extra.budget}`);
     if (extra.extra_opties) lines.push(`Opties: ${extra.extra_opties}`);
+    if (extra.min_prijs) lines.push(`Minimale prijs: € ${extra.min_prijs}`);
+    if (extra.fotos && extra.fotos.length > 0) lines.push(`Foto's:\n${extra.fotos.map((u, i) => `  ${i + 1}. ${u}`).join("\n")}`);
     const fullOpmerking = [opm, ...lines].filter(Boolean).join("\n");
     const { error } = await supabase.from("afspraken").insert({
       klant_id: klant.id,
@@ -1919,7 +2013,7 @@ export default function KlantApp({ userId }) {
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
-            {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
+            {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
             {tab === "instellingen" && (
               <Instellingen
                 klant={klant} motoren={gesorteerdMotoren}
@@ -1970,7 +2064,7 @@ export default function KlantApp({ userId }) {
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
-        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
+        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
         {tab === "instellingen" && (
           <Instellingen
             klant={klant} motoren={gesorteerdMotoren}
