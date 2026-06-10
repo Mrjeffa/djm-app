@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const T = { bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A', accent:'#E8520A', text:'#F0ECE6', muted:'#666660', red:'#EF4444', green:'#22C55E' }
+const T = { bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A', accent:'#CC0000', text:'#F0ECE6', muted:'#666660', red:'#FF4444', green:'#22C55E' }
 
 // font-size 16px voorkomt automatisch inzoomen op iOS
 const inp = {
@@ -10,16 +10,25 @@ const inp = {
   fontSize:16, fontFamily:'Barlow, sans-serif', outline:'none',
   boxSizing:'border-box', marginBottom:10, WebkitAppearance:'none',
 }
-const btn = (color='#E8520A') => ({
+const btn = (color='#CC0000') => ({
   width:'100%', padding:14, background:color, color:'#fff', border:'none',
   borderRadius:8, fontSize:16, fontWeight:600, cursor:'pointer',
   fontFamily:'Barlow, sans-serif', marginTop:4,
 })
 
 const Logo = () => (
-  <div style={{ textAlign:'center', marginBottom:28 }}>
-    <div style={{ fontSize:28, fontWeight:900, letterSpacing:3, color:T.text, fontFamily:'Barlow Condensed, sans-serif' }}>DE JONGE</div>
-    <div style={{ fontSize:13, fontWeight:600, letterSpacing:5, color:T.accent, marginTop:4, fontFamily:'Barlow Condensed, sans-serif' }}>MOTOREN</div>
+  <div style={{ textAlign:'center', marginBottom:32 }}>
+    <div style={{
+      display:'inline-flex', flexDirection:'column', alignItems:'center',
+      background:'#000', borderRadius:'50%',
+      border:`4px solid ${T.accent}`,
+      padding:'18px 36px 14px',
+      boxShadow:`0 0 0 2px #111, 0 0 0 3px ${T.accent}60`,
+    }}>
+      <div style={{ fontSize:26, fontWeight:900, letterSpacing:4, color:T.text, fontFamily:'Barlow Condensed, sans-serif', lineHeight:1 }}>DE JONGE</div>
+      <div style={{ width:'80%', height:1, background:T.accent, margin:'6px 0 5px' }}/>
+      <div style={{ fontSize:11, fontWeight:600, letterSpacing:6, color:T.text, fontFamily:'Barlow Condensed, sans-serif' }}>MOTOREN</div>
+    </div>
   </div>
 )
 
