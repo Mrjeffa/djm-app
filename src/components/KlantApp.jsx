@@ -122,7 +122,7 @@ function MotorSelector({ motoren, selected, onSelect }) {
 function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   const [eigenOpen, setEigenOpen] = useState(false);
-  const [eigenF, setEigenF] = useState({ datum: TODAY, omschrijving: "", km: "" });
+  const [eigenF, setEigenF] = useState({ datum: TODAY, omschrijving: "", km: "", interval_gereset: false });
   const [eigenBezig, setEigenBezig] = useState(false);
   const [eigenOk, setEigenOk] = useState(false);
   const [eigenFout, setEigenFout] = useState(null);
@@ -229,7 +229,7 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
       )}
       <div style={{ marginTop:8 }}>
         {!eigenOpen ? (
-          <button onClick={() => { setEigenOpen(true); setEigenF({ datum:TODAY, omschrijving:"", km:"" }); setEigenFout(null); setEigenOk(false); }}
+          <button onClick={() => { setEigenOpen(true); setEigenF({ datum:TODAY, omschrijving:"", km:"", interval_gereset:false }); setEigenFout(null); setEigenOk(false); }}
             style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"8px 16px", fontSize:13, color:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", width:"100%" }}>
             + Overige werkzaamheden invoeren
           </button>
@@ -245,6 +245,15 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
             <textarea style={{ ...css.input, height:70, resize:"none", marginBottom:10 }} value={eigenF.omschrijving} onChange={e=>setEigenF(p=>({...p,omschrijving:e.target.value}))} placeholder="bijv. Olie en filter vervangen, rem vloeistof bijgevuld..."/>
             <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Kilometerstand</label>
             <input type="number" style={{ ...css.input, marginBottom:12 }} value={eigenF.km} onChange={e=>setEigenF(p=>({...p,km:e.target.value}))} placeholder="bijv. 23500"/>
+            <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, cursor:"pointer", fontSize:13, color:T.text }}>
+              <input type="checkbox" checked={eigenF.interval_gereset} onChange={e=>setEigenF(p=>({...p,interval_gereset:e.target.checked}))} style={{ width:16, height:16, accentColor:T.accent, cursor:"pointer" }}/>
+              Onderhoudsinterval resetten
+            </label>
+            {eigenF.interval_gereset && (
+              <div style={{ background:`${T.green}12`, border:`1px solid ${T.green}40`, borderRadius:6, padding:"8px 12px", marginBottom:12, fontSize:12, color:T.green, lineHeight:1.5 }}>
+                Het onderhoudsinterval wordt gereset op basis van de ingevulde kilometerstand. Dit wordt geregistreerd in de servicehistorie.
+              </div>
+            )}
             {eigenFout && <div style={{ fontSize:12, color:T.red, marginBottom:10 }}>{eigenFout}</div>}
             {eigenOk && <div style={{ fontSize:12, color:T.green, marginBottom:10, fontWeight:600 }}>✓ Werkzaamheden opgeslagen!</div>}
             <div style={{ display:"flex", gap:8 }}>
@@ -270,13 +279,20 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
 }
 
 // ── Scherm: Servicegeschiedenis ────────────────────────────────────────────
-function Servicegeschiedenis({ motoren, selMotorId, onSelMotor, actieKnop = null }) {
+function Servicegeschiedenis({ motoren, selMotorId, onSelMotor, actieKnop = null, onWijzigService = null }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
+  const [editSvcId, setEditSvcId] = useState(null);
+  const [editF, setEditF] = useState({ datum:"", omschrijving:"", km:"", interval_gereset:false });
+  const [editBezig, setEditBezig] = useState(false);
+  const [editFout, setEditFout] = useState(null);
+
   if (!motor) return null;
+
+  const lbl = { fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 };
 
   return (
     <div>
-      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={onSelMotor} />
+      <MotorSelector motoren={motoren} selected={selMotorId} onSelect={id => { onSelMotor(id); setEditSvcId(null); }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 22, lineHeight: 1.1 }}>
           {motor.merk} {motor.model}
@@ -290,17 +306,54 @@ function Servicegeschiedenis({ motoren, selMotorId, onSelMotor, actieKnop = null
         </div>
       ) : (
         motor.service.slice().reverse().map((sv, i) => (
-          <div key={sv.id} style={{ display: "flex", gap: 14, marginBottom: 4 }}>
+          <div key={sv.id || i} style={{ display: "flex", gap: 14, marginBottom: 4 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.accent, marginTop: 4, flexShrink: 0 }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: sv.klant_invoer ? T.muted : T.accent, marginTop: 4, flexShrink: 0 }} />
               {i < motor.service.length - 1 && <div style={{ width: 1, flex: 1, background: T.border, minHeight: 20, marginTop: 4 }} />}
             </div>
             <div style={{ ...css.card, flex: 1, marginBottom: i < motor.service.length - 1 ? 0 : 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <div style={{ fontSize: 12, color: T.accent, fontWeight: 600 }}>{sv.datum}</div>
-                {sv.km && <div style={{ fontSize: 11, color: T.muted }}>{sv.km.toLocaleString()} km</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div style={{ fontSize: 12, color: sv.klant_invoer ? T.muted : T.accent, fontWeight: 600 }}>{sv.datum}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {sv.km && <div style={{ fontSize: 11, color: T.muted }}>{sv.km.toLocaleString()} km</div>}
+                  {sv.klant_invoer && onWijzigService && editSvcId !== sv.id && (
+                    <button onClick={() => { setEditSvcId(sv.id); setEditF({ datum:sv.datum, omschrijving:sv.omschrijving||"", km:sv.km||"", interval_gereset:sv.interval_gereset||false }); setEditFout(null); }}
+                      style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", padding:"0 2px", lineHeight:1 }}>✏</button>
+                  )}
+                </div>
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.6 }}>{sv.omschrijving}</div>
+              {sv.interval_gereset && <div style={{ fontSize:11, color:T.green, marginTop:5, fontWeight:600 }}>✓ Onderhoudsinterval gereset</div>}
+              {sv.klant_invoer && <div style={{ fontSize:10, color:T.muted, marginTop:4 }}>Ingevoerd door klant</div>}
+
+              {editSvcId === sv.id && (
+                <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${T.border}` }}>
+                  <label style={lbl}>Datum</label>
+                  <input type="date" style={{ ...css.input, marginBottom:10 }} value={editF.datum} onChange={e=>setEditF(p=>({...p,datum:e.target.value}))}/>
+                  <label style={lbl}>Omschrijving</label>
+                  <textarea style={{ ...css.input, height:64, resize:"none", marginBottom:10 }} value={editF.omschrijving} onChange={e=>setEditF(p=>({...p,omschrijving:e.target.value}))} placeholder="Omschrijving..."/>
+                  <label style={lbl}>Kilometerstand</label>
+                  <input type="number" style={{ ...css.input, marginBottom:10 }} value={editF.km} onChange={e=>setEditF(p=>({...p,km:e.target.value}))} placeholder="bijv. 23500"/>
+                  <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, cursor:"pointer", fontSize:13, color:T.text }}>
+                    <input type="checkbox" checked={editF.interval_gereset} onChange={e=>setEditF(p=>({...p,interval_gereset:e.target.checked}))} style={{ width:16, height:16, accentColor:T.accent, cursor:"pointer" }}/>
+                    Onderhoudsinterval resetten
+                  </label>
+                  {editFout && <div style={{ fontSize:12, color:T.red, marginBottom:8 }}>{editFout}</div>}
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button style={{ ...css.btn, flex:1, opacity:editBezig?0.5:1 }} disabled={editBezig} onClick={async()=>{
+                      if (!editF.omschrijving.trim()) { setEditFout("Voer een omschrijving in."); return; }
+                      setEditBezig(true); setEditFout(null);
+                      const err = await onWijzigService(motor.id, sv.id, editF);
+                      setEditBezig(false);
+                      if (err) { setEditFout(err); return; }
+                      setEditSvcId(null);
+                    }}>
+                      {editBezig ? "Opslaan..." : "Opslaan"}
+                    </button>
+                    <button style={{ ...css.btnGhost }} onClick={() => setEditSvcId(null)}>Annuleer</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))
@@ -856,7 +909,7 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
 }
 
 // ── Scherm: Service & Afspraken ────────────────────────────────────────────
-function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp }) {
+function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService }) {
   const [afspraakOpen, setAfspraakOpen] = useState(false);
 
   if (afspraakOpen) {
@@ -879,6 +932,7 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
     <div>
       <Servicegeschiedenis
         motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor}
+        onWijzigService={onWijzigService}
         actieKnop={
           <button
             style={{ padding: "9px 14px", background: T.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif", whiteSpace: "nowrap", flexShrink: 0 }}
@@ -1383,21 +1437,44 @@ export default function KlantApp({ userId }) {
 
   const voegEigenServiceToe = async (motorId, data) => {
     const km = data.km ? parseInt(data.km) : null;
-    const { error } = await supabase.from("service_beurten").insert({
+    const intervalGereset = data.interval_gereset || false;
+    const { data: inserted, error } = await supabase.from("service_beurten").insert({
       motor_id: motorId,
       datum: data.datum,
       omschrijving: data.omschrijving,
       km,
-    });
+      klant_invoer: true,
+      interval_gereset: intervalGereset,
+    }).select().single();
     if (error) return error.message;
-    if (km) {
-      await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: data.datum });
-    }
+    if (km) await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: data.datum });
+    if (intervalGereset && km) await supabase.from("motoren").update({ last_service_km: km }).eq("id", motorId);
     setMotoren(prev => prev.map(m => {
       if (m.id !== motorId) return m;
-      const nieuweService = [...(m.service || []), { datum: data.datum, omschrijving: data.omschrijving, km }];
+      const nieuweService = [...(m.service || []), inserted];
       const nieuweKm = km ? [...(m.kmHistory || []), { datum: data.datum, km }] : m.kmHistory;
-      return { ...m, service: nieuweService, kmHistory: nieuweKm };
+      return { ...m, service: nieuweService, kmHistory: nieuweKm, last_service_km: (intervalGereset && km) ? km : m.last_service_km };
+    }));
+    return null;
+  };
+
+  const wijzigEigenService = async (motorId, svcId, data) => {
+    const km = data.km ? parseInt(data.km) : null;
+    const { error } = await supabase.from("service_beurten").update({
+      datum: data.datum,
+      omschrijving: data.omschrijving,
+      km,
+      interval_gereset: data.interval_gereset || false,
+    }).eq("id", svcId);
+    if (error) return error.message;
+    if (data.interval_gereset && km) await supabase.from("motoren").update({ last_service_km: km }).eq("id", motorId);
+    setMotoren(prev => prev.map(m => {
+      if (m.id !== motorId) return m;
+      return {
+        ...m,
+        service: m.service.map(sv => sv.id === svcId ? { ...sv, datum: data.datum, omschrijving: data.omschrijving, km, interval_gereset: data.interval_gereset || false } : sv),
+        last_service_km: (data.interval_gereset && km) ? km : m.last_service_km,
+      };
     }));
     return null;
   };
@@ -1523,7 +1600,7 @@ export default function KlantApp({ userId }) {
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
-            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
+            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
@@ -1574,7 +1651,7 @@ export default function KlantApp({ userId }) {
 
       <div style={css.scroll}>
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
-        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
+        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}

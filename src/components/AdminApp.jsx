@@ -1297,6 +1297,10 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
                   <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                     <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
                     <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
+                        {sv.klant_invoer&&<span style={{fontSize:10,background:`${T.muted}20`,color:T.muted,borderRadius:3,padding:"1px 5px",fontWeight:600}}>Klant</span>}
+                        {sv.interval_gereset&&<span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 5px",fontWeight:600}}>Interval gereset</span>}
+                      </div>
                       <div style={{fontSize:13}}>{sv.omschrijving}</div>
                       {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>bij {sv.km.toLocaleString()} km</div>}
                       {(sv.voorband_datum||sv.achterband_datum)&&<div style={{display:"flex",gap:10,marginTop:3}}>
@@ -2468,7 +2472,7 @@ export default function AdminApp(){
             motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
               ...m,
               kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
-              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km})),
+              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset})),
             }))
           }));
         }
