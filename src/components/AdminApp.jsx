@@ -2045,6 +2045,7 @@ export default function AdminApp(){
   const [page,setPage]=useState("dashboard");
   const [klanten,setKlanten]=useState([]);
   const [showroom,setShowroom]=useState([]);
+  const [producten,setProducten]=useState([]);
   const [afspraken,setAfspraken]=useState([]);
   const [laden,setLaden]=useState(true);
 
@@ -2053,11 +2054,12 @@ export default function AdminApp(){
     const laadAlles = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
-        const [k, v, a, verlopen] = await Promise.all([
+        const [k, v, a, verlopen, pData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
           sb.from("voorraad").select("id,fotos").lte("fotos_bewaren_tot",TODAY).not("fotos","eq","[]"),
+          sb.from("producten").select("*").order("created_at",{ascending:false}),
         ]);
         // Cleanup verlopen foto's (>30 dagen na verkoop)
         for(const m of (verlopen.data||[])){
@@ -2089,6 +2091,7 @@ export default function AdminApp(){
 
         setKlanten(verrijkt);
         setShowroom(v.data||[]);
+        setProducten(pData.data||[]);
         setAfspraken((a.data||[]).map(x=>{
           const isProefrit=x.type==="proefrit";
           const proefritMotor=isProefrit&&x.voorraad_motor_id?(v.data||[]).find(m=>m.id===x.voorraad_motor_id):null;
@@ -2298,6 +2301,33 @@ export default function AdminApp(){
     verwijderCloudinaryFotos(motor.fotos);
   };
 
+  const addProduct = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { data } = await sb.from("producten").insert({
+      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?parseInt(f.prijs):null,
+      fotos: f.fotos||[], categorie: f.categorie, actief: true,
+    }).select().single();
+    if (data) setProducten(p => [data, ...p]);
+  };
+
+  const updateProduct = async (id, f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { data } = await sb.from("producten").update({
+      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?parseInt(f.prijs):null,
+      fotos: f.fotos||[], actief: f.actief !== false,
+    }).eq("id", id).select().single();
+    if (data) setProducten(p => p.map(x => x.id === id ? data : x));
+  };
+
+  const deleteProduct = async (prod) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    if (prod.fotos?.length) {
+      sb.functions.invoke("cloudinary-delete", { body: { urls: prod.fotos } });
+    }
+    await sb.from("producten").delete().eq("id", prod.id);
+    setProducten(p => p.filter(x => x.id !== prod.id));
+  };
+
   const toggleVoorraadStatus = async (motorId, nieuweStatus) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("voorraad").update({status:nieuweStatus}).eq("id",motorId);
@@ -2460,7 +2490,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
