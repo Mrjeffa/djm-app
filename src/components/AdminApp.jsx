@@ -1696,12 +1696,13 @@ function ProductModal({categorie, product=null, onSave, onClose}){
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,onTerugkopen=()=>{},afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
   const [lichtbakFoto,setLichtbakFoto]=useState(null);
   const [delMotor,setDelMotor]=useState(null);
+  const [terugkoopMotor,setTerugkoopMotor]=useState(null);
   const [editMotor,setEditMotor]=useState(null);
   const [proefritMotor,setProefritMotor]=useState(null);
   const [menuMotorId,setMenuMotorId]=useState(null);
@@ -1767,7 +1768,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                         {m.verkocht_op&&<span style={{...s.badge(T.green),fontSize:10}}>Verkocht</span>}
                       </div>
                     </div>
-                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent,flexShrink:0}}>€{m.prijs.toLocaleString()}</div>
+                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:m.verkocht_op?T.green:T.accent,flexShrink:0}}>{m.verkocht_op?"Verkocht":`€${m.prijs?.toLocaleString()}`}</div>
                   </div>
                   <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
                     {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
@@ -1795,14 +1796,23 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
 
                   {/* Acties */}
                   <div style={{display:"flex",gap:8,marginBottom:10}}>
-                    <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}
-                      disabled={m.status==="niet_beschikbaar"}>
-                      Verkopen aan klant →
-                    </button>
-                    <button onClick={()=>{setProefritMotor(m);setMenuMotorId(null);}} title="Proefrit inboeken"
-                      style={{padding:"8px 11px",background:"none",border:`1px solid ${T.green}`,borderRadius:3,color:T.green,cursor:"pointer",fontSize:16,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
-                      🏍
-                    </button>
+                    {!m.verkocht_op&&(
+                      <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}
+                        disabled={m.status==="niet_beschikbaar"}>
+                        Verkopen aan klant →
+                      </button>
+                    )}
+                    {m.verkocht_op&&(
+                      <button onClick={()=>setTerugkoopMotor(m)} style={{...s.btnGhost,flex:1,fontSize:12}}>
+                        ↩ Terugkopen
+                      </button>
+                    )}
+                    {!m.verkocht_op&&(
+                      <button onClick={()=>{setProefritMotor(m);setMenuMotorId(null);}} title="Proefrit inboeken"
+                        style={{padding:"8px 11px",background:"none",border:`1px solid ${T.green}`,borderRadius:3,color:T.green,cursor:"pointer",fontSize:16,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
+                        🏍
+                      </button>
+                    )}
                     <div style={{position:"relative",flexShrink:0}}>
                       <button onClick={()=>setMenuMotorId(v=>v===m.id?null:m.id)}
                         style={{padding:"8px 11px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"pointer",fontSize:18,fontFamily:"Barlow, sans-serif",height:"100%",lineHeight:1}}>
@@ -1965,6 +1975,25 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
             <button onClick={()=>setDelMotor(null)} style={{...s.btnOutline,padding:"8px 14px"}}>Annuleer</button>
             <button onClick={()=>{onDelete(delMotor);setDelMotor(null);}} style={{background:T.red,color:"#fff",border:"none",borderRadius:3,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600}}>
               Ja, verwijderen
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {terugkoopMotor&&(
+        <Modal title="MOTOR TERUGKOPEN" onClose={()=>setTerugkoopMotor(null)}>
+          <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
+            <div style={{fontSize:14,fontWeight:500}}>{terugkoopMotor.merk} {terugkoopMotor.model} — {terugkoopMotor.kenteken}</div>
+            {terugkoopMotor.verkocht_aan&&(()=>{const k=klanten.find(x=>x.id===terugkoopMotor.verkocht_aan);return k?<div style={{fontSize:12,color:T.muted,marginTop:4}}>Verkocht aan: {k.naam}</div>:null;})()}
+            <div style={{fontSize:12,color:T.muted,marginTop:4}}>Verkocht op: {terugkoopMotor.verkocht_op}</div>
+          </div>
+          <div style={{fontSize:13,color:T.text,lineHeight:1.7,marginBottom:16}}>
+            De motor wordt teruggezet in de voorraad als <strong>Beschikbaar</strong>. De foto's blijven behouden. De koppeling met de klant wordt verwijderd.
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setTerugkoopMotor(null)} style={{...s.btnGhost,width:"auto"}}>Annuleer</button>
+            <button onClick={()=>{onTerugkopen(terugkoopMotor);setTerugkoopMotor(null);}} style={{...s.btn,background:T.green}}>
+              ↩ Terugkopen
             </button>
           </div>
         </Modal>
@@ -3149,8 +3178,24 @@ export default function AdminApp(){
     if(nieuwMotor){
       setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:[]}]}:k));
     }
-    setShowroom(p=>p.filter(m=>m.id!==motor.id));
+    setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:TODAY,verkocht_aan:klantId,status:"verkocht",fotos_bewaren_tot:bewarenStr}:m));
     // Foto's worden na 30 dagen verwijderd via fotos_bewaren_tot — NIET direct
+  };
+
+  const terugkopenMotor = async (motor) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("voorraad").update({
+      verkocht_op:null, verkocht_aan:null, fotos_bewaren_tot:null, status:"beschikbaar",
+    }).eq("id",motor.id);
+    if(motor.verkocht_aan){
+      const {data:recs} = await sb.from("motoren").select("id").eq("klant_id",motor.verkocht_aan).eq("kenteken",motor.kenteken);
+      if(recs?.length>0){
+        const rid=recs[0].id;
+        await sb.from("motoren").delete().eq("id",rid);
+        setKlanten(prev=>prev.map(k=>k.id===motor.verkocht_aan?{...k,motoren:k.motoren.filter(m=>m.id!==rid)}:k));
+      }
+    }
+    setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:null,verkocht_aan:null,fotos_bewaren_tot:null,status:"beschikbaar"}:m));
   };
 
   const deleteVoorraadMotor = async (motor) => {
@@ -3428,7 +3473,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
     </>
