@@ -1242,7 +1242,7 @@ function MotorEditModal({motor, onSave, onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
@@ -1253,6 +1253,8 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   const [toonMenu,setToonMenu]=useState(false);
   const [editMotorItem,setEditMotorItem]=useState(null);
   const [inruilConfirmId,setInruilConfirmId]=useState(null);
+  const [motorMenuId,setMotorMenuId]=useState(null);
+  const [delMotorId,setDelMotorId]=useState(null);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -1349,10 +1351,18 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
               )}
               {motor.bijzonderheden&&<div style={{fontSize:12,color:T.muted,marginTop:3,fontStyle:"italic"}}>{motor.bijzonderheden}</div>}
             </div>
-            <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <button style={{...s.btnGhost,flexShrink:0,fontSize:12}} onClick={()=>setEditMotorItem(motor)}>Wijzigen</button>
-              <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
-              <button style={{...s.btnOutline,flexShrink:0,fontSize:12}} onClick={()=>setInruilConfirmId(motor.id)} title="Motor inruilen — zet in voorraad">Inruilen →</button>
+            <div style={{position:"relative",flexShrink:0}}>
+              <button style={{...s.btnGhost,width:34,height:34,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,letterSpacing:0}} onClick={()=>setMotorMenuId(v=>v===motor.id?null:motor.id)}>⋯</button>
+              {motorMenuId===motor.id&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMotorMenuId(null)}/>}
+              {motorMenuId===motor.id&&(
+                <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:160,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
+                  <button onClick={()=>{setEditMotorItem(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
+                  <button onClick={()=>{setSelMotorId(motor.id);setModal("addService");setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>+ Service</button>
+                  <button onClick={()=>{setInruilConfirmId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Inruilen →</button>
+                  <div style={{height:1,background:T.border}}/>
+                  <button onClick={()=>{setDelMotorId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
+                </div>
+              )}
             </div>
           </div>
           {/* Inruil bevestiging */}
@@ -1361,6 +1371,14 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
               <span style={{fontSize:13,flex:1,color:T.text}}>Motor naar voorraad zetten? Motor verdwijnt bij klant en is niet zichtbaar tot je hem activeert.</span>
               <button onClick={()=>{onInruil(klant.id,motor);setInruilConfirmId(null);}} style={{background:T.accent,color:"#fff",border:"none",borderRadius:3,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600,whiteSpace:"nowrap"}}>Ja, inruilen</button>
               <button onClick={()=>setInruilConfirmId(null)} style={{background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:3,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",whiteSpace:"nowrap"}}>Annuleer</button>
+            </div>
+          )}
+          {/* Motor verwijder bevestiging */}
+          {delMotorId===motor.id&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:`${T.red}12`,border:`1px solid ${T.red}40`,borderRadius:4,marginBottom:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,flex:1,color:T.text}}>Motor <strong>{motor.merk} {motor.model}</strong> verwijderen bij deze klant?</span>
+              <button onClick={()=>{onDeleteMotor(klant.id,motor);setDelMotorId(null);}} style={{background:T.red,color:"#fff",border:"none",borderRadius:3,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600,whiteSpace:"nowrap"}}>Ja, verwijder</button>
+              <button onClick={()=>setDelMotorId(null)} style={{background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:3,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",whiteSpace:"nowrap"}}>Annuleer</button>
             </div>
           )}
           {/* Onderhoudsinterval */}
@@ -1430,7 +1448,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{}}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{}}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -1566,6 +1584,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onUpdateMotor={onUpdateMotor}
             onUitnodig={setUitnodigKlant}
             onInruil={onInruil}
+            onDeleteMotor={onDeleteMotor}
             onBack={()=>setSel(null)}
             isMobile={true}/>
         ):(
@@ -1604,6 +1623,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
                 onUpdateMotor={onUpdateMotor}
                 onUitnodig={setUitnodigKlant}
                 onInruil={onInruil}
+                onDeleteMotor={onDeleteMotor}
                 onBack={()=>setSel(null)}
                 isMobile={false}/>
             )}
@@ -3225,6 +3245,12 @@ export default function AdminApp(){
     setKlanten(prev=>prev.map(k=>k.id===klantId?{...k,motoren:(k.motoren||[]).filter(m=>m.id!==motor.id)}:k));
   };
 
+  const deleteMotorVanKlant = async (klantId, motor) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("motoren").delete().eq("id", motor.id);
+    setKlanten(prev=>prev.map(k=>k.id===klantId?{...k,motoren:(k.motoren||[]).filter(m=>m.id!==motor.id)}:k));
+  };
+
   const deleteVoorraadMotor = async (motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
@@ -3499,7 +3525,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
