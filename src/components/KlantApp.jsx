@@ -715,6 +715,36 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   );
 }
 
+// ── Scherm: Service & Afspraken ────────────────────────────────────────────
+function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp }) {
+  const [afspraakOpen, setAfspraakOpen] = useState(false);
+
+  if (afspraakOpen) {
+    return (
+      <div>
+        <button onClick={() => setAfspraakOpen(false)}
+          style={{ background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 }}>
+          ← Terug naar service
+        </button>
+        <Afspraak
+          motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor}
+          bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden}
+          onSlaOp={async (f) => { await onSlaAfspraakOp(f); setAfspraakOpen(false); }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Servicegeschiedenis motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor} />
+      <button style={{ ...css.btn, marginTop: 16 }} onClick={() => setAfspraakOpen(true)}>
+        + Afspraak maken
+      </button>
+    </div>
+  );
+}
+
 // ── Scherm: Voorraad ───────────────────────────────────────────────────────
 const clImg = (url, w = 600) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
@@ -1172,14 +1202,7 @@ export default function KlantApp({ userId }) {
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
-            {tab === "service" && (
-              <div>
-                <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>
-                <div style={{ borderTop: `2px solid ${T.border}`, margin: "24px 0 20px" }}/>
-                <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14, color: T.muted }}>Servicegeschiedenis</div>
-                <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>
-              </div>
-            )}
+            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
@@ -1229,14 +1252,7 @@ export default function KlantApp({ userId }) {
 
       <div style={css.scroll}>
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
-        {tab === "service" && (
-          <div>
-            <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>
-            <div style={{ borderTop: `2px solid ${T.border}`, margin: "24px 0 20px" }}/>
-            <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14, color: T.muted }}>Servicegeschiedenis</div>
-            <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>
-          </div>
-        )}
+        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
