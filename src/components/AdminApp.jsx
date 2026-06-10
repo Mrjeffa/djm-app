@@ -11,37 +11,43 @@ const useIsMobile = () => {
   return mob;
 };
 
-const T = {
-  bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2", border: "#E0E0E0",
-  accent: "#E31E24", text: "#1A1A1A", muted: "#767676",
+const T_LIGHT = {
+  bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2",
+  border: "#E0E0E0", accent: "#E31E24", text: "#1A1A1A", muted: "#767676",
   green: "#16A34A", yellow: "#D97706", red: "#DC2626",
 };
+const T_DARK = {
+  bg: "#111111", surf: "#1C1C1E", surf2: "#2C2C2E",
+  border: "#38383A", accent: "#E31E24", text: "#F2F2F7", muted: "#8E8E93",
+  green: "#30D158", yellow: "#FFD60A", red: "#FF453A",
+};
+let T = {...T_LIGHT};
 
 const s = {
-  app: { display:"flex", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" },
-  sidebar: { width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 },
-  logo: { padding:"24px 20px 20px", borderBottom:`1px solid ${T.border}` },
-  logoTop: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text },
-  logoSub: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:600, fontSize:13, letterSpacing:4, color:T.accent, marginTop:2 },
+  get app() { return { display:"flex", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" }; },
+  get sidebar() { return { width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 }; },
+  get logo() { return { padding:"24px 20px 20px", borderBottom:`1px solid ${T.border}` }; },
+  get logoTop() { return { fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }; },
+  logoSub: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:600, fontSize:13, letterSpacing:4, color:"#E31E24", marginTop:2 },
   navItem: (a) => ({ display:"flex", alignItems:"center", gap:10, padding:"12px 20px", cursor:"pointer", fontSize:14, fontWeight: a?600:400, color: a?T.accent:T.muted, background: a?`${T.accent}15`:"transparent", borderLeft: a?`3px solid ${T.accent}`:"3px solid transparent", transition:"all 0.15s" }),
   main: { flex:1, display:"flex", flexDirection:"column", overflow:"hidden" },
-  header: { padding:"18px 28px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 },
+  get header() { return { padding:"18px 28px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }; },
   headerTitle: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, letterSpacing:1 },
   content: { flex:1, overflowY:"auto", padding:"22px 28px" },
-  card: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20 },
-  statCard: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20, flex:1 },
-  statNum: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:42, color:T.accent, lineHeight:1 },
-  statLabel: { fontSize:11, color:T.muted, marginTop:5, letterSpacing:1, textTransform:"uppercase" },
-  btn: { padding:"9px 16px", background:T.accent, color:"#fff", border:"none", borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
-  btnGhost: { padding:"9px 16px", background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:4, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
-  btnOutline: { padding:"9px 16px", background:"transparent", color:T.accent, border:`1px solid ${T.accent}`, borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
-  input: { background:T.surf2, border:`1px solid ${T.border}`, borderRadius:4, padding:"9px 12px", color:T.text, fontSize:14, fontFamily:"Barlow, sans-serif", outline:"none", width:"100%", boxSizing:"border-box" },
-  label: { fontSize:11, color:T.muted, marginBottom:5, letterSpacing:0.5, display:"block", textTransform:"uppercase" },
+  get card() { return { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20 }; },
+  get statCard() { return { background:T.surf, border:`1px solid ${T.border}`, borderRadius:6, padding:20, flex:1 }; },
+  statNum: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:42, color:"#E31E24", lineHeight:1 },
+  get statLabel() { return { fontSize:11, color:T.muted, marginTop:5, letterSpacing:1, textTransform:"uppercase" }; },
+  btn: { padding:"9px 16px", background:"#E31E24", color:"#fff", border:"none", borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
+  get btnGhost() { return { padding:"9px 16px", background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:4, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" }; },
+  btnOutline: { padding:"9px 16px", background:"transparent", color:"#E31E24", border:`1px solid #E31E24`, borderRadius:4, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", whiteSpace:"nowrap" },
+  get input() { return { background:T.surf2, border:`1px solid ${T.border}`, borderRadius:4, padding:"9px 12px", color:T.text, fontSize:14, fontFamily:"Barlow, sans-serif", outline:"none", width:"100%", boxSizing:"border-box" }; },
+  get label() { return { fontSize:11, color:T.muted, marginBottom:5, letterSpacing:0.5, display:"block", textTransform:"uppercase" }; },
   overlay: { position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, padding:20 },
-  modal: { background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:28, width:"100%", maxWidth:520, maxHeight:"88vh", overflowY:"auto" },
+  get modal() { return { background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:28, width:"100%", maxWidth:520, maxHeight:"88vh", overflowY:"auto" }; },
   modalTitle: { fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:22, marginBottom:20 },
   badge: (c) => ({ display:"inline-block", padding:"2px 8px", borderRadius:3, fontSize:11, fontWeight:600, background:`${c}20`, color:c }),
-  sectionLabel: { fontSize:11, color:T.accent, letterSpacing:2, marginBottom:14, textTransform:"uppercase" },
+  sectionLabel: { fontSize:11, color:"#E31E24", letterSpacing:2, marginBottom:14, textTransform:"uppercase" },
 };
 
 // ── Utils ───────────────────────────────────────────────────────────────────
@@ -731,7 +737,7 @@ const DEFAULT_AFSPRAAK_SOORTEN = [
 ];
 const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
-function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[]}){
+function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[]}){
   const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
     if(!datum) return false;
@@ -740,10 +746,14 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
     return false;
   };
 
-  const [modus,setModus]=useState("bestaand"); // "bestaand" | "nieuw"
+  const [modus,setModus]=useState("bestaand"); // "bestaand" | "nieuw" | "intern"
   // Bestaande klant
   const [zoek,setZoek]=useState("");
   const [selKlantId,setSelKlantId]=useState(null);
+  // Interne afspraak
+  const [internBeschrijving,setInternBeschrijving]=useState("");
+  const [internMotorId,setInternMotorId]=useState("");
+  const allDaySlots=Array.from({length:35},(_,i)=>minToTime(360+i*30)); // 06:00–23:00
   // Nieuwe klant
   const [nw,setNw]=useState({naam:"",telefoon:"",email:""});
   const [toevoegenAanBestand,setToevoegenAanBestand]=useState(false);
@@ -771,11 +781,13 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   const serviceSlots=f.datum&&f.duur&&!datumGesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
   const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
 
-  const kanOpslaan=f.tijd&&!datumGesloten&&(modus==="bestaand"?!!selKlantId:!!(nw.naam&&nw.telefoon));
+  const kanOpslaan=f.tijd&&(modus==="intern"||!datumGesloten)&&(modus==="intern"?true:modus==="bestaand"?!!selKlantId:!!(nw.naam&&nw.telefoon));
 
   const slaOp=()=>{
     if(!kanOpslaan) return;
-    if(modus==="bestaand"){
+    if(modus==="intern"){
+      onSave({type:"intern",klant:internBeschrijving||"Intern",naam:internBeschrijving||"Intern",datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", ")||null,omschrijving:f.omschrijving,motor:internMotorId||""});
+    } else if(modus==="bestaand"){
       onSave({type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving});
     } else {
       const nieuweKlantData=toevoegenAanBestand?{naam:nw.naam,email:nw.email,telefoon:nw.telefoon,...adres}:null;
@@ -787,10 +799,10 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   return(
     <Modal title="AFSPRAAK INPLANNEN" onClose={onClose}>
       {/* Klant modus toggle */}
-      <div style={{display:"flex",marginBottom:16,background:"#F0F0F0",borderRadius:6,padding:3}}>
-        {[["bestaand","Bestaande klant"],["nieuw","Nieuwe klant"]].map(([id,lbl])=>(
+      <div style={{display:"flex",marginBottom:16,background:T.surf2,borderRadius:6,padding:3}}>
+        {[["bestaand","Bestaande klant"],["nieuw","Nieuwe klant"],["intern","🔒 Intern"]].map(([id,lbl])=>(
           <button key={id} onClick={()=>{setModus(id);setSelKlantId(null);setZoek("");}}
-            style={{flex:1,padding:"8px",background:modus===id?T.accent:"transparent",color:modus===id?"#fff":T.muted,border:"none",borderRadius:4,fontSize:13,fontWeight:modus===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+            style={{flex:1,padding:"8px",background:modus===id?(id==="intern"?T.muted:T.accent):"transparent",color:modus===id?"#fff":T.muted,border:"none",borderRadius:4,fontSize:id==="intern"?11:13,fontWeight:modus===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
             {lbl}
           </button>
         ))}
@@ -872,6 +884,22 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
         </>
       )}
 
+      {modus==="intern"&&(
+        <>
+          <Field label="Omschrijving (intern)">
+            <input style={s.input} value={internBeschrijving} onChange={e=>setInternBeschrijving(e.target.value)} placeholder="bijv. Vergadering, schoonmaak, administratie..."/>
+          </Field>
+          {voorraad.filter(m=>!m.verkocht_op).length>0&&(
+            <Field label="Motor koppelen (optioneel)">
+              <select style={s.input} value={internMotorId} onChange={e=>setInternMotorId(e.target.value)}>
+                <option value="">— Geen motor —</option>
+                {voorraad.filter(m=>!m.verkocht_op).map(m=><option key={m.id} value={m.id}>{m.merk} {m.model} — {m.kenteken}</option>)}
+              </select>
+            </Field>
+          )}
+        </>
+      )}
+
       <Grid2>
         <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
         <Field label="Duur (uur)">
@@ -880,21 +908,21 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
           </select>
         </Field>
       </Grid2>
-      {f.datum&&(datumGesloten?(
+      {f.datum&&(datumGesloten&&modus!=="intern"?(
         <div style={{padding:"10px 12px",background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:4,color:T.red,fontSize:13,marginBottom:14}}>
           ⚠ Gesloten op {fmtDate(f.datum)} — kies een andere dag
         </div>
       ):(
-        <Field label={`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
-          {serviceSlots.length===0?(
+        <Field label={modus==="intern"?`Tijdstip — ${fmtDate(f.datum)} (6:00–23:00)`:`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
+          {modus!=="intern"&&serviceSlots.length===0?(
             <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>
               ⚠ Geen vrij blok beschikbaar op deze dag
             </div>
           ):(
             <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
-              {serviceSlots.map(t=>(
+              {(modus==="intern"?allDaySlots:serviceSlots).map(t=>(
                 <button key={t} onClick={()=>setF(p=>({...p,tijd:t}))}
-                  style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?T.accent:T.border}`,background:f.tijd===t?`${T.accent}25`:"transparent",color:f.tijd===t?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
+                  style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?(modus==="intern"?T.muted:T.accent):T.border}`,background:f.tijd===t?(modus==="intern"?`${T.muted}25`:`${T.accent}25`):"transparent",color:f.tijd===t?(modus==="intern"?T.text:T.accent):T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
                   {t}
                 </button>
               ))}
@@ -982,7 +1010,7 @@ function ProefritModal({motor, afspraken, klanten=[], onSave, onClose, geslotenD
       </div>
 
       {/* Modus toggle */}
-      <div style={{display:"flex",marginBottom:14,background:"#F0F0F0",borderRadius:6,padding:3}}>
+      <div style={{display:"flex",marginBottom:14,background:T.surf2,borderRadius:6,padding:3}}>
         {[["nieuw","Nieuwe klant"],["bestaand","Bestaande klant"]].map(([id,lbl])=>(
           <button key={id} onClick={()=>{setModus(id);setSelKlantId(null);setZoek("");if(id==="nieuw")setF(p=>({...p,naam:"",telefoon:"",email:""}));}}
             style={{flex:1,padding:"7px",background:modus===id?T.green:"transparent",color:modus===id?"#fff":T.muted,border:"none",borderRadius:4,fontSize:13,fontWeight:modus===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
@@ -1411,8 +1439,10 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   ).sort((a,b) => (b.datum||"").localeCompare(a.datum||""));
 
   const filtered=klanten.filter(k=>
-    k.naam.toLowerCase().includes(search.toLowerCase())||
-    (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
+    k.status!=="in_afwachting"&&(
+      k.naam.toLowerCase().includes(search.toLowerCase())||
+      (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
+    )
   );
   const klant=sel?klanten.find(k=>k.id===sel):null;
 
@@ -2218,8 +2248,15 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
   const weekDates=getWeekDates(weekBase);
   const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
   const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
-  const HOURS=Array.from({length:9},(_,i)=>i+9);
-  const CAL_H=440; const TOTAL_MIN=WEND-WSTART;
+  // Dynamic grid range: expand for internals that fall outside 9-17
+  const weekApts=geplandAfspraken.filter(a=>weekDates.includes(a.datum)&&a.tijd);
+  const minAptStart=weekApts.length>0?Math.min(...weekApts.map(a=>timeToMin(a.tijd))):WSTART;
+  const maxAptEnd=weekApts.length>0?Math.max(...weekApts.map(a=>timeToMin(a.tijd)+(parseInt(a.duur)||1)*60)):WEND;
+  const GRID_START=Math.floor(Math.min(WSTART,minAptStart)/60)*60;
+  const GRID_END=Math.ceil(Math.max(WEND,maxAptEnd)/60)*60;
+  const TOTAL_MIN_EFF=GRID_END-GRID_START;
+  const HOURS_EFF=Array.from({length:TOTAL_MIN_EFF/60},(_,i)=>GRID_START/60+i);
+  const CAL_H=Math.max(440,Math.round(TOTAL_MIN_EFF*440/480));
 
   // Dag gesloten op basis van instellingen openingstijden
   const DAGMAP=["zo","ma","di","wo","do","vr","za"];
@@ -2277,7 +2314,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {dayApts.map(a=>{
-              const kleur=a.type==="proefrit"?T.green:T.accent;
+              const kleur=a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
               const naam=a.type==="proefrit"?(a.naam||a.klant):a.klant;
               const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):null;
               return(
@@ -2328,7 +2365,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
-        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
             afspraakSoorten={afspraakSoorten}
@@ -2391,8 +2428,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         {/* Tijdrooster */}
         <div style={{display:"grid",gridTemplateColumns:"44px repeat(6,1fr)",height:CAL_H}}>
           <div style={{position:"relative",borderRight:`1px solid ${T.border}`}}>
-            {HOURS.map(h=>(
-              <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
+            {HOURS_EFF.map(h=>(
+              <div key={h} style={{position:"absolute",top:`${(h*60-GRID_START)/TOTAL_MIN_EFF*100}%`,right:6,fontSize:10,color:T.muted,transform:"translateY(-50%)"}}>
                 {h}:00
               </div>
             ))}
@@ -2406,8 +2443,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                 style={{borderLeft:`1px solid ${T.border}`,position:"relative",background:gesloten?`${T.red}06`:d===TODAY?`${T.accent}04`:"transparent"}}
                 onDragOver={e=>{e.preventDefault();}}
                 onDrop={e=>handleDrop(d,e)}>
-                {HOURS.map(h=>(
-                  <div key={h} style={{position:"absolute",top:`${(h-9)/8*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}18`}}/>
+                {HOURS_EFF.map(h=>(
+                  <div key={h} style={{position:"absolute",top:`${(h*60-GRID_START)/TOTAL_MIN_EFF*100}%`,left:0,right:0,borderTop:`1px solid ${T.border}18`}}/>
                 ))}
                 {gesloten&&(
                   <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
@@ -2415,10 +2452,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                   </div>
                 )}
                 {apts.map(a=>{
-                  const startMin=timeToMin(a.tijd||"09:00")-WSTART;
-                  const top=Math.max(0,startMin/TOTAL_MIN*100);
-                  const height=Math.min((a.duur||1)*60/TOTAL_MIN*100,100-top);
-                  const kleur=a.type==="proefrit"?T.green:T.accent;
+                  const startMin=timeToMin(a.tijd||"09:00")-GRID_START;
+                  const top=Math.max(0,startMin/TOTAL_MIN_EFF*100);
+                  const height=Math.min((a.duur||1)*60/TOTAL_MIN_EFF*100,100-top);
+                  const kleur=a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
                   const displayNaam=a.type==="proefrit"?(a.naam||a.klant):a.klant;
                   const displaySub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):(a.omschrijving||a.opmerking||"");
                   return(
@@ -2496,7 +2533,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       )}
 
-      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
@@ -2808,6 +2845,14 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
 }
 
 export default function AdminApp(){
+  const [isDark,setIsDark]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(()=>{
+    const mq=window.matchMedia("(prefers-color-scheme: dark)");
+    const h=e=>setIsDark(e.matches);
+    mq.addEventListener("change",h);
+    return()=>mq.removeEventListener("change",h);
+  },[]);
+  Object.assign(T,isDark?T_DARK:T_LIGHT);
   const isMobile=useIsMobile();
   const [page,setPage]=useState("dashboard");
   const [klanten,setKlanten]=useState([]);

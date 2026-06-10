@@ -12,11 +12,17 @@ const useIsMobile = () => {
 };
 
 // ── Theme ──────────────────────────────────────────────────────────────────
-const T = {
+const T_LIGHT = {
   bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2", surf3: "#EBEBEB",
   border: "#E0E0E0", accent: "#E31E24", accentSoft: "#E31E2418",
   text: "#1A1A1A", muted: "#767676", green: "#16A34A", yellow: "#D97706", red: "#DC2626",
 };
+const T_DARK = {
+  bg: "#111111", surf: "#1C1C1E", surf2: "#2C2C2E", surf3: "#3A3A3C",
+  border: "#38383A", accent: "#E31E24", accentSoft: "#E31E2425",
+  text: "#F2F2F7", muted: "#8E8E93", green: "#30D158", yellow: "#FFD60A", red: "#FF453A",
+};
+let T = {...T_LIGHT};
 
 // ── Utils ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
@@ -76,23 +82,23 @@ const GearIcon = ({ size = 18 }) => (
 
 // ── Shared UI ──────────────────────────────────────────────────────────────
 const css = {
-  app: { maxWidth: 430, margin: "0 auto", minHeight: "100dvh", background: T.bg, fontFamily: "Barlow, sans-serif", color: T.text, display: "flex", flexDirection: "column", position: "relative" },
-  topBar: { padding: "14px 16px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
+  get app() { return { maxWidth: 430, margin: "0 auto", minHeight: "100dvh", background: T.bg, fontFamily: "Barlow, sans-serif", color: T.text, display: "flex", flexDirection: "column", position: "relative" }; },
+  get topBar() { return { padding: "14px 16px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }; },
   logoWrap: { display: "flex", flexDirection: "column" },
-  logoTop: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 2, color: T.text, lineHeight: 1 },
-  logoSub: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 10, letterSpacing: 3, color: T.accent, marginTop: 2 },
+  get logoTop() { return { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 2, color: T.text, lineHeight: 1 }; },
+  logoSub: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 600, fontSize: 10, letterSpacing: 3, color: "#E31E24", marginTop: 2 },
   scroll: { flex: 1, overflowY: "auto", padding: "20px 20px 90px" },
-  bottomNav: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: T.surf, borderTop: `1px solid ${T.border}`, display: "flex", zIndex: 50, paddingBottom: "env(safe-area-inset-bottom)" },
+  get bottomNav() { return { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: T.surf, borderTop: `1px solid ${T.border}`, display: "flex", zIndex: 50, paddingBottom: "env(safe-area-inset-bottom)" }; },
   navBtn: (a) => ({ flex: 1, padding: "10px 4px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer", background: "none", border: "none", color: a ? T.accent : T.muted, fontFamily: "Barlow, sans-serif" }),
-  card: { background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 12 },
-  cardAccent: { background: T.surf, border: `1px solid ${T.accent}40`, borderRadius: 10, padding: 16, marginBottom: 12 },
-  sectionTitle: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 2, color: T.muted, textTransform: "uppercase", marginBottom: 12 },
-  bigNum: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 38, color: T.accent, lineHeight: 1 },
+  get card() { return { background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }; },
+  get cardAccent() { return { background: T.surf, border: `1px solid ${T.accent}40`, borderRadius: 10, padding: 16, marginBottom: 12 }; },
+  get sectionTitle() { return { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 2, color: T.muted, textTransform: "uppercase", marginBottom: 12 }; },
+  bigNum: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 38, color: "#E31E24", lineHeight: 1 },
   motorTitle: { fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 24, lineHeight: 1 },
   badge: (c) => ({ display: "inline-block", padding: "3px 9px", borderRadius: 3, fontSize: 11, fontWeight: 700, background: `${c}22`, color: c, letterSpacing: 0.5 }),
-  input: { background: T.surf2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "11px 14px", color: T.text, fontSize: 16, fontFamily: "Barlow, sans-serif", outline: "none", width: "100%", boxSizing: "border-box" },
-  btn: { width: "100%", padding: "13px", background: T.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" },
-  btnGhost: { width: "100%", padding: "13px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 15, cursor: "pointer", fontFamily: "Barlow, sans-serif" },
+  get input() { return { background: T.surf2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "11px 14px", color: T.text, fontSize: 16, fontFamily: "Barlow, sans-serif", outline: "none", width: "100%", boxSizing: "border-box" }; },
+  btn: { width: "100%", padding: "13px", background: "#E31E24", color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" },
+  get btnGhost() { return { width: "100%", padding: "13px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 15, cursor: "pointer", fontFamily: "Barlow, sans-serif" }; },
 };
 
 // ── Motor dropdown selector ────────────────────────────────────────────────
@@ -1561,12 +1567,22 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
         <div style={{ ...css.card, color: T.muted, fontSize: 13, textAlign: "center" }}>
           Beschrijving en opties volgen binnenkort
         </div>
-        <button style={{ ...css.btn, marginTop: 4 }} onClick={openProefrit}>
-          Proefrit aanvragen →
-        </button>
-        <button style={{ ...css.btn, background: T.green, marginTop: 8 }} onClick={() => setView("aanbetaling")}>
-          Aanbetalen — €500
-        </button>
+        {!selectedMotor.verkocht_op && (
+          <>
+            <button style={{ ...css.btn, marginTop: 4 }} onClick={openProefrit}>
+              Proefrit aanvragen →
+            </button>
+            <button style={{ ...css.btn, background: T.green, marginTop: 8 }} onClick={() => setView("aanbetaling")}>
+              Aanbetalen — €500
+            </button>
+          </>
+        )}
+        {selectedMotor.verkocht_op && (
+          <div style={{ ...css.card, background: `${T.green}12`, border: `1px solid ${T.green}40`, textAlign:"center", marginTop:8 }}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:16, color:T.green }}>✓ Verkocht</div>
+            <div style={{ fontSize:13, color:T.muted, marginTop:4, lineHeight:1.6 }}>Deze motor is verkocht. Bekijk ons andere aanbod!</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1692,21 +1708,29 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           <div style={{ fontSize:14, color:T.muted, marginBottom:16, lineHeight:1.6 }}>
             Bekijk ons huidige aanbod en vraag direct een proefrit aan.
           </div>
-          {voorraad.length === 0 ? (
+          {voorraad.filter(m=>!m.verkocht_op).length === 0 && voorraad.length === 0 ? (
             <div style={{ textAlign:"center", color:T.muted, fontSize:14, marginTop:40 }}>
               Momenteel geen motors beschikbaar in de showroom.
             </div>
           ) : voorraad.map(motor => {
             const fotos = Array.isArray(motor.fotos) ? motor.fotos : [];
+            const isVerkocht = !!motor.verkocht_op;
             return (
               <div key={motor.id} onClick={() => openDetail(motor)}
-                style={{ ...css.card, padding:0, overflow:"hidden", marginBottom:14, cursor:"pointer" }}>
-                {fotos.length > 0 ? (
-                  <img src={clImg(fotos[0], 600)} alt={`${motor.merk} ${motor.model}`}
-                    style={{ width:"100%", height:180, objectFit:"cover", display:"block" }} />
-                ) : (
-                  <div style={{ height:120, background:T.surf2, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Geen foto</div>
-                )}
+                style={{ ...css.card, padding:0, overflow:"hidden", marginBottom:14, cursor:"pointer", opacity: isVerkocht ? 0.85 : 1 }}>
+                <div style={{ position:"relative" }}>
+                  {fotos.length > 0 ? (
+                    <img src={clImg(fotos[0], 600)} alt={`${motor.merk} ${motor.model}`}
+                      style={{ width:"100%", height:180, objectFit:"cover", display:"block", filter: isVerkocht ? "grayscale(30%)" : "none" }} />
+                  ) : (
+                    <div style={{ height:120, background:T.surf2, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Geen foto</div>
+                  )}
+                  {isVerkocht && (
+                    <div style={{ position:"absolute", top:10, left:10, background:T.green, color:"#fff", padding:"4px 10px", borderRadius:4, fontSize:12, fontWeight:700, letterSpacing:1 }}>
+                      VERKOCHT
+                    </div>
+                  )}
+                </div>
                 <div style={{ padding:"14px 16px" }}>
                   <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:22, lineHeight:1 }}>
                     {motor.merk} {motor.model}
@@ -1715,8 +1739,8 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
                     {motor.bouwjaar} · {motor.km?.toLocaleString()} km · {motor.kenteken}
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, color:T.accent }}>
-                      €{motor.prijs?.toLocaleString()}
+                    <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, color: isVerkocht ? T.muted : T.accent }}>
+                      {isVerkocht ? "Verkocht" : `€${motor.prijs?.toLocaleString()}`}
                     </div>
                     <span style={{ fontSize:12, color:T.muted }}>Meer info →</span>
                   </div>
@@ -1760,6 +1784,14 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
 
 // ── App ────────────────────────────────────────────────────────────────────
 export default function KlantApp({ userId }) {
+  const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const h = e => setIsDark(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  Object.assign(T, isDark ? T_DARK : T_LIGHT);
   const [tab, setTab] = useState("motor");
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
@@ -1844,14 +1876,14 @@ export default function KlantApp({ userId }) {
           setMotoren([]);
         }
 
-        // Voorraad ophalen
+        // Voorraad ophalen (incl. recent verkochte motors, 30 dagen zichtbaar)
         const { data: vData } = await supabase
           .from("voorraad")
-          .select("id,merk,model,bouwjaar,km,prijs,fotos,kenteken,status,datum_in,voorband_datum,achterband_datum")
-          .is("verkocht_op", null)
-          .neq("status", "niet_beschikbaar")
+          .select("id,merk,model,bouwjaar,km,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
+          .neq("status", "verwijderd")
+          .or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`)
           .order("created_at", { ascending: false });
-        setVooraad(vData || []);
+        setVooraad((vData || []).filter(m => !m.verkocht_op || m.status !== "niet_beschikbaar"));
 
         // Producten ophalen (onderdelen + accessoires)
         const { data: pData } = await supabase
