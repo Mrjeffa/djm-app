@@ -439,7 +439,7 @@ const K_SOORT_GROEPEN = [
   {label:"Keuring & Overig",items:["Aankoopkeuring","Rijklaar maken","Accessoires monteren","Motor afstellen of synchroniseren","Anders"]},
 ];
 
-function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], geslotenDagen = [], openingstijden = null, onSlaOp }) {
+function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], geslotenDagen = [], openingstijden = null, onSlaOp, afspraakSoorten = [] }) {
   const [soorten, setSoorten] = useState(new Set());
   const [openGroepen, setOpenGroepen] = useState(new Set());
   const [selDatum, setSelDatum] = useState(null);
@@ -447,7 +447,9 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
-  const totaalUur = Math.min([...soorten].reduce((s, o) => s + (K_SOORT_DUUR[o] || 1), 0), 8);
+  const dynamischeGroepen = afspraakSoorten.length ? afspraakSoorten : K_SOORT_GROEPEN.map(g => ({...g, items: g.items.map(naam => ({naam, duur: K_SOORT_DUUR[naam] || 1}))}));
+  const duurMap = Object.fromEntries(dynamischeGroepen.flatMap(g => (g.items || []).map(i => [i.naam, i.duur || 1])));
+  const totaalUur = Math.min([...soorten].reduce((s, o) => s + (duurMap[o] || 1), 0), 8);
 
   const toggleSoort = (opt) => setSoorten(prev => { const n = new Set(prev); n.has(opt) ? n.delete(opt) : n.add(opt); return n; });
   const toggleGroep = (lbl) => setOpenGroepen(prev => { const n = new Set(prev); n.has(lbl) ? n.delete(lbl) : n.add(lbl); return n; });
@@ -485,9 +487,9 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Wat moet er gebeuren?</div>
         <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, fontStyle: "italic" }}>Tijden zijn schattingen en kunnen in werkelijkheid afwijken.</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {K_SOORT_GROEPEN.map(g => {
+          {dynamischeGroepen.map(g => {
             const open = openGroepen.has(g.label);
-            const geselecteerd = g.items.filter(i => soorten.has(i));
+            const geselecteerd = (g.items || []).filter(item => soorten.has(item.naam));
             const heeftSel = geselecteerd.length > 0;
             return (
               <div key={g.label} style={{ border: `1px solid ${heeftSel ? T.accent : T.border}`, borderRadius: 6, overflow: "hidden" }}>
@@ -501,12 +503,12 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
                 </button>
                 {open && (
                   <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 5, borderTop: `1px solid ${T.border}`, background: T.surf }}>
-                    {g.items.map(opt => {
-                      const sel = soorten.has(opt);
+                    {(g.items || []).map(item => {
+                      const sel = soorten.has(item.naam);
                       return (
-                        <button key={opt} onClick={() => toggleSoort(opt)}
+                        <button key={item.naam} onClick={() => toggleSoort(item.naam)}
                           style={{ padding: "6px 12px", borderRadius: 4, border: `1px solid ${sel ? T.accent : T.border}`, background: sel ? T.accentSoft : "transparent", color: sel ? T.accent : T.text, cursor: "pointer", fontSize: 12, fontFamily: "Barlow, sans-serif", fontWeight: sel ? 600 : 400 }}>
-                          {opt}{K_SOORT_DUUR[opt] > 1 ? ` · ${K_SOORT_DUUR[opt]}u` : " · 1u"}
+                          {item.naam}{item.duur > 1 ? ` · ${item.duur}u` : " · 1u"}
                         </button>
                       );
                     })}
@@ -1341,7 +1343,7 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
 }
 
 // ── Scherm: Service & Afspraken ────────────────────────────────────────────
-function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService }) {
+function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService, afspraakSoorten = [] }) {
   const [afspraakOpen, setAfspraakOpen] = useState(false);
 
   if (afspraakOpen) {
@@ -1354,6 +1356,7 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
         <Afspraak
           motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor}
           bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden}
+          afspraakSoorten={afspraakSoorten}
           onSlaOp={async (f) => { await onSlaAfspraakOp(f); setAfspraakOpen(false); }}
         />
       </div>
@@ -1691,6 +1694,7 @@ export default function KlantApp({ userId }) {
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
   const [dienstenTarieven, setDienstenTarieven] = useState({});
+  const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [voorraad, setVooraad] = useState([]);
   const [producten, setProducten] = useState([]);
   const [laden, setLaden] = useState(true);
@@ -1710,7 +1714,7 @@ export default function KlantApp({ userId }) {
         const [klantRes, afsprakenRes, instRes, userRes] = await Promise.all([
           supabase.from("klanten").select("*").eq("user_id", userId).single(),
           supabase.rpc("get_bezette_dagen"),
-          supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven").single(),
+          supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten").single(),
           supabase.auth.getUser(),
         ]);
 
@@ -1740,6 +1744,7 @@ export default function KlantApp({ userId }) {
         if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
         if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
         if (inst?.diensten_tarieven) setDienstenTarieven(inst.diensten_tarieven);
+        if (inst?.afspraak_soorten?.length) setAfspraakSoorten(inst.afspraak_soorten);
 
         // Motoren ophalen (heeft klant_id nodig)
         const { data: motorenData } = await supabase
@@ -2067,7 +2072,7 @@ export default function KlantApp({ userId }) {
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
-            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
+            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
@@ -2118,7 +2123,7 @@ export default function KlantApp({ userId }) {
 
       <div style={css.scroll}>
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
-        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
+        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}

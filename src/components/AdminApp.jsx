@@ -2098,6 +2098,48 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
           </select>
         </Field>
       </Grid2>
+      {!isProefrit&&(
+        <Field label="Soort afspraak">
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {groepen.map(g=>{
+              const open=openGroepen.has(g.label);
+              const geselecteerd=(g.items||[]).filter(item=>soorten.has(item.naam));
+              const heeftSel=geselecteerd.length>0;
+              return(
+                <div key={g.label} style={{border:`1px solid ${heeftSel?T.accent:T.border}`,borderRadius:6,overflow:"hidden"}}>
+                  <button onClick={()=>toggleGroepEdit(g.label)}
+                    style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:heeftSel?`${T.accent}10`:T.surf2,border:"none",cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:13,fontWeight:heeftSel?600:400,color:heeftSel?T.accent:T.text}}>{g.label}</span>
+                      {heeftSel&&<span style={{...s.badge(T.accent),fontSize:10}}>{geselecteerd.length} geselecteerd</span>}
+                    </div>
+                    <span style={{fontSize:11,color:T.muted}}>{open?"▲":"▼"}</span>
+                  </button>
+                  {open&&(
+                    <div style={{padding:"10px 12px",display:"flex",flexWrap:"wrap",gap:5,borderTop:`1px solid ${T.border}`,background:T.surf}}>
+                      {(g.items||[]).map(item=>{
+                        const sel=soorten.has(item.naam);
+                        return(
+                          <button key={item.naam} onClick={()=>toggleSoortEdit(item.naam)}
+                            style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.text,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400}}>
+                            {item.naam}{item.duur>1?` · ${item.duur}u`:" · 1u"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {soorten.size>0&&(
+            <div style={{marginTop:10,fontSize:12,color:T.accent,fontWeight:600,padding:"8px 10px",background:`${T.accent}10`,borderRadius:4}}>
+              Geschatte totale duur: {Math.min([...soorten].reduce((s,o)=>s+(duurMap[o]||1),0),8)}u
+              <span style={{fontWeight:400,color:T.muted}}> (max. 8u per dag)</span>
+            </div>
+          )}
+        </Field>
+      )}
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"none"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))}/>
       </Field>
@@ -2123,14 +2165,14 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
         <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
         <div style={{display:"flex",gap:10}}>
           <button style={s.btnGhost} onClick={onClose}>Annuleer</button>
-          <button style={s.btn} onClick={()=>onSave({...afspraak,...f,duur:parseInt(f.duur)})}>Opslaan</button>
+          <button style={s.btn} onClick={()=>onSave({...afspraak,...f,soort:[...soorten].join(", ")||afspraak.soort||"",duur:parseInt(f.duur)})}>Opslaan</button>
         </div>
       </div>
     </Modal>
   );
 }
 
-function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden}){
+function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden,afspraakSoorten=[]}){
   const isMobile=useIsMobile();
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
@@ -2249,6 +2291,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                     </div>
                   )}
                   {(a.opmerking||a.omschrijving)&&<div style={{fontSize:12,color:T.muted,marginBottom:8}}>{a.opmerking||a.omschrijving}</div>}
+                  {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginBottom:8}}>{a.soort}</div>}
                   <div style={{display:"flex",gap:8}}>
                     <button style={{...s.btn,flex:1,padding:"8px"}} onClick={()=>setEditAfspraak(a)}>Inplannen</button>
                     <button style={{...s.btn,flex:1,padding:"8px",background:T.red}} onClick={()=>onDeleteAfspraak(a.id)}>Afwijzen</button>
@@ -2259,9 +2302,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
-        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
+            afspraakSoorten={afspraakSoorten}
             onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
             onDelete={id=>{onDeleteAfspraak(id);setEditAfspraak(null);}}
             onClose={()=>setEditAfspraak(null)}
@@ -2409,6 +2453,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                   {(a.opmerking||a.omschrijving)&&(
                     <div style={{fontSize:12,color:T.muted}}>{a.opmerking||a.omschrijving}</div>
                   )}
+                  {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{a.soort}</div>}
                 </div>
                 <div style={{display:"flex",gap:8,flexShrink:0,marginLeft:16}}>
                   <button style={{...s.btn,background:T.accent}} onClick={()=>setEditAfspraak(a)}>
@@ -2425,12 +2470,13 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       )}
 
-      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
           klanten={klanten}
           voorraad={voorraad}
+          afspraakSoorten={afspraakSoorten}
           onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
           onDelete={id=>{onDeleteAfspraak(id);setEditAfspraak(null);}}
           onClose={()=>setEditAfspraak(null)}
@@ -2458,7 +2504,19 @@ const DEFAULT_TIJDEN = {
   zo:{open:"",sluit:"",gesloten:true}
 };
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten}){
+function NieuweItemRij({onAdd}){
+  const [naam,setNaam]=useState("");
+  const [duur,setDuur]=useState(1);
+  return(
+    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+      <input style={{...s.input,flex:1,padding:"6px 8px",fontSize:12}} placeholder="Naam werkzaamheid" value={naam} onChange={e=>setNaam(e.target.value)}/>
+      <input style={{...s.input,width:52,padding:"6px 8px",fontSize:12,textAlign:"center"}} type="number" min="1" max="8" value={duur} onChange={e=>setDuur(Number(e.target.value))} placeholder="u"/>
+      <button style={{...s.btn,padding:"6px 12px",fontSize:12,flexShrink:0}} onClick={()=>{if(naam.trim()){onAdd(naam.trim(),duur||1);setNaam("");setDuur(1);}}} disabled={!naam.trim()}>+</button>
+    </div>
+  );
+}
+
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -2469,6 +2527,9 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const [tarieven,setTarieven]=useState(dienstenTarieven);
   const [tarievenOk,setTarievenOk]=useState(false);
   useEffect(()=>setTarieven(dienstenTarieven),[dienstenTarieven]);
+  const [soorten,setSoorten]=useState(afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN);
+  const [soortenOk,setSoortenOk]=useState(false);
+  useEffect(()=>setSoorten(afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN),[afspraakSoorten]);
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
 
@@ -2643,6 +2704,29 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
           </button>
         </div>
       </div>
+
+      {/* Afspraak soorten */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Afspraak soorten</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Beheer de soorten afspraken die ingepland kunnen worden. Wijzigingen zijn direct zichtbaar voor klanten en admin.</div>
+        {soorten.map((g,gi)=>(
+          <div key={gi} style={{marginBottom:16}}>
+            <div style={{fontSize:11,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8,fontWeight:600}}>{g.label}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              {(g.items||[]).map((item,ii)=>(
+                <div key={ii} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,fontSize:12}}>
+                  <span>{item.naam} · {item.duur}u</span>
+                  <button onClick={()=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:gr.items.filter((_,i)=>i!==ii)}))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+                </div>
+              ))}
+            </div>
+            <NieuweItemRij onAdd={(naam,duur)=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:[...(gr.items||[]),{naam,duur}]}))}/>
+          </div>
+        ))}
+        <button style={{...s.btn,background:soortenOk?T.green:T.accent,marginTop:8}} onClick={async()=>{await onSaveAfspraakSoorten(soorten);setSoortenOk(true);setTimeout(()=>setSoortenOk(false),2000);}}>
+          {soortenOk?"✓ Opgeslagen":"Opslaan"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -2710,11 +2794,12 @@ export default function AdminApp(){
         }));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
         if(inst.data?.diensten_tarieven) setDienstenTarieven(inst.data.diensten_tarieven);
+        if(inst.data?.afspraak_soorten?.length) setAfspraakSoorten(inst.data.afspraak_soorten);
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -3109,6 +3194,7 @@ export default function AdminApp(){
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
   const [dienstenTarieven, setDienstenTarieven] = useState({});
+  const [afspraakSoorten, setAfspraakSoorten] = useState([]);
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
@@ -3126,6 +3212,12 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("instellingen").update({ diensten_tarieven: tarieven }).eq("id", 1);
     setDienstenTarieven(tarieven);
+  };
+
+  const slaAfspraakSoortenOp = async (soorten) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ afspraak_soorten: soorten }).eq("id", 1);
+    setAfspraakSoorten(soorten);
   };
 
   // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten
@@ -3199,8 +3291,8 @@ export default function AdminApp(){
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
-      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp}/>}
+      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
     </>
   );
 
