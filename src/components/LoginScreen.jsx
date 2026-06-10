@@ -1,20 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const T = { bg:'#F8F8F8', surf:'#FFFFFF', border:'#E0E0E0', accent:'#E31E24', text:'#1A1A1A', muted:'#767676', red:'#DC2626', green:'#16A34A' }
-
-// font-size 16px voorkomt automatisch inzoomen op iOS
-const inp = {
-  width:'100%', background:'#F2F2F2', border:`1px solid #E0E0E0`,
-  borderRadius:6, padding:'12px 14px', color:'#1A1A1A',
-  fontSize:16, fontFamily:'Barlow, sans-serif', outline:'none',
-  boxSizing:'border-box', marginBottom:10, WebkitAppearance:'none',
-}
-const btn = (color='#E31E24') => ({
-  width:'100%', padding:14, background:color, color:'#fff', border:'none',
-  borderRadius:8, fontSize:16, fontWeight:600, cursor:'pointer',
-  fontFamily:'Barlow, sans-serif', marginTop:4,
-})
+const T_LIGHT = { bg:'#F8F8F8', surf:'#FFFFFF', surf2:'#F2F2F2', border:'#E0E0E0', accent:'#E31E24', text:'#1A1A1A', muted:'#767676', red:'#DC2626' }
+const T_DARK  = { bg:'#111111', surf:'#1C1C1E', surf2:'#2C2C2E', border:'#38383A', accent:'#E31E24', text:'#F2F2F7', muted:'#8E8E93', red:'#FF453A' }
+let T = {...T_LIGHT}
 
 const Logo = () => (
   <div style={{ textAlign:'center', marginBottom:32 }}>
@@ -23,7 +12,7 @@ const Logo = () => (
       background:'#000', borderRadius:'50%',
       border:`4px solid ${T.accent}`,
       padding:'18px 36px 14px',
-      boxShadow:`0 0 0 2px #F8F8F8, 0 0 0 5px ${T.accent}60, 0 4px 16px rgba(0,0,0,0.15)`,
+      boxShadow:`0 0 0 2px ${T.bg}, 0 0 0 5px ${T.accent}60, 0 4px 16px rgba(0,0,0,0.15)`,
     }}>
       <div style={{ fontSize:26, fontWeight:900, letterSpacing:4, color:'#FFFFFF', fontFamily:'Barlow Condensed, sans-serif', lineHeight:1 }}>DE JONGE</div>
       <div style={{ width:'80%', height:1, background:T.accent, margin:'6px 0 5px' }}/>
@@ -33,12 +22,36 @@ const Logo = () => (
 )
 
 export default function LoginScreen() {
+  const [isDark, setIsDark] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const h = e => setIsDark(e.matches)
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
+  Object.assign(T, isDark ? T_DARK : T_LIGHT)
+
   const [tab, setTab] = useState('login')
   const [email, setEmail] = useState('')
   const [ww, setWw] = useState('')
   const [ww2, setWw2] = useState('')
   const [laden, setLaden] = useState(false)
   const [fout, setFout] = useState(null)
+
+  // font-size 16px voorkomt automatisch inzoomen op iOS
+  const inp = {
+    width:'100%', background:T.surf2, border:`1px solid ${T.border}`,
+    borderRadius:6, padding:'12px 14px', color:T.text,
+    fontSize:16, fontFamily:'Barlow, sans-serif', outline:'none',
+    boxSizing:'border-box', marginBottom:10, WebkitAppearance:'none',
+  }
+  const btn = (color=T.accent) => ({
+    width:'100%', padding:14, background:color, color:'#fff', border:'none',
+    borderRadius:8, fontSize:16, fontWeight:600, cursor:'pointer',
+    fontFamily:'Barlow, sans-serif', marginTop:4,
+  })
+  const wrap = { display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:'20px 16px', fontFamily:'Barlow, sans-serif', boxSizing:'border-box' }
+  const card = { background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:'24px 20px' }
 
   const login = async () => {
     if (!email || !ww) return
@@ -66,9 +79,6 @@ export default function LoginScreen() {
     setLaden(false)
     setTab('reset_ok')
   }
-
-  const wrap = { display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:'20px 16px', fontFamily:'Barlow, sans-serif', boxSizing:'border-box' }
-  const card = { background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:'24px 20px' }
 
   if (tab === 'reset_ok') return (
     <div style={wrap}>
@@ -108,7 +118,7 @@ export default function LoginScreen() {
 
         <div style={card}>
           {/* Tab switcher */}
-          <div style={{ display:'flex', marginBottom:20, background:'#F0F0F0', borderRadius:6, padding:3 }}>
+          <div style={{ display:'flex', marginBottom:20, background:T.surf2, borderRadius:6, padding:3 }}>
             {[['login','Inloggen'],['register','Nieuw account']].map(([id,lbl]) => (
               <button key={id} onClick={() => { setTab(id); setFout(null) }}
                 style={{ flex:1, padding:'9px', background:tab===id?T.accent:'transparent', color:tab===id?'#fff':T.muted, border:'none', borderRadius:4, fontSize:14, fontWeight:tab===id?600:400, cursor:'pointer', fontFamily:'Barlow, sans-serif' }}>

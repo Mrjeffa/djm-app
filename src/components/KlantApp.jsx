@@ -1065,7 +1065,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
 }
 
 // ── Scherm: Instellingen ───────────────────────────────────────────────────
-function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden }) {
+function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden, themeMode="automatisch", onThemeMode=()=>{} }) {
   const [profiel, setProfiel] = useState({
     naam: klant.naam || "", telefoon: klant.telefoon || "",
     adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
@@ -1358,6 +1358,19 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
             {wwBezig ? "Wijzigen..." : "Wachtwoord wijzigen"}
           </button>
         )}
+      </div>
+
+      {/* Thema */}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Thema</div>
+        <div style={{ display:"flex", gap:0, background:T.surf2, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
+          {[["licht","☀ Licht"],["automatisch","◑ Automatisch"],["donker","☾ Donker"]].map(([m,lbl])=>(
+            <button key={m} onClick={()=>onThemeMode(m)}
+              style={{ flex:1, padding:"10px 4px", background:themeMode===m?T.surf:"transparent", border:"none", borderRadius:6, color:themeMode===m?T.text:T.muted, fontSize:13, fontWeight:themeMode===m?600:400, cursor:"pointer", fontFamily:"Barlow, sans-serif", transition:"all 0.1s" }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Uitloggen */}
@@ -1784,14 +1797,17 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
 
 // ── App ────────────────────────────────────────────────────────────────────
 export default function KlantApp({ userId }) {
-  const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [themeMode, setThemeMode] = useState(() => { try { return localStorage.getItem("djm_klant_theme") || "automatisch" } catch { return "automatisch" } });
+  const [sysDark, setSysDark] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const h = e => setIsDark(e.matches);
+    const h = e => setSysDark(e.matches);
     mq.addEventListener("change", h);
     return () => mq.removeEventListener("change", h);
   }, []);
-  Object.assign(T, isDark ? T_DARK : T_LIGHT);
+  const setTheme = (mode) => { setThemeMode(mode); try { localStorage.setItem("djm_klant_theme", mode) } catch {} };
+  const effectiveDark = themeMode === "donker" || (themeMode === "automatisch" && sysDark);
+  Object.assign(T, effectiveDark ? T_DARK : T_LIGHT);
   const [tab, setTab] = useState("motor");
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
@@ -2194,6 +2210,8 @@ export default function KlantApp({ userId }) {
                 onVerwijderMotor={verwijderMotor}
                 onWijzigWachtwoord={wijzigWachtwoord}
                 onUpdateBanden={updateMotorBanden}
+                themeMode={themeMode}
+                onThemeMode={setTheme}
               />
             )}
           </div>

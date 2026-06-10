@@ -112,15 +112,18 @@ export default function App() {
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 
-  if (laden) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background:'#0E0E0E' }}>
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
-        <div style={{ width:32, height:32, border:'3px solid #E8520A', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-        <div style={{ color:'#666660', fontSize:13, fontFamily:'Barlow, sans-serif' }}>Laden...</div>
+  if (laden) {
+    const sysDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background: sysDark ? '#111111' : '#F8F8F8' }}>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
+          <div style={{ width:32, height:32, border:'3px solid #E31E24', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+          <div style={{ color: sysDark ? '#8E8E93' : '#767676', fontSize:13, fontFamily:'Barlow, sans-serif' }}>Laden...</div>
+        </div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  )
+    )
+  }
 
   if (reset) return <WachtwoordInstellen onKlaar={() => { setReset(false); window.location.hash = ''; window.location.reload() }} />
   if (!sessie) return <LoginScreen />

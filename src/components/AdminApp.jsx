@@ -2909,14 +2909,17 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
 }
 
 export default function AdminApp(){
-  const [isDark,setIsDark]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [themeMode,setThemeMode]=useState(()=>{try{return localStorage.getItem("djm_admin_theme")||"automatisch"}catch{return"automatisch"}});
+  const [sysDark,setSysDark]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(()=>{
     const mq=window.matchMedia("(prefers-color-scheme: dark)");
-    const h=e=>setIsDark(e.matches);
+    const h=e=>setSysDark(e.matches);
     mq.addEventListener("change",h);
     return()=>mq.removeEventListener("change",h);
   },[]);
-  Object.assign(T,isDark?T_DARK:T_LIGHT);
+  const setTheme=(mode)=>{setThemeMode(mode);try{localStorage.setItem("djm_admin_theme",mode)}catch{}};
+  const effectiveDark=themeMode==="donker"||(themeMode==="automatisch"&&sysDark);
+  Object.assign(T,effectiveDark?T_DARK:T_LIGHT);
   const isMobile=useIsMobile();
   const [page,setPage]=useState("dashboard");
   const [klanten,setKlanten]=useState([]);
@@ -3543,8 +3546,12 @@ export default function AdminApp(){
             <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:900,fontSize:16,letterSpacing:2,color:T.text}}>DE JONGE</div>
             <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:600,fontSize:10,letterSpacing:4,color:T.accent}}>MOTOREN</div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{fontSize:11,color:T.muted}}>{new Date().toLocaleDateString("nl-NL",{day:"numeric",month:"short"})}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",gap:1,background:T.surf2,borderRadius:5,padding:2,border:`1px solid ${T.border}`}}>
+              {[["licht","☀"],["automatisch","◑"],["donker","☾"]].map(([m,ic])=>(
+                <button key={m} onClick={()=>setTheme(m)} title={m.charAt(0).toUpperCase()+m.slice(1)} style={{padding:"3px 7px",background:themeMode===m?T.surf:"transparent",border:"none",borderRadius:3,color:themeMode===m?T.text:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>{ic}</button>
+              ))}
+            </div>
             <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{padding:"5px 10px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:4,color:T.muted,fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uit</button>
           </div>
         </div>
@@ -3591,7 +3598,12 @@ export default function AdminApp(){
       <div style={s.main}>
         <div style={s.header}>
           <div style={s.headerTitle}>{nav.find(n=>n.id===page)?.label.toUpperCase()}</div>
-          <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div style={{display:"flex",gap:1,background:T.surf2,borderRadius:5,padding:2,border:`1px solid ${T.border}`}}>
+              {[["licht","☀"],["automatisch","◑"],["donker","☾"]].map(([m,ic])=>(
+                <button key={m} onClick={()=>setTheme(m)} title={m.charAt(0).toUpperCase()+m.slice(1)} style={{padding:"3px 8px",background:themeMode===m?T.surf:"transparent",border:"none",borderRadius:3,color:themeMode===m?T.text:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",transition:"all 0.1s"}}>{ic}</button>
+              ))}
+            </div>
             <div style={{fontSize:12,color:T.muted}}>{new Date().toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"long",year:"numeric"})}</div>
             <button onClick={()=>import("../lib/supabase.js").then(m=>m.uitloggen())} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:4,color:T.muted,fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>Uitloggen</button>
           </div>
