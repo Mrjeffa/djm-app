@@ -1200,6 +1200,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
         <AfwerkModal
           afspraak={afwerkAfspraakItem}
           klanten={klanten}
+          voorraad={voorraad}
           onSave={onAfwerkAfspraak}
           onClose={()=>setAfwerkAfspraakItem(null)}/>
       )}
@@ -1741,6 +1742,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
   const [proefritMotor,setProefritMotor]=useState(null);
   const [menuMotorId,setMenuMotorId]=useState(null);
   const [proefritConfirm,setProefritConfirm]=useState(null); // { motor, afspraak }
+  const [historieMotor,setHistorieMotor]=useState(null);
   const [subTab,setSubTab]=useState("motoren"); // "motoren" | "onderdelen" | "accessoires"
   const [productModal,setProductModal]=useState(null); // null | { categorie, product? }
   const [delProduct,setDelProduct]=useState(null);
@@ -1873,6 +1875,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                                 {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
                               </button>
                             )}
+                            <button onClick={()=>{setHistorieMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Historie</button>
                             <div style={{height:1,background:T.border}}/>
                             <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
                           </div>
@@ -2057,13 +2060,43 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
           </div>
         </Modal>
       )}
+
+      {historieMotor&&(
+        <Modal title={`HISTORIE — ${historieMotor.merk} ${historieMotor.model}`} onClose={()=>setHistorieMotor(null)}>
+          <div style={{fontSize:12,color:T.muted,marginBottom:14,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{historieMotor.kenteken}</div>
+          {(historieMotor.service||[]).length===0?(
+            <div style={{fontSize:13,color:T.muted,padding:"20px 0",textAlign:"center"}}>Geen servicehistorie geregistreerd</div>
+          ):(
+            [...(historieMotor.service||[])].sort((a,b)=>b.datum.localeCompare(a.datum)).map(sv=>(
+              <div key={sv.id} style={{padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <span style={{fontSize:13,fontWeight:600,color:T.accent}}>{sv.datum}</span>
+                  {sv.km&&<span style={{fontSize:12,color:T.muted}}>{sv.km.toLocaleString()} km</span>}
+                </div>
+                <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{sv.omschrijving}</div>
+                {(sv.voorband_datum||sv.achterband_datum)&&(
+                  <div style={{fontSize:11,color:T.muted,marginTop:4}}>
+                    {sv.voorband_datum&&<span>Voorband: {sv.voorband_datum} </span>}
+                    {sv.achterband_datum&&<span>Achterband: {sv.achterband_datum}</span>}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+          <div style={{marginTop:14,display:"flex",justifyContent:"flex-end"}}>
+            <button onClick={()=>setHistorieMotor(null)} style={{...s.btnGhost,width:"auto",padding:"8px 16px"}}>Sluiten</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-function AfwerkModal({afspraak, klanten, onSave, onClose}){
+function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
   const klant = (klanten||[]).find(k=>k.id===afspraak.klant_id);
   const klantMotoren = klant?.motoren || [];
+  const voorraadMotor = afspraak.voorraad_motor_id ? (voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id) : null;
+
   const [motorId, setMotorId] = useState(afspraak.motor_id || (klantMotoren.length===1?klantMotoren[0].id:""));
   const [vbVervangen, setVbVervangen] = useState(false);
   const [abVervangen, setAbVervangen] = useState(false);
@@ -2077,7 +2110,14 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
 
-  const geselecteerdeMotor = klantMotoren.find(m=>m.id===motorId);
+  // Geen motor = intern zonder gekoppelde motor → alleen opmerkingen
+  const noMotorMode = !voorraadMotor && klantMotoren.length===0 && !afspraak.motor_id;
+
+  // Toon banden-sectie alleen als soort band-werkzaamheden bevat
+  const soortText = (afspraak.soort||"").toLowerCase();
+  const showBanden = !noMotorMode && (soortText.includes("band") || soortText.includes("wisseling"));
+
+  const geselecteerdeMotor = voorraadMotor || klantMotoren.find(m=>m.id===motorId);
 
   const toggleVb = (checked) => {
     setVbVervangen(checked);
@@ -2095,67 +2135,89 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
     setF(p=>({...p,voorband_datum:"",achterband_datum:""}));
   };
 
+  const kanOpslaan = noMotorMode ? true : f.omschrijving.trim().length > 0;
+
   return(
     <Modal title="AFSPRAAK AFWERKEN" onClose={onClose}>
+      {/* Context info */}
       {klant&&<div style={{fontSize:13,color:T.muted,marginBottom:14}}>{klant.naam}{afspraak.soort&&<> · <span style={{color:T.text}}>{afspraak.soort}</span></>}</div>}
+      {voorraadMotor&&<div style={{fontSize:13,color:T.muted,marginBottom:14}}>🏍 {voorraadMotor.merk} {voorraadMotor.model} — <span style={{fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{voorraadMotor.kenteken}</span></div>}
 
-      {klantMotoren.length > 0 && (
-        <Field label="Motor">
-          <select style={s.input} value={motorId} onChange={e=>wisselMotor(e.target.value)}>
-            <option value="">— selecteer motor —</option>
-            {klantMotoren.map(m=>(
-              <option key={m.id} value={m.id}>{m.merk} {m.model} ({m.kenteken})</option>
-            ))}
-          </select>
-        </Field>
+      {/* No-motor mode: alleen opmerkingen opslaan op de afspraak */}
+      {noMotorMode ? (
+        <>
+          <Field label="Datum afgewerkt"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+          <Field label="Opmerkingen">
+            <textarea style={{...s.input,height:120,resize:"none"}} value={f.interne_opmerking} onChange={set("interne_opmerking")} placeholder="Notities, bevindingen, resultaat van de werkzaamheden..."/>
+          </Field>
+        </>
+      ) : (
+        <>
+          {/* Motor dropdown voor klant-afspraken */}
+          {klantMotoren.length > 0 && (
+            <Field label="Motor">
+              <select style={s.input} value={motorId} onChange={e=>wisselMotor(e.target.value)}>
+                <option value="">— selecteer motor —</option>
+                {klantMotoren.map(m=>(
+                  <option key={m.id} value={m.id}>{m.merk} {m.model} ({m.kenteken})</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          <Grid2>
+            <Field label="Datum afgewerkt"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+            <Field label="Kilometerstand bij beurt"><input style={s.input} type="number" value={f.km} onChange={set("km")} placeholder="15500"/></Field>
+          </Grid2>
+
+          <Field label="Uitgevoerde werkzaamheden *">
+            <textarea style={{...s.input,height:100,resize:"none"}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving van de uitgevoerde werkzaamheden..."/>
+          </Field>
+
+          {/* Banden sectie: alleen tonen als soort band-werkzaamheden bevat */}
+          {showBanden && (
+            <>
+              <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+              <div style={s.sectionLabel}>Banden vervangen?</div>
+              <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:4}}>
+                <div>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                    <input type="checkbox" checked={vbVervangen} onChange={e=>toggleVb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
+                    <span style={{fontSize:13,fontWeight:500}}>Voorband vervangen</span>
+                  </label>
+                  {vbVervangen&&(
+                    <div style={{marginTop:8,marginLeft:23}}>
+                      <Field label="Productiedatum nieuwe voorband">
+                        <BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/>
+                      </Field>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                    <input type="checkbox" checked={abVervangen} onChange={e=>toggleAb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
+                    <span style={{fontSize:13,fontWeight:500}}>Achterband vervangen</span>
+                  </label>
+                  {abVervangen&&(
+                    <div style={{marginTop:8,marginLeft:23}}>
+                      <Field label="Productiedatum nieuwe achterband">
+                        <BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/>
+                      </Field>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+          <div style={s.sectionLabel}>Interne opmerking (niet zichtbaar voor klant)</div>
+          <textarea style={{...s.input,height:70,resize:"none"}} value={f.interne_opmerking} onChange={set("interne_opmerking")} placeholder="Bijv. technische bevindingen, aandachtspunten voor volgende keer..."/>
+        </>
       )}
 
-      <Grid2>
-        <Field label="Datum afgewerkt"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
-        <Field label="Kilometerstand bij beurt"><input style={s.input} type="number" value={f.km} onChange={set("km")} placeholder="15500"/></Field>
-      </Grid2>
-
-      <Field label="Uitgevoerde werkzaamheden *">
-        <textarea style={{...s.input,height:100,resize:"none"}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving van de uitgevoerde werkzaamheden..."/>
-      </Field>
-
-      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
-      <div style={s.sectionLabel}>Banden vervangen?</div>
-      <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:4}}>
-        <div>
-          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
-            <input type="checkbox" checked={vbVervangen} onChange={e=>toggleVb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:500}}>Voorband vervangen</span>
-          </label>
-          {vbVervangen&&(
-            <div style={{marginTop:8,marginLeft:23}}>
-              <Field label="Productiedatum nieuwe voorband">
-                <BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/>
-              </Field>
-            </div>
-          )}
-        </div>
-        <div>
-          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
-            <input type="checkbox" checked={abVervangen} onChange={e=>toggleAb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:500}}>Achterband vervangen</span>
-          </label>
-          {abVervangen&&(
-            <div style={{marginTop:8,marginLeft:23}}>
-              <Field label="Productiedatum nieuwe achterband">
-                <BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/>
-              </Field>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
-      <div style={s.sectionLabel}>Interne opmerking (niet zichtbaar voor klant)</div>
-      <textarea style={{...s.input,height:70,resize:"none"}} value={f.interne_opmerking} onChange={set("interne_opmerking")} placeholder="Bijv. technische bevindingen, aandachtspunten voor volgende keer..."/>
-
       <ModalFooter onClose={onClose} label="Afwerken & Opslaan"
-        onClick={()=>{if(f.omschrijving.trim()){onSave({motorId,afspraakId:afspraak.id,...f});onClose();}}}/>
+        onClick={()=>{if(kanOpslaan){onSave({motorId,voorraadMotorId:voorraadMotor?.id||null,afspraakId:afspraak.id,...f});onClose();}}}/>
     </Modal>
   );
 }
@@ -2613,6 +2675,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         <AfwerkModal
           afspraak={afwerkAfspraakItem}
           klanten={klanten}
+          voorraad={voorraad}
           onSave={onAfwerkAfspraak}
           onClose={()=>setAfwerkAfspraakItem(null)}/>
       )}
@@ -2933,12 +2996,13 @@ export default function AdminApp(){
     const laadAlles = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
-        const [k, v, a, verlopen, pData] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
           sb.from("voorraad").select("id,fotos").lte("fotos_bewaren_tot",TODAY),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
+          sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
         ]);
         // Cleanup: verwijder records 30 dagen na verkoop/verwijdering
         for(const m of (verlopen.data||[])){
@@ -2977,7 +3041,8 @@ export default function AdminApp(){
         }
 
         setKlanten(verrijkt);
-        setShowroom(v.data||[]);
+        const voorraadSvc = vsData.data||[];
+        setShowroom((v.data||[]).map(m=>({...m, service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
         setProducten(pData.data||[]);
         setAfspraken((a.data||[]).map(x=>{
           const isProefrit=x.type==="proefrit";
@@ -3213,7 +3278,15 @@ export default function AdminApp(){
       model:motor.model||"",bouwjaar:motor.bouwjaar||0,aankoopdatum:TODAY,
     }).select().single();
     if(nieuwMotor){
-      setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:[]}]}:k));
+      // Kopieer voorraad servicehistorie naar klant motor
+      const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",motor.id);
+      let overgedragenSvc = [];
+      if(vs?.length){
+        const recs = vs.map(s=>({motor_id:nieuwMotor.id,datum:s.datum,omschrijving:s.omschrijving,km:s.km,voorband_datum:s.voorband_datum,achterband_datum:s.achterband_datum}));
+        const {data:inserted} = await sb.from("service_beurten").insert(recs).select();
+        overgedragenSvc = inserted||[];
+      }
+      setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:overgedragenSvc}]}:k));
     }
     setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:TODAY,verkocht_aan:klantId,status:"verkocht",fotos_bewaren_tot:bewarenStr}:m));
     // Foto's worden na 30 dagen verwijderd via fotos_bewaren_tot — NIET direct
@@ -3342,7 +3415,7 @@ export default function AdminApp(){
       telefoon: f.telefoon||null,
       email: f.email||null,
       soort: f.soort||null,
-      voorraad_motor_id: f.type==="proefrit"?(f.voorraad_motor_id||null):null,
+      voorraad_motor_id: f.type==="proefrit"?(f.voorraad_motor_id||null):(f.type==="intern"?(f.motor||null):null),
     }).select().single();
     if(afs){
       const motor = f.type==="proefrit"&&f.voorraad_motor_id ? showroom.find(m=>m.id===f.voorraad_motor_id) : null;
@@ -3376,7 +3449,7 @@ export default function AdminApp(){
     }).eq("id", f.afspraakId).select("*, klanten(naam), motoren(merk, model, kenteken)").single();
     if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, klant: updatedAfs.klanten?.naam||"Onbekend", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:null} : a));
 
-    // Insert service_beurt if motor is known
+    // Service registreren bij klant motor
     if(f.motorId){
       const svcData = {
         motor_id: f.motorId,
@@ -3399,10 +3472,33 @@ export default function AdminApp(){
           })
         })));
         if(f.voorband_datum||f.achterband_datum){
-          const update = {};
-          if(f.voorband_datum) update.voorband_datum = f.voorband_datum;
-          if(f.achterband_datum) update.achterband_datum = f.achterband_datum;
-          await sb.from("motoren").update(update).eq("id", f.motorId);
+          const upd = {};
+          if(f.voorband_datum) upd.voorband_datum = f.voorband_datum;
+          if(f.achterband_datum) upd.achterband_datum = f.achterband_datum;
+          await sb.from("motoren").update(upd).eq("id", f.motorId);
+        }
+      }
+    }
+
+    // Service registreren bij voorraad motor
+    if(f.voorraadMotorId){
+      const svcData = {
+        voorraad_motor_id: f.voorraadMotorId,
+        datum: f.datum,
+        omschrijving: f.omschrijving,
+        km: f.km ? parseInt(f.km) : null,
+        voorband_datum: f.voorband_datum||null,
+        achterband_datum: f.achterband_datum||null,
+      };
+      const { data: svc } = await sb.from("voorraad_service").insert(svcData).select().single();
+      if(svc){
+        setShowroom(p=>p.map(m=>m.id===f.voorraadMotorId?{...m,service:[...(m.service||[]),svc]}:m));
+        if(f.voorband_datum||f.achterband_datum){
+          const upd = {};
+          if(f.voorband_datum) upd.voorband_datum = f.voorband_datum;
+          if(f.achterband_datum) upd.achterband_datum = f.achterband_datum;
+          await sb.from("voorraad").update(upd).eq("id", f.voorraadMotorId);
+          setShowroom(p=>p.map(m=>m.id===f.voorraadMotorId?{...m,...upd}:m));
         }
       }
     }
