@@ -702,8 +702,17 @@ const SOORT_GROEPEN = [
   {label:"Schade & Keuring",items:["Schade inspectie","Schade rapport","Schadeherstel","Verzekeringsschade opnemen","Aankoopkeuring","Rijklaar maken","Taxatie of technische inspectie"]},
   {label:"Overig",items:["Accessoires monteren","Motor afstellen of synchroniseren","Anders"]},
 ];
+const DEFAULT_AFSPRAAK_SOORTEN = [
+  {label:"Onderhoud",items:[{naam:"Kleine beurt",duur:2},{naam:"Grote beurt",duur:3},{naam:"Jaarlijkse inspectie",duur:1},{naam:"Olie- en filterwissel",duur:1},{naam:"Cardan olie verversen",duur:1},{naam:"Winterklaar maken",duur:1}]},
+  {label:"Banden & Aandrijving",items:[{naam:"Voorband vervangen",duur:1},{naam:"Achterband vervangen",duur:1},{naam:"Beide banden vervangen",duur:2},{naam:"Ketting en tandwielen vervangen",duur:2},{naam:"Vering aanpassen of vervangen",duur:2}]},
+  {label:"Remmen & Hydraulica",items:[{naam:"Remmen vervangen/controleren",duur:1},{naam:"Remvloeistof vervangen",duur:1}]},
+  {label:"Elektrisch & Diagnose",items:[{naam:"Diagnose bij storingen",duur:1},{naam:"Elektrische problemen oplossen",duur:2},{naam:"Accu vervangen",duur:1}]},
+  {label:"Schade & Keuring",items:[{naam:"Schade inspectie",duur:1},{naam:"Schade rapport",duur:2},{naam:"Schadeherstel",duur:3},{naam:"Verzekeringsschade opnemen",duur:1},{naam:"Aankoopkeuring",duur:1},{naam:"Rijklaar maken",duur:2},{naam:"Taxatie of technische inspectie",duur:1}]},
+  {label:"Overig",items:[{naam:"Accessoires monteren",duur:1},{naam:"Motor afstellen of synchroniseren",duur:2},{naam:"Anders",duur:1}]},
+];
+const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
-function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null}){
+function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[]}){
   const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
     if(!datum) return false;
@@ -724,11 +733,13 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   const [soorten,setSoorten]=useState(new Set());
   const [openGroepen,setOpenGroepen]=useState(new Set());
   const toggleGroep=(label)=>setOpenGroepen(prev=>{const n=new Set(prev);n.has(label)?n.delete(label):n.add(label);return n;});
+  const groepen=afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN;
+  const duurMap=makeDuurMap(groepen);
   const toggleSoort=(opt)=>{
     setSoorten(prev=>{
       const next=new Set(prev);
       if(next.has(opt))next.delete(opt);else next.add(opt);
-      const totaal=Math.min(Math.max([...next].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),1),8);
+      const totaal=Math.min(Math.max([...next].reduce((s,o)=>s+(duurMap[o]||1),0),1),8);
       setF(p=>({...p,duur:String(totaal),tijd:""}));
       return next;
     });
@@ -875,9 +886,9 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
       <Field label="Soort afspraak (meerdere mogelijk)">
         <div style={{fontSize:11,color:T.muted,marginBottom:8,fontStyle:"italic"}}>Tijden zijn schattingen en kunnen in werkelijkheid afwijken.</div>
         <div style={{display:"flex",flexDirection:"column",gap:5}}>
-          {SOORT_GROEPEN.map(g=>{
+          {groepen.map(g=>{
             const open=openGroepen.has(g.label);
-            const geselecteerd=g.items.filter(i=>soorten.has(i));
+            const geselecteerd=(g.items||[]).filter(item=>soorten.has(item.naam));
             const heeftSel=geselecteerd.length>0;
             return(
               <div key={g.label} style={{border:`1px solid ${heeftSel?T.accent:T.border}`,borderRadius:6,overflow:"hidden"}}>
@@ -891,12 +902,12 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
                 </button>
                 {open&&(
                   <div style={{padding:"10px 12px",display:"flex",flexWrap:"wrap",gap:5,borderTop:`1px solid ${T.border}`,background:T.surf}}>
-                    {g.items.map(opt=>{
-                      const sel=soorten.has(opt);
+                    {(g.items||[]).map(item=>{
+                      const sel=soorten.has(item.naam);
                       return(
-                        <button key={opt} onClick={()=>toggleSoort(opt)}
+                        <button key={item.naam} onClick={()=>toggleSoort(item.naam)}
                           style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.text,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400,transition:"all 0.1s"}}>
-                          {opt}{SOORT_DUUR[opt]>1?` · ${SOORT_DUUR[opt]}u`:" · 1u"}
+                          {item.naam}{item.duur>1?` · ${item.duur}u`:" · 1u"}
                         </button>
                       );
                     })}
@@ -908,7 +919,7 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
         </div>
         {soorten.size>0&&(
           <div style={{marginTop:10,fontSize:12,color:T.accent,fontWeight:600,padding:"8px 10px",background:`${T.accent}10`,borderRadius:4}}>
-            Geschatte totale duur: {Math.min([...soorten].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),8)}u
+            Geschatte totale duur: {Math.min([...soorten].reduce((s,o)=>s+(duurMap[o]||1),0),8)}u
             <span style={{fontWeight:400,color:T.muted}}> (max. 8u per dag)</span>
           </div>
         )}
@@ -2030,7 +2041,7 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
   );
 }
 
-function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClose, onAfwerken}){
+function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClose, onAfwerken, afspraakSoorten=[]}){
   const isAanvraag=afspraak.status==="aangevraagd";
   const isProefrit=afspraak.type==="proefrit";
   const [f,setF]=useState({
@@ -2042,6 +2053,12 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
     omschrijving: afspraak.omschrijving||afspraak.opmerking||"",
     voorraad_motor_id: afspraak.voorraad_motor_id||"",
   });
+  const [soorten,setSoorten]=useState(new Set(afspraak.soort?afspraak.soort.split(", ").filter(Boolean):[]));
+  const [openGroepen,setOpenGroepen]=useState(new Set());
+  const groepen=afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN;
+  const duurMap=makeDuurMap(groepen);
+  const toggleSoortEdit=(opt)=>setSoorten(prev=>{const n=new Set(prev);n.has(opt)?n.delete(opt):n.add(opt);const tot=Math.min(Math.max([...n].reduce((s,o)=>s+(duurMap[o]||1),0),1),8);setF(p=>({...p,duur:String(tot)}));return n;});
+  const toggleGroepEdit=(lbl)=>setOpenGroepen(prev=>{const n=new Set(prev);n.has(lbl)?n.delete(lbl):n.add(lbl);return n;});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   const motorInfo=isProefrit&&afspraak.voorraad_motor_id?(voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id):null;
   return(
