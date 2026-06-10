@@ -125,7 +125,7 @@ function MotorSelector({ motoren, selected, onSelect }) {
 }
 
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
-function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
+function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe, onNaarInstellingen }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   const [eigenOpen, setEigenOpen] = useState(false);
   const [eigenF, setEigenF] = useState({ datum: TODAY, omschrijving: "", km: "", interval_gereset: false });
@@ -133,7 +133,21 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
   const [eigenOk, setEigenOk] = useState(false);
   const [eigenFout, setEigenFout] = useState(null);
 
-  if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
+  if (!motor) return (
+    <div style={{ textAlign:"center", marginTop:60, padding:"0 24px" }}>
+      <div style={{ fontSize:40, marginBottom:16 }}>🏍</div>
+      <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:8 }}>Nog geen motor toegevoegd</div>
+      <div style={{ fontSize:14, color:T.muted, lineHeight:1.6, marginBottom:24 }}>
+        Voeg je motor toe om het onderhoudsoverzicht, km-stand en bandinfo bij te houden.
+      </div>
+      {onNaarInstellingen && (
+        <button onClick={onNaarInstellingen}
+          style={{ background:T.accent, color:"#fff", border:"none", borderRadius:8, padding:"13px 28px", fontSize:15, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+          Motor toevoegen →
+        </button>
+      )}
+    </div>
+  );
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
   const lastServiceKm = motor.last_service_km || 0;
@@ -1065,7 +1079,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
 }
 
 // ── Scherm: Instellingen ───────────────────────────────────────────────────
-function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden, themeMode="automatisch", onThemeMode=()=>{} }) {
+function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden, themeMode="automatisch", onThemeMode=()=>{}, autoOpenMotorForm=false, onMotorFormOpened=()=>{} }) {
   const [profiel, setProfiel] = useState({
     naam: klant.naam || "", telefoon: klant.telefoon || "",
     adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
@@ -1091,6 +1105,13 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   const [verwijderBevestigId, setVerwijderBevestigId] = useState(null);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
   const [verwijderFout, setVerwijderFout] = useState(null);
+
+  useEffect(() => {
+    if (autoOpenMotorForm) {
+      setToonMotorForm(true);
+      onMotorFormOpened();
+    }
+  }, [autoOpenMotorForm]);
 
   const [menuMotorId, setMenuMotorId] = useState(null);
   const [wijzigMotorId, setWijzigMotorId] = useState(null);
@@ -1823,8 +1844,12 @@ export default function KlantApp({ userId }) {
   const [producten, setProducten] = useState([]);
   const [laden, setLaden] = useState(true);
 
+  const [autoOpenMotorForm, setAutoOpenMotorForm] = useState(false);
+
   const kiesMotor = (id) => { sessionStorage.setItem("djm_sel_motor", id); setSelMotorId(id); };
   const kiesHoofdMotor = (id) => { localStorage.setItem("djm_hoofd_motor", id); setHoofdMotorId(id); kiesMotor(id); };
+
+  const naarMotorToevoegen = () => { setAutoOpenMotorForm(true); setTab("instellingen"); };
 
   const gesorteerdMotoren = hoofdMotorId
     ? [...motoren].sort((a, b) => a.id === hoofdMotorId ? -1 : b.id === hoofdMotorId ? 1 : 0)
@@ -2195,7 +2220,7 @@ export default function KlantApp({ userId }) {
           </div>
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
-            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
+            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
@@ -2212,6 +2237,8 @@ export default function KlantApp({ userId }) {
                 onUpdateBanden={updateMotorBanden}
                 themeMode={themeMode}
                 onThemeMode={setTheme}
+                autoOpenMotorForm={autoOpenMotorForm}
+                onMotorFormOpened={() => setAutoOpenMotorForm(false)}
               />
             )}
           </div>
@@ -2248,7 +2275,7 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
+        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}

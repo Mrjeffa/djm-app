@@ -21,6 +21,8 @@ const Logo = () => (
   </div>
 )
 
+const leegReg = { voornaam:'', achternaam:'', telefoon:'', adres:'', woonplaats:'' }
+
 export default function LoginScreen() {
   const [isDark, setIsDark] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   useEffect(() => {
@@ -35,8 +37,11 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [ww, setWw] = useState('')
   const [ww2, setWw2] = useState('')
+  const [reg, setReg] = useState(leegReg)
   const [laden, setLaden] = useState(false)
   const [fout, setFout] = useState(null)
+
+  const setR = k => e => setReg(p => ({...p, [k]: e.target.value}))
 
   // font-size 16px voorkomt automatisch inzoomen op iOS
   const inp = {
@@ -45,12 +50,14 @@ export default function LoginScreen() {
     fontSize:16, fontFamily:'Barlow, sans-serif', outline:'none',
     boxSizing:'border-box', marginBottom:10, WebkitAppearance:'none',
   }
+  const inp2 = { ...inp, width:'calc(50% - 5px)', display:'inline-block' }
   const btn = (color=T.accent) => ({
     width:'100%', padding:14, background:color, color:'#fff', border:'none',
     borderRadius:8, fontSize:16, fontWeight:600, cursor:'pointer',
     fontFamily:'Barlow, sans-serif', marginTop:4,
   })
-  const wrap = { display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:'20px 16px', fontFamily:'Barlow, sans-serif', boxSizing:'border-box' }
+  const lbl = { fontSize:12, color:T.muted, display:'block', marginBottom:4, letterSpacing:0.3 }
+  const wrap = { display:'flex', alignItems:'flex-start', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:'20px 16px', fontFamily:'Barlow, sans-serif', boxSizing:'border-box' }
   const card = { background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:'24px 20px' }
 
   const login = async () => {
@@ -62,11 +69,27 @@ export default function LoginScreen() {
   }
 
   const registreer = async () => {
-    if (!email || !ww) return
+    if (!reg.voornaam.trim()) { setFout('Vul je voornaam in.'); return }
+    if (!reg.achternaam.trim()) { setFout('Vul je achternaam in.'); return }
+    if (!reg.telefoon.trim()) { setFout('Vul je telefoonnummer in.'); return }
+    if (!email) { setFout('Vul je e-mailadres in.'); return }
+    if (!ww) return
     if (ww.length < 8) { setFout('Wachtwoord minimaal 8 tekens.'); return }
     if (ww !== ww2) { setFout('Wachtwoorden komen niet overeen.'); return }
     setLaden(true); setFout(null)
-    const { error } = await supabase.auth.signUp({ email, password: ww })
+    const { error } = await supabase.auth.signUp({
+      email,
+      password: ww,
+      options: {
+        data: {
+          voornaam: reg.voornaam.trim(),
+          achternaam: reg.achternaam.trim(),
+          telefoon: reg.telefoon.trim(),
+          adres: reg.adres.trim(),
+          woonplaats: reg.woonplaats.trim(),
+        }
+      }
+    })
     setLaden(false)
     if (error) { setFout('Fout: ' + error.message); return }
     setTab('register_ok')
@@ -82,7 +105,7 @@ export default function LoginScreen() {
 
   if (tab === 'reset_ok') return (
     <div style={wrap}>
-      <div style={{ width:'100%', maxWidth:400 }}>
+      <div style={{ width:'100%', maxWidth:440 }}>
         <Logo/>
         <div style={{ ...card, textAlign:'center' }}>
           <div style={{ fontSize:36, marginBottom:12 }}>✉️</div>
@@ -96,14 +119,14 @@ export default function LoginScreen() {
 
   if (tab === 'register_ok') return (
     <div style={wrap}>
-      <div style={{ width:'100%', maxWidth:400 }}>
+      <div style={{ width:'100%', maxWidth:440 }}>
         <Logo/>
         <div style={{ ...card, textAlign:'center' }}>
           <div style={{ fontSize:36, marginBottom:12 }}>✅</div>
           <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:8 }}>Account aangemaakt!</div>
           <div style={{ fontSize:14, color:T.muted, lineHeight:1.7, marginBottom:16 }}>
-            Bevestig je e-mailadres via de link die we gestuurd hebben naar <span style={{ color:T.text }}>{email}</span>.<br/><br/>
-            Daarna kun je inloggen.
+            Welkom, <strong style={{ color:T.text }}>{reg.voornaam}</strong>! Bevestig je e-mailadres via de link die we gestuurd hebben naar <span style={{ color:T.text }}>{email}</span>.<br/><br/>
+            Daarna kun je inloggen. Je account wordt na controle geactiveerd.
           </div>
           <button style={{ ...btn(), marginTop:0 }} onClick={() => setTab('login')}>Naar inloggen →</button>
         </div>
@@ -113,41 +136,84 @@ export default function LoginScreen() {
 
   return (
     <div style={wrap}>
-      <div style={{ width:'100%', maxWidth:400 }}>
+      <div style={{ width:'100%', maxWidth:440 }}>
         <Logo/>
 
         <div style={card}>
           {/* Tab switcher */}
           <div style={{ display:'flex', marginBottom:20, background:T.surf2, borderRadius:6, padding:3 }}>
-            {[['login','Inloggen'],['register','Nieuw account']].map(([id,lbl]) => (
+            {[['login','Inloggen'],['register','Nieuw account']].map(([id,lbl2]) => (
               <button key={id} onClick={() => { setTab(id); setFout(null) }}
                 style={{ flex:1, padding:'9px', background:tab===id?T.accent:'transparent', color:tab===id?'#fff':T.muted, border:'none', borderRadius:4, fontSize:14, fontWeight:tab===id?600:400, cursor:'pointer', fontFamily:'Barlow, sans-serif' }}>
-                {lbl}
+                {lbl2}
               </button>
             ))}
           </div>
 
-          <div style={{ fontSize:14, color:T.muted, marginBottom:16, lineHeight:1.6 }}>
-            {tab==='login' ? 'Vul je e-mailadres en wachtwoord in.' : 'Maak een account aan met je e-mailadres.'}
-          </div>
+          {tab === 'login' ? (
+            <>
+              <div style={{ fontSize:14, color:T.muted, marginBottom:16, lineHeight:1.6 }}>Vul je e-mailadres en wachtwoord in.</div>
+              <input style={inp} type="email" inputMode="email" autoComplete="email" placeholder="jouw@email.nl"
+                value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key==='Enter' && login()}/>
+              <input style={inp} type="password" autoComplete="current-password" placeholder="Wachtwoord"
+                value={ww} onChange={e => setWw(e.target.value)}
+                onKeyDown={e => e.key==='Enter' && login()}/>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize:14, color:T.muted, marginBottom:16, lineHeight:1.6 }}>Maak een account aan. Vul je gegevens in.</div>
 
-          <input style={inp} type="email" inputMode="email" autoComplete="email" placeholder="jouw@email.nl"
-            value={email} onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key==='Enter' && (tab==='login' ? login() : registreer())}/>
-          <input style={inp} type="password" autoComplete={tab==='login'?'current-password':'new-password'} placeholder="Wachtwoord"
-            value={ww} onChange={e => setWw(e.target.value)}
-            onKeyDown={e => e.key==='Enter' && (tab==='login' ? login() : registreer())}/>
-          {tab==='register' && (
-            <input style={inp} type="password" autoComplete="new-password" placeholder="Herhaal wachtwoord"
-              value={ww2} onChange={e => setWw2(e.target.value)}
-              onKeyDown={e => e.key==='Enter' && registreer()}/>
+              {/* Naam */}
+              <div style={{ display:'flex', gap:10, marginBottom:0 }}>
+                <div style={{ flex:1 }}>
+                  <label style={lbl}>Voornaam *</label>
+                  <input style={{...inp, marginBottom:10}} type="text" autoComplete="given-name" placeholder="Jan"
+                    value={reg.voornaam} onChange={setR('voornaam')}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={lbl}>Achternaam *</label>
+                  <input style={{...inp, marginBottom:10}} type="text" autoComplete="family-name" placeholder="de Vries"
+                    value={reg.achternaam} onChange={setR('achternaam')}/>
+                </div>
+              </div>
+
+              {/* Telefoon */}
+              <label style={lbl}>Telefoonnummer *</label>
+              <input style={inp} type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12345678"
+                value={reg.telefoon} onChange={setR('telefoon')}/>
+
+              {/* Adres */}
+              <label style={lbl}>Adres</label>
+              <input style={inp} type="text" autoComplete="street-address" placeholder="Straatnaam 1"
+                value={reg.adres} onChange={setR('adres')}/>
+
+              {/* Woonplaats */}
+              <label style={lbl}>Woonplaats</label>
+              <input style={inp} type="text" autoComplete="address-level2" placeholder="Amsterdam"
+                value={reg.woonplaats} onChange={setR('woonplaats')}/>
+
+              <div style={{ height:1, background:T.border, margin:'4px 0 14px' }}/>
+
+              {/* E-mail + wachtwoord */}
+              <label style={lbl}>E-mailadres *</label>
+              <input style={inp} type="email" inputMode="email" autoComplete="email" placeholder="jouw@email.nl"
+                value={email} onChange={e => setEmail(e.target.value)}/>
+              <label style={lbl}>Wachtwoord * <span style={{ fontWeight:400 }}>(minimaal 8 tekens)</span></label>
+              <input style={inp} type="password" autoComplete="new-password" placeholder="Wachtwoord"
+                value={ww} onChange={e => setWw(e.target.value)}/>
+              <label style={lbl}>Wachtwoord herhalen *</label>
+              <input style={{...inp, marginBottom:4}} type="password" autoComplete="new-password" placeholder="Zelfde wachtwoord"
+                value={ww2} onChange={e => setWw2(e.target.value)}
+                onKeyDown={e => e.key==='Enter' && registreer()}/>
+            </>
           )}
 
-          {fout && <div style={{ fontSize:13, color:T.red, marginBottom:10 }}>{fout}</div>}
+          {fout && <div style={{ fontSize:13, color:T.red, marginBottom:10, marginTop:4 }}>{fout}</div>}
 
-          <button style={{ ...btn(), opacity:laden||!email||!ww?0.5:1 }}
+          <button style={{ ...btn(), opacity:laden?0.5:1, marginTop:8 }}
             onClick={tab==='login' ? login : registreer}
-            disabled={laden||!email||!ww}>
+            disabled={laden}>
             {laden ? 'Bezig...' : tab==='login' ? 'Inloggen →' : 'Account aanmaken →'}
           </button>
 

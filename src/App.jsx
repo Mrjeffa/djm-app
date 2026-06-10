@@ -31,7 +31,21 @@ const checkIsAdmin = (userId) =>
 const koppelKlant = (user) =>
   tijdelijk(async () => {
     const { data: k } = await supabase.from('klanten').select('id,user_id').eq('email', user.email).single()
-    if (k && !k.user_id) await supabase.from('klanten').update({ user_id: user.id, status: 'in_afwachting' }).eq('id', k.id)
+    if (k && !k.user_id) {
+      await supabase.from('klanten').update({ user_id: user.id, status: 'in_afwachting' }).eq('id', k.id)
+    } else if (!k) {
+      const meta = user.user_metadata || {}
+      const naam = [meta.voornaam, meta.achternaam].filter(Boolean).join(' ') || user.email.split('@')[0]
+      await supabase.from('klanten').insert({
+        email: user.email,
+        naam,
+        telefoon: meta.telefoon || '',
+        adres: meta.adres || '',
+        woonplaats: meta.woonplaats || '',
+        user_id: user.id,
+        status: 'in_afwachting',
+      }).single()
+    }
   }, null)
 
 export default function App() {
