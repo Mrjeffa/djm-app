@@ -99,14 +99,16 @@ const getWeekDates = base => {
   return Array.from({length:6},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i); return x.toISOString().split("T")[0]; });
 };
 
+const LUNCH_SLOTS = new Set([720, 750, 780]); // 12:00, 12:30, 13:00 — lunchpauze
+
 const getSlots = (afspraken, datum, duurUur) => {
   const dur = duurUur*60;
   const busy = afspraken.filter(a=>a.datum===datum && a.tijd)
     .map(a=>({s:timeToMin(a.tijd),e:timeToMin(a.tijd)+(parseInt(a.duur)||1)*60}))
     .sort((a,b)=>a.s-b.s);
   const slots=[]; let cur=WSTART;
-  for(const b of busy){ let t=cur; while(t+dur<=b.s){slots.push(minToTime(t));t+=30;} cur=Math.max(cur,b.e); }
-  let t=cur; while(t+dur<=WEND){slots.push(minToTime(t));t+=30;}
+  for(const b of busy){ let t=cur; while(t+dur<=b.s){if(!LUNCH_SLOTS.has(t))slots.push(minToTime(t));t+=30;} cur=Math.max(cur,b.e); }
+  let t=cur; while(t+dur<=WEND){if(!LUNCH_SLOTS.has(t))slots.push(minToTime(t));t+=30;}
   return slots;
 };
 
@@ -670,6 +672,11 @@ function VoorraadEditModal({motor, onSave, onClose}){
   );
 }
 
+const SOORT_OPTIES = [
+  "Grote beurt","Kleine beurt","Bandwissel (los wiel)","Bandenset wisselen",
+  "Voorband wisselen","Achterband wisselen","Schade rapport","Anders",
+];
+
 function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null}){
   const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
@@ -678,30 +685,126 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
     if(openingstijden){const dow=new Date(datum).getDay();return openingstijden[DAGMAP_AM[dow]]?.gesloten===true;}
     return false;
   };
-  const [f,setF]=useState({klant:"",motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
+
+  const [modus,setModus]=useState("bestaand"); // "bestaand" | "nieuw"
+  // Bestaande klant
+  const [zoek,setZoek]=useState("");
+  const [selKlantId,setSelKlantId]=useState(null);
+  // Nieuwe klant
+  const [nw,setNw]=useState({naam:"",telefoon:"",email:""});
+  const [toevoegenAanBestand,setToevoegenAanBestand]=useState(false);
+  const [adres,setAdres]=useState({adres:"",postcode:"",woonplaats:""});
+  // Gemeenschappelijk
+  const [soort,setSoort]=useState("");
+  const [f,setF]=useState({motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
-  const selectedKlant=klanten.find(k=>k.naam===f.klant);
+
+  const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
   const datumGesloten=isDatumGesloten(f.datum);
   const serviceSlots=f.datum&&f.duur&&!datumGesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
-  const kanOpslaan=f.klant&&f.tijd&&!datumGesloten;
+  const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
+
+  const kanOpslaan=f.tijd&&!datumGesloten&&(modus==="bestaand"?!!selKlantId:!!(nw.naam&&nw.telefoon));
+
+  const slaOp=()=>{
+    if(!kanOpslaan) return;
+    if(modus==="bestaand"){
+      onSave({type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort,omschrijving:f.omschrijving});
+    } else {
+      const nieuweKlantData=toevoegenAanBestand?{naam:nw.naam,email:nw.email,telefoon:nw.telefoon,...adres}:null;
+      onSave({type:"service",klant:nw.naam,telefoon:nw.telefoon,email:nw.email,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort,omschrijving:f.omschrijving,nieuweKlant:nieuweKlantData});
+    }
+    onClose();
+  };
 
   return(
     <Modal title="AFSPRAAK INPLANNEN" onClose={onClose}>
-      <Field label="Klant">
-        <select style={s.input} value={f.klant} onChange={e=>setF(p=>({...p,klant:e.target.value,motor:"",tijd:""}))}>
-          <option value="">— Selecteer klant —</option>
-          {klanten.map(k=><option key={k.id}>{k.naam}</option>)}
-          <option value="Walk-in">Walk-in / Onbekend</option>
-        </select>
-      </Field>
-      {selectedKlant&&(
-        <Field label="Motor">
-          <select style={s.input} value={f.motor} onChange={set("motor")}>
-            <option value="">— Selecteer motor —</option>
-            {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
-          </select>
-        </Field>
+      {/* Klant modus toggle */}
+      <div style={{display:"flex",marginBottom:16,background:"#F0F0F0",borderRadius:6,padding:3}}>
+        {[["bestaand","Bestaande klant"],["nieuw","Nieuwe klant"]].map(([id,lbl])=>(
+          <button key={id} onClick={()=>{setModus(id);setSelKlantId(null);setZoek("");}}
+            style={{flex:1,padding:"8px",background:modus===id?T.accent:"transparent",color:modus===id?"#fff":T.muted,border:"none",borderRadius:4,fontSize:13,fontWeight:modus===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {modus==="bestaand"?(
+        <>
+          <Field label="Zoek klant op naam">
+            <input style={s.input} value={zoek}
+              onChange={e=>{setZoek(e.target.value);if(selKlantId)setSelKlantId(null);}}
+              placeholder="Typ naam..."/>
+          </Field>
+          {zoek.trim().length>0&&(
+            <div style={{border:`1px solid ${T.border}`,borderRadius:4,maxHeight:160,overflowY:"auto",marginBottom:14,marginTop:-10}}>
+              {gefilterd.length===0?(
+                <div style={{padding:"10px 12px",fontSize:13,color:T.muted}}>Geen klant gevonden</div>
+              ):gefilterd.map(k=>(
+                <div key={k.id} onClick={()=>{setSelKlantId(k.id);setZoek(k.naam);}}
+                  style={{padding:"9px 12px",cursor:"pointer",background:selKlantId===k.id?`${T.accent}15`:"transparent",borderBottom:`1px solid ${T.border}`,fontSize:13}}>
+                  <div style={{fontWeight:selKlantId===k.id?600:400}}>{k.naam}</div>
+                  {k.telefoon&&<div style={{fontSize:11,color:T.muted,marginTop:1}}>{k.telefoon}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedKlant&&(
+            <div style={{padding:"9px 12px",background:T.surf2,borderRadius:4,marginBottom:14,fontSize:12,display:"flex",gap:16,flexWrap:"wrap"}}>
+              {selectedKlant.email&&<span style={{color:T.muted}}>{selectedKlant.email}</span>}
+              {selectedKlant.telefoon&&<a href={`tel:${selectedKlant.telefoon}`} style={{color:T.accent,textDecoration:"none",fontWeight:500}}>{selectedKlant.telefoon}</a>}
+            </div>
+          )}
+          {selectedKlant&&selectedKlant.motoren.length>0&&(
+            <Field label="Motor">
+              <select style={s.input} value={f.motor} onChange={set("motor")}>
+                <option value="">— Selecteer motor —</option>
+                {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
+              </select>
+            </Field>
+          )}
+        </>
+      ):(
+        <>
+          <Grid2>
+            <Field label="Naam *">
+              <input style={s.input} value={nw.naam} onChange={e=>setNw(p=>({...p,naam:e.target.value}))} placeholder="Voor- en achternaam"/>
+            </Field>
+            <Field label="Telefoonnummer *">
+              <input style={s.input} type="tel" value={nw.telefoon} onChange={e=>setNw(p=>({...p,telefoon:e.target.value}))} placeholder="06-12345678"/>
+            </Field>
+          </Grid2>
+          <Field label="E-mailadres (optioneel)">
+            <input style={s.input} type="email" value={nw.email} onChange={e=>setNw(p=>({...p,email:e.target.value}))} placeholder="naam@email.nl"/>
+          </Field>
+          <div style={{marginBottom:14}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"10px 12px",background:T.surf2,borderRadius:4}}>
+              <input type="checkbox" checked={toevoegenAanBestand} onChange={e=>setToevoegenAanBestand(e.target.checked)} style={{accentColor:T.accent,width:16,height:16,flexShrink:0}}/>
+              <div>
+                <div style={{fontSize:13,fontWeight:500,color:T.text}}>Toevoegen aan klantenbestand</div>
+                <div style={{fontSize:11,color:T.muted}}>Klant wordt opgeslagen voor toekomstige afspraken</div>
+              </div>
+            </label>
+          </div>
+          {toevoegenAanBestand&&(
+            <div style={{padding:"12px 14px",border:`1px solid ${T.border}`,borderRadius:4,marginBottom:14}}>
+              <div style={{fontSize:11,color:T.muted,marginBottom:10,letterSpacing:0.5,textTransform:"uppercase"}}>Adresgegevens (optioneel)</div>
+              <Field label="Straat + huisnummer">
+                <input style={s.input} value={adres.adres} onChange={e=>setAdres(p=>({...p,adres:e.target.value}))} placeholder="Straat 123"/>
+              </Field>
+              <Grid2>
+                <Field label="Postcode">
+                  <input style={s.input} value={adres.postcode} onChange={e=>setAdres(p=>({...p,postcode:e.target.value}))} placeholder="4691AA"/>
+                </Field>
+                <Field label="Woonplaats">
+                  <input style={s.input} value={adres.woonplaats} onChange={e=>setAdres(p=>({...p,woonplaats:e.target.value}))} placeholder="Stad/dorp"/>
+                </Field>
+              </Grid2>
+            </div>
+          )}
+        </>
       )}
+
       <Grid2>
         <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
         <Field label="Duur (uur)">
@@ -732,10 +835,20 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
           )}
         </Field>
       ))}
-      <Field label="Opmerkingen">
-        <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat moet er gedaan worden?"/>
+      <Field label="Soort afspraak">
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {SOORT_OPTIES.map(opt=>(
+            <button key={opt} onClick={()=>setSoort(p=>p===opt?"":opt)}
+              style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${soort===opt?T.accent:T.border}`,background:soort===opt?`${T.accent}20`:"transparent",color:soort===opt?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:soort===opt?600:400}}>
+              {opt}
+            </button>
+          ))}
+        </div>
       </Field>
-      <ModalFooter onClose={onClose} label="Inplannen" onClick={()=>{if(kanOpslaan){onSave({...f,type:"service",duur:parseInt(f.duur)});onClose();}}}/>
+      <Field label="Opmerkingen">
+        <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Aanvullende opmerkingen..."/>
+      </Field>
+      <ModalFooter onClose={onClose} label="Inplannen" onClick={slaOp}/>
     </Modal>
   );
 }
@@ -748,7 +861,7 @@ function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], ope
     if(openingstijden){const dow=new Date(datum).getDay();return openingstijden[DAGMAP_PM[dow]]?.gesloten===true;}
     return false;
   };
-  const [f,setF]=useState({naam:"",datum:TODAY,tijd:"",omschrijving:""});
+  const [f,setF]=useState({naam:"",telefoon:"",email:"",datum:TODAY,tijd:"",omschrijving:""});
   const datumGesloten=isDatumGesloten(f.datum);
   const slots=f.datum&&!datumGesloten?getProefritSlots(afspraken,f.datum):[];
   return(
@@ -759,6 +872,14 @@ function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], ope
       <Field label="Naam proefrijder *">
         <input style={s.input} value={f.naam} onChange={e=>setF(p=>({...p,naam:e.target.value}))} placeholder="Voornaam Achternaam"/>
       </Field>
+      <Grid2>
+        <Field label="Telefoonnummer *">
+          <input style={s.input} type="tel" value={f.telefoon} onChange={e=>setF(p=>({...p,telefoon:e.target.value}))} placeholder="06-12345678"/>
+        </Field>
+        <Field label="E-mailadres (optioneel)">
+          <input style={s.input} type="email" value={f.email} onChange={e=>setF(p=>({...p,email:e.target.value}))} placeholder="naam@email.nl"/>
+        </Field>
+      </Grid2>
       <Field label="Datum">
         <input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value,tijd:""}))}/>
       </Field>
@@ -786,7 +907,7 @@ function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], ope
         <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Eventuele opmerkingen"/>
       </Field>
       <ModalFooter onClose={onClose} label="Inplannen"
-        onClick={()=>{if(f.naam&&f.tijd&&!datumGesloten){onSave({type:"proefrit",naam:f.naam,datum:f.datum,tijd:f.tijd,omschrijving:f.omschrijving,duur:1,voorraad_motor_id:motor.id});onClose();}}}/>
+        onClick={()=>{if(f.naam&&f.telefoon&&f.tijd&&!datumGesloten){onSave({type:"proefrit",naam:f.naam,telefoon:f.telefoon,email:f.email,datum:f.datum,tijd:f.tijd,omschrijving:f.omschrijving,duur:1,voorraad_motor_id:motor.id});onClose();}}}/>
     </Modal>
   );
 }
@@ -1126,7 +1247,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,geslotenDagen=[],openingstijden=null}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
@@ -1135,6 +1256,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
   const [editMotor,setEditMotor]=useState(null);
   const [proefritMotor,setProefritMotor]=useState(null);
   const [menuMotorId,setMenuMotorId]=useState(null);
+  const [proefritConfirm,setProefritConfirm]=useState(null); // { motor, afspraak }
 
   return(
     <div>
@@ -1227,7 +1349,12 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                           <button onClick={()=>{onToggleStatus(m.id,"gereserveerd");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.yellow,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Reserveren</button>
                         )}
                         {m.status==="gereserveerd"&&(
-                          <button onClick={()=>{onToggleStatus(m.id,"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
+                          <button onClick={()=>{
+                            const pr=(afspraken||[]).find(a=>a.type==="proefrit"&&a.voorraad_motor_id===m.id);
+                            if(pr){setProefritConfirm({motor:m,afspraak:pr});}
+                            else{onToggleStatus(m.id,"beschikbaar");}
+                            setMenuMotorId(null);
+                          }} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
                         )}
                         <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
                           {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
@@ -1299,6 +1426,31 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
             <button onClick={()=>setDelMotor(null)} style={{...s.btnOutline,padding:"8px 14px"}}>Annuleer</button>
             <button onClick={()=>{onDelete(delMotor);setDelMotor(null);}} style={{background:T.red,color:"#fff",border:"none",borderRadius:3,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600}}>
               Ja, verwijderen
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {proefritConfirm&&(
+        <Modal title="PROEFRIT ANNULEREN?" onClose={()=>setProefritConfirm(null)}>
+          <div style={{fontSize:13,color:T.muted,marginBottom:12}}>
+            De motor <strong style={{color:T.text}}>{proefritConfirm.motor.merk} {proefritConfirm.motor.model}</strong> is gereserveerd voor een proefrit:
+          </div>
+          <div style={{padding:"12px 14px",background:T.surf2,borderRadius:4,marginBottom:14}}>
+            <div style={{fontSize:14,fontWeight:600,color:T.text}}>{proefritConfirm.afspraak.naam||proefritConfirm.afspraak.klant}</div>
+            <div style={{fontSize:13,color:T.muted,marginTop:4}}>
+              {proefritConfirm.afspraak.datum} om {proefritConfirm.afspraak.tijd}
+            </div>
+          </div>
+          <div style={{fontSize:13,color:T.text,marginBottom:4}}>
+            Weet je zeker dat je de proefrit van <strong>{proefritConfirm.afspraak.naam||proefritConfirm.afspraak.klant}</strong> op <strong>{proefritConfirm.afspraak.datum}</strong> om <strong>{proefritConfirm.afspraak.tijd}</strong> wilt annuleren?
+          </div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:20}}>De motor wordt daarna automatisch weer beschikbaar.</div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+            <button style={s.btnGhost} onClick={()=>setProefritConfirm(null)}>Behoud proefrit</button>
+            <button style={{background:T.red,color:"#fff",border:"none",borderRadius:4,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}
+              onClick={()=>{onDeleteAfspraak(proefritConfirm.afspraak.id);setProefritConfirm(null);}}>
+              Ja, annuleer proefrit
             </button>
           </div>
         </Modal>
@@ -2047,18 +2199,49 @@ export default function AdminApp(){
 
   const addAfspraak = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const klant = klanten.find(k=>k.naam===f.klant);
+
+    let klantId = f.klant_id || null;
+    let klantNaam = f.klant || "";
+
+    // Nieuwe klant aanmaken als requested
+    if(f.nieuweKlant){
+      const {data:nieuweK} = await sb.from("klanten").insert({
+        naam: f.nieuweKlant.naam,
+        email: f.nieuweKlant.email||"",
+        telefoon: f.nieuweKlant.telefoon||"",
+        adres: f.nieuweKlant.adres||"",
+        postcode: f.nieuweKlant.postcode||"",
+        woonplaats: f.nieuweKlant.woonplaats||"",
+      }).select().single();
+      if(nieuweK){
+        klantId = nieuweK.id;
+        klantNaam = nieuweK.naam;
+        setKlanten(p=>[...p,{...nieuweK,motoren:[]}]);
+      }
+    } else if(!klantId && f.klant && f.type!=="proefrit"){
+      const k = klanten.find(k=>k.naam===f.klant);
+      klantId = k?.id||null;
+    }
+
     const {data:afs} = await sb.from("afspraken").insert({
-      klant_id:klant?.id||null, datum:f.datum, tijd:f.tijd,
-      duur:parseInt(f.duur)||1, opmerking:f.omschrijving||"", status:"gepland",
-      type:f.type||"service",
-      naam:f.type==="proefrit"?(f.naam||f.klant||""):null,
-      voorraad_motor_id:f.type==="proefrit"?(f.voorraad_motor_id||null):null,
+      klant_id: klantId,
+      datum: f.datum,
+      tijd: f.tijd,
+      duur: parseInt(f.duur)||1,
+      opmerking: f.omschrijving||"",
+      status: "gepland",
+      type: f.type||"service",
+      naam: f.type==="proefrit"?(f.naam||""):null,
+      telefoon: f.telefoon||null,
+      email: f.email||null,
+      soort: f.soort||null,
+      voorraad_motor_id: f.type==="proefrit"?(f.voorraad_motor_id||null):null,
     }).select().single();
     if(afs){
       const motor = f.type==="proefrit"&&f.voorraad_motor_id ? showroom.find(m=>m.id===f.voorraad_motor_id) : null;
       const motorLabel = motor ? `${motor.merk} ${motor.model}` : null;
-      setAfspraken(p=>[...p,{...afs,klant:f.klant||f.naam||"",naam:afs.naam,omschrijving:f.omschrijving,motorLabel}]);
+      const displayKlant = f.type==="proefrit" ? (f.naam||"Proefrit") : (klantNaam||f.klant||"");
+      setAfspraken(p=>[...p,{...afs,klant:displayKlant,naam:afs.naam,omschrijving:f.omschrijving,motorLabel}]);
       if(f.type==="proefrit"&&f.voorraad_motor_id){
         await sb.from("voorraad").update({status:"gereserveerd"}).eq("id",f.voorraad_motor_id);
         setShowroom(p=>p.map(m=>m.id===f.voorraad_motor_id?{...m,status:"gereserveerd"}:m));
@@ -2170,7 +2353,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
