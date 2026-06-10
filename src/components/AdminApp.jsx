@@ -672,9 +672,21 @@ function VoorraadEditModal({motor, onSave, onClose}){
   );
 }
 
-const SOORT_OPTIES = [
-  "Grote beurt","Kleine beurt","Bandwissel (los wiel)","Bandenset wisselen",
-  "Voorband wisselen","Achterband wisselen","Schade rapport","Anders",
+const SOORT_DUUR = {
+  "Kleine beurt":2,"Grote beurt":3,"Jaarlijkse inspectie":1,"Olie- en filterwissel":1,"Cardan olie verversen":1,"Winterklaar maken":1,
+  "Voorband vervangen":1,"Achterband vervangen":1,"Beide banden vervangen":2,"Ketting en tandwielen vervangen":2,"Vering aanpassen of vervangen":2,
+  "Remmen vervangen/controleren":1,"Remvloeistof vervangen":1,
+  "Diagnose bij storingen":1,"Elektrische problemen oplossen":2,"Accu vervangen":1,
+  "Schadeherstel":3,"Verzekeringsschade opnemen":1,"Aankoopkeuring":1,"Rijklaar maken":2,"Taxatie of technische inspectie":1,
+  "Accessoires monteren":1,"Motor afstellen of synchroniseren":2,"Anders":1,
+};
+const SOORT_GROEPEN = [
+  {label:"Onderhoud",items:["Kleine beurt","Grote beurt","Jaarlijkse inspectie","Olie- en filterwissel","Cardan olie verversen","Winterklaar maken"]},
+  {label:"Banden & Aandrijving",items:["Voorband vervangen","Achterband vervangen","Beide banden vervangen","Ketting en tandwielen vervangen","Vering aanpassen of vervangen"]},
+  {label:"Remmen & Hydraulica",items:["Remmen vervangen/controleren","Remvloeistof vervangen"]},
+  {label:"Elektrisch & Diagnose",items:["Diagnose bij storingen","Elektrische problemen oplossen","Accu vervangen"]},
+  {label:"Schade & Keuring",items:["Schadeherstel","Verzekeringsschade opnemen","Aankoopkeuring","Rijklaar maken","Taxatie of technische inspectie"]},
+  {label:"Overig",items:["Accessoires monteren","Motor afstellen of synchroniseren","Anders"]},
 ];
 
 function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openingstijden=null}){
@@ -695,7 +707,16 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   const [toevoegenAanBestand,setToevoegenAanBestand]=useState(false);
   const [adres,setAdres]=useState({adres:"",postcode:"",woonplaats:""});
   // Gemeenschappelijk
-  const [soort,setSoort]=useState("");
+  const [soorten,setSoorten]=useState(new Set());
+  const toggleSoort=(opt)=>{
+    setSoorten(prev=>{
+      const next=new Set(prev);
+      if(next.has(opt))next.delete(opt);else next.add(opt);
+      const totaal=Math.min(Math.max([...next].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),1),8);
+      setF(p=>({...p,duur:String(totaal),tijd:""}));
+      return next;
+    });
+  };
   const [f,setF]=useState({motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
 
@@ -709,10 +730,10 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   const slaOp=()=>{
     if(!kanOpslaan) return;
     if(modus==="bestaand"){
-      onSave({type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort,omschrijving:f.omschrijving});
+      onSave({type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving});
     } else {
       const nieuweKlantData=toevoegenAanBestand?{naam:nw.naam,email:nw.email,telefoon:nw.telefoon,...adres}:null;
-      onSave({type:"service",klant:nw.naam,telefoon:nw.telefoon,email:nw.email,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort,omschrijving:f.omschrijving,nieuweKlant:nieuweKlantData});
+      onSave({type:"service",klant:nw.naam,telefoon:nw.telefoon,email:nw.email,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving,nieuweKlant:nieuweKlantData});
     }
     onClose();
   };
@@ -835,15 +856,30 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
           )}
         </Field>
       ))}
-      <Field label="Soort afspraak">
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {SOORT_OPTIES.map(opt=>(
-            <button key={opt} onClick={()=>setSoort(p=>p===opt?"":opt)}
-              style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${soort===opt?T.accent:T.border}`,background:soort===opt?`${T.accent}20`:"transparent",color:soort===opt?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:soort===opt?600:400}}>
-              {opt}
-            </button>
+      <Field label="Soort afspraak (meerdere mogelijk)">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {SOORT_GROEPEN.map(g=>(
+            <div key={g.label}>
+              <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5}}>{g.label}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {g.items.map(opt=>{
+                  const sel=soorten.has(opt);
+                  return(
+                    <button key={opt} onClick={()=>toggleSoort(opt)}
+                      style={{padding:"5px 11px",borderRadius:4,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400,transition:"all 0.1s"}}>
+                      {opt}{SOORT_DUUR[opt]>1?` · ${SOORT_DUUR[opt]}u`:""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
+        {soorten.size>0&&(
+          <div style={{marginTop:8,fontSize:12,color:T.accent,fontWeight:500}}>
+            Geschatte duur: {Math.min([...soorten].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),8)}u
+          </div>
+        )}
       </Field>
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Aanvullende opmerkingen..."/>
@@ -853,7 +889,7 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   );
 }
 
-function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], openingstijden=null}){
+function ProefritModal({motor, afspraken, klanten=[], onSave, onClose, geslotenDagen=[], openingstijden=null}){
   const DAGMAP_PM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
     if(!datum) return false;
@@ -861,25 +897,84 @@ function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], ope
     if(openingstijden){const dow=new Date(datum).getDay();return openingstijden[DAGMAP_PM[dow]]?.gesloten===true;}
     return false;
   };
+  const [modus,setModus]=useState("nieuw"); // default: nieuw
+  const [zoek,setZoek]=useState("");
+  const [selKlantId,setSelKlantId]=useState(null);
   const [f,setF]=useState({naam:"",telefoon:"",email:"",datum:TODAY,tijd:"",omschrijving:""});
   const datumGesloten=isDatumGesloten(f.datum);
   const slots=f.datum&&!datumGesloten?getProefritSlots(afspraken,f.datum):[];
+  const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
+  const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
+
+  const kiesKlant=(k)=>{
+    setSelKlantId(k.id);
+    setZoek(k.naam);
+    setF(p=>({...p,naam:k.naam,telefoon:k.telefoon||"",email:k.email||""}));
+  };
+
   return(
     <Modal title="PROEFRIT INBOEKEN" onClose={onClose}>
       <div style={{background:`${T.green}15`,border:`1px solid ${T.green}40`,borderRadius:5,padding:"8px 12px",marginBottom:14,fontSize:13,color:T.green}}>
         🏍 {motor.merk} {motor.model} — {motor.kenteken}
       </div>
-      <Field label="Naam proefrijder *">
-        <input style={s.input} value={f.naam} onChange={e=>setF(p=>({...p,naam:e.target.value}))} placeholder="Voornaam Achternaam"/>
-      </Field>
-      <Grid2>
-        <Field label="Telefoonnummer *">
-          <input style={s.input} type="tel" value={f.telefoon} onChange={e=>setF(p=>({...p,telefoon:e.target.value}))} placeholder="06-12345678"/>
-        </Field>
-        <Field label="E-mailadres (optioneel)">
-          <input style={s.input} type="email" value={f.email} onChange={e=>setF(p=>({...p,email:e.target.value}))} placeholder="naam@email.nl"/>
-        </Field>
-      </Grid2>
+
+      {/* Modus toggle */}
+      <div style={{display:"flex",marginBottom:14,background:"#F0F0F0",borderRadius:6,padding:3}}>
+        {[["nieuw","Nieuwe klant"],["bestaand","Bestaande klant"]].map(([id,lbl])=>(
+          <button key={id} onClick={()=>{setModus(id);setSelKlantId(null);setZoek("");if(id==="nieuw")setF(p=>({...p,naam:"",telefoon:"",email:""}));}}
+            style={{flex:1,padding:"7px",background:modus===id?T.green:"transparent",color:modus===id?"#fff":T.muted,border:"none",borderRadius:4,fontSize:13,fontWeight:modus===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {modus==="bestaand"?(
+        <>
+          <Field label="Zoek klant op naam">
+            <input style={s.input} value={zoek} onChange={e=>{setZoek(e.target.value);setSelKlantId(null);}} placeholder="Typ naam..."/>
+          </Field>
+          {zoek.trim().length>0&&(
+            <div style={{border:`1px solid ${T.border}`,borderRadius:4,maxHeight:150,overflowY:"auto",marginBottom:14,marginTop:-10}}>
+              {gefilterd.length===0?(
+                <div style={{padding:"10px 12px",fontSize:13,color:T.muted}}>Geen klant gevonden</div>
+              ):gefilterd.map(k=>(
+                <div key={k.id} onClick={()=>kiesKlant(k)}
+                  style={{padding:"9px 12px",cursor:"pointer",background:selKlantId===k.id?`${T.green}15`:"transparent",borderBottom:`1px solid ${T.border}`,fontSize:13}}>
+                  <div style={{fontWeight:selKlantId===k.id?600:400}}>{k.naam}</div>
+                  {k.telefoon&&<div style={{fontSize:11,color:T.muted,marginTop:1}}>{k.telefoon}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedKlant&&(
+            <>
+              <Grid2>
+                <Field label="Telefoonnummer">
+                  <input style={{...s.input,background:T.surf}} value={f.telefoon} onChange={e=>setF(p=>({...p,telefoon:e.target.value}))} placeholder="06-12345678" type="tel"/>
+                </Field>
+                <Field label="E-mailadres">
+                  <input style={{...s.input,background:T.surf}} value={f.email} onChange={e=>setF(p=>({...p,email:e.target.value}))} placeholder="naam@email.nl" type="email"/>
+                </Field>
+              </Grid2>
+            </>
+          )}
+        </>
+      ):(
+        <>
+          <Field label="Naam proefrijder *">
+            <input style={s.input} value={f.naam} onChange={e=>setF(p=>({...p,naam:e.target.value}))} placeholder="Voornaam Achternaam"/>
+          </Field>
+          <Grid2>
+            <Field label="Telefoonnummer *">
+              <input style={s.input} type="tel" value={f.telefoon} onChange={e=>setF(p=>({...p,telefoon:e.target.value}))} placeholder="06-12345678"/>
+            </Field>
+            <Field label="E-mailadres (optioneel)">
+              <input style={s.input} type="email" value={f.email} onChange={e=>setF(p=>({...p,email:e.target.value}))} placeholder="naam@email.nl"/>
+            </Field>
+          </Grid2>
+        </>
+      )}
+
       <Field label="Datum">
         <input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value,tijd:""}))}/>
       </Field>
@@ -913,13 +1008,14 @@ function ProefritModal({motor, afspraken, onSave, onClose, geslotenDagen=[], ope
 }
 
 // ── Pages ────────────────────────────────────────────────────────────────────
-function Dashboard({klanten,showroom,afspraken,onNav}){
+function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfspraak}){
   const isMobile=useIsMobile();
   const totalMotoren=klanten.reduce((a,k)=>a+(k.motoren||[]).length,0);
   const aanvragen=afspraken.filter(a=>a.status==="aangevraagd");
   const gepland=afspraken.filter(a=>a.status!=="aangevraagd");
   const vandaag=gepland.filter(a=>a.datum===TODAY);
   const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
+  const [editAfspraakItem,setEditAfspraakItem]=useState(null);
 
   const getMotorInfo = (motorId) => {
     const motor = klanten.flatMap(k=>k.motoren||[]).find(m=>m.id===motorId);
@@ -1356,9 +1452,11 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                             setMenuMotorId(null);
                           }} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
                         )}
-                        <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
-                          {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
-                        </button>
+                        {m.status!=="gereserveerd"&&(
+                          <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
+                            {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
+                          </button>
+                        )}
                         <div style={{height:1,background:T.border}}/>
                         <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
                       </div>
@@ -1386,7 +1484,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
 
       {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
       {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
-      {proefritMotor&&<ProefritModal motor={proefritMotor} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
+      {proefritMotor&&<ProefritModal motor={proefritMotor} klanten={klanten} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
 
       {/* Lichtbak voor foto's */}
       {lichtbakFoto&&(
