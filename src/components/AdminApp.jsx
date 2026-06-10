@@ -1242,7 +1242,7 @@ function MotorEditModal({motor, onSave, onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
@@ -1252,6 +1252,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   const [delKlant,setDelKlant]=useState(false);
   const [toonMenu,setToonMenu]=useState(false);
   const [editMotorItem,setEditMotorItem]=useState(null);
+  const [inruilConfirmId,setInruilConfirmId]=useState(null);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -1348,11 +1349,20 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
               )}
               {motor.bijzonderheden&&<div style={{fontSize:12,color:T.muted,marginTop:3,fontStyle:"italic"}}>{motor.bijzonderheden}</div>}
             </div>
-            <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
               <button style={{...s.btnGhost,flexShrink:0,fontSize:12}} onClick={()=>setEditMotorItem(motor)}>Wijzigen</button>
               <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
+              <button style={{...s.btnOutline,flexShrink:0,fontSize:12}} onClick={()=>setInruilConfirmId(motor.id)} title="Motor inruilen — zet in voorraad">Inruilen →</button>
             </div>
           </div>
+          {/* Inruil bevestiging */}
+          {inruilConfirmId===motor.id&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:`${T.accent}12`,border:`1px solid ${T.accent}40`,borderRadius:4,marginBottom:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,flex:1,color:T.text}}>Motor naar voorraad zetten? Motor verdwijnt bij klant en is niet zichtbaar tot je hem activeert.</span>
+              <button onClick={()=>{onInruil(klant.id,motor);setInruilConfirmId(null);}} style={{background:T.accent,color:"#fff",border:"none",borderRadius:3,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600,whiteSpace:"nowrap"}}>Ja, inruilen</button>
+              <button onClick={()=>setInruilConfirmId(null)} style={{background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:3,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",whiteSpace:"nowrap"}}>Annuleer</button>
+            </div>
+          )}
           {/* Onderhoudsinterval */}
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surf2,borderRadius:4,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{fontSize:11,color:T.muted}}>Onderhoudsinterval:</span>
@@ -1420,7 +1430,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{}}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -1555,6 +1565,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onUpdateMotorInterval={onUpdateMotorInterval}
             onUpdateMotor={onUpdateMotor}
             onUitnodig={setUitnodigKlant}
+            onInruil={onInruil}
             onBack={()=>setSel(null)}
             isMobile={true}/>
         ):(
@@ -1592,6 +1603,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
                 onUpdateMotorInterval={onUpdateMotorInterval}
                 onUpdateMotor={onUpdateMotor}
                 onUitnodig={setUitnodigKlant}
+                onInruil={onInruil}
                 onBack={()=>setSel(null)}
                 isMobile={false}/>
             )}
@@ -3198,6 +3210,21 @@ export default function AdminApp(){
     setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:null,verkocht_aan:null,fotos_bewaren_tot:null,status:"beschikbaar"}:m));
   };
 
+  const inruilMotorVanKlant = async (klantId, motor) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const latestKm = motor.kmHistory?.length ? motor.kmHistory[motor.kmHistory.length-1].km : (motor.km||0);
+    const {data:v} = await sb.from("voorraad").insert({
+      kenteken: motor.kenteken||"", merk: motor.merk||"", model: motor.model||"",
+      bouwjaar: motor.bouwjaar||0, km: latestKm, prijs: 0,
+      datum_in: TODAY, fotos: [], status: "niet_beschikbaar",
+      voorband_datum: motor.voorband_datum||null, achterband_datum: motor.achterband_datum||null,
+      voorband_maat: motor.voorband_maat||null, achterband_maat: motor.achterband_maat||null,
+    }).select().single();
+    if(v) setShowroom(p=>[v,...p]);
+    await sb.from("motoren").delete().eq("id",motor.id);
+    setKlanten(prev=>prev.map(k=>k.id===klantId?{...k,motoren:(k.motoren||[]).filter(m=>m.id!==motor.id)}:k));
+  };
+
   const deleteVoorraadMotor = async (motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
@@ -3472,7 +3499,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
