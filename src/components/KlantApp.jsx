@@ -4,8 +4,8 @@ import { supabase, uitloggen } from "../lib/supabase.js";
 // ── Theme ──────────────────────────────────────────────────────────────────
 const T = {
   bg: "#0E0E0E", surf: "#161616", surf2: "#1E1E1E", surf3: "#242424",
-  border: "#2A2A2A", accent: "#CC0000", accentSoft: "#CC000022",
-  text: "#F0ECE6", muted: "#666660", green: "#22C55E", yellow: "#F59E0B", red: "#FF4444",
+  border: "#2A2A2A", accent: "#E8520A", accentSoft: "#E8520A22",
+  text: "#F0ECE6", muted: "#666660", green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
 };
 
 // ── Utils ──────────────────────────────────────────────────────────────────

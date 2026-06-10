@@ -13,8 +13,8 @@ const useIsMobile = () => {
 
 const T = {
   bg: "#080808", surf: "#111111", surf2: "#1A1A1A", border: "#252525",
-  accent: "#CC0000", text: "#EEEBE6", muted: "#666660",
-  green: "#22C55E", yellow: "#F59E0B", red: "#FF4444",
+  accent: "#E8520A", text: "#EEEBE6", muted: "#666660",
+  green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
 };
 
 const s = {

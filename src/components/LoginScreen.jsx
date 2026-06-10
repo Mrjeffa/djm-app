@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const T = { bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A', accent:'#CC0000', text:'#F0ECE6', muted:'#666660', red:'#FF4444', green:'#22C55E' }
+const T = { bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A', accent:'#E8520A', text:'#F0ECE6', muted:'#666660', red:'#EF4444', green:'#22C55E' }
 
 // font-size 16px voorkomt automatisch inzoomen op iOS
 const inp = {
@@ -10,7 +10,7 @@ const inp = {
   fontSize:16, fontFamily:'Barlow, sans-serif', outline:'none',
   boxSizing:'border-box', marginBottom:10, WebkitAppearance:'none',
 }
-const btn = (color='#CC0000') => ({
+const btn = (color='#E8520A') => ({
   width:'100%', padding:14, background:color, color:'#fff', border:'none',
   borderRadius:8, fontSize:16, fontWeight:600, cursor:'pointer',
   fontFamily:'Barlow, sans-serif', marginTop:4,
