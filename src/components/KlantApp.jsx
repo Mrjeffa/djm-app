@@ -797,13 +797,21 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
         { lbl: "Basis (incl. 20 min enkele reis)", key: "aankoopkeuring_basis" },
         { lbl: "Per extra 10 min rijden", key: "aankoopkeuring_extra_10min" },
       ])}
+      <div style={{ ...css.card, background: `${T.accent}08`, border: `1px solid ${T.accent}30`, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7 }}>
+          U kiest geen datum — wij plannen de keuring in en laten u weten wanneer wij gaan.
+        </div>
+      </div>
       <div style={css.card}>
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Keuring aanvragen</div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Locatie van de motor</label>
           <input style={{ ...css.input, marginBottom: 0 }} value={f.locatie || ""} onChange={e => setFld("locatie", e.target.value)} placeholder="Stad of adres van de verkoper"/>
         </div>
-        {datumKiezer}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Link naar advertentie (optioneel)</label>
+          <input style={{ ...css.input, marginBottom: 0 }} type="url" value={f.advertentie_url || ""} onChange={e => setFld("advertentie_url", e.target.value)} placeholder="https://www.marktplaats.nl/..."/>
+        </div>
         <div style={{ marginBottom: 4 }}>
           <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Notities</label>
           <textarea style={{ ...css.input, height: 70, resize: "vertical", marginBottom: 0 }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw opmerkingen..."/>
@@ -1871,6 +1879,7 @@ export default function KlantApp({ userId }) {
     const { datum, motor_id, opmerking: opm, ...extra } = data;
     const lines = [];
     if (extra.locatie) lines.push(`Locatie: ${extra.locatie}`);
+    if (extra.advertentie_url) lines.push(`Advertentie: ${extra.advertentie_url}`);
     if (extra.merk) lines.push(`Merk: ${extra.merk}`);
     if (extra.model) lines.push(`Model: ${extra.model}`);
     if (extra.bouwjaar) lines.push(`Bouwjaar v.a.: ${extra.bouwjaar}`);
