@@ -37,7 +37,7 @@ const getBeschikbareDagen = (bezet = [], geslotenDagen = [], openingstijden = nu
   const dagen = [];
   const start = new Date(TODAY);
   start.setDate(start.getDate() + 1);
-  for (let i = 0; dagen.length < 12 && i <= 60; i++) {
+  for (let i = 0; i <= 60; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const dayOfWeek = d.getDay();
@@ -715,6 +715,169 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   );
 }
 
+// ── Scherm: Voorraad ───────────────────────────────────────────────────────
+const clImg = (url, w = 600) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
+
+function VoorraadTab({ voorraad, klant, geslotenDagen = [], openingstijden = null, onSlaProefritOp }) {
+  const [proefritMotor, setProefritMotor] = useState(null);
+  const [f, setF] = useState({ naam: "", telefoon: "", email: "", datum: null, opmerking: "" });
+  const [verstuurd, setVerstuurd] = useState(false);
+  const [bezig, setBezig] = useState(false);
+
+  const openProefrit = (motor) => {
+    setProefritMotor(motor);
+    setF({ naam: klant.naam || "", telefoon: klant.telefoon || "", email: klant.email || "", datum: null, opmerking: "" });
+    setVerstuurd(false);
+  };
+
+  const DAGMAP = ["zo","ma","di","wo","do","vr","za"];
+  const isOpen = (dow) => {
+    if (openingstijden) return openingstijden[DAGMAP[dow]]?.gesloten !== true;
+    return [3,4,5].includes(dow);
+  };
+  const beschikbaar = (() => {
+    const dagen = [];
+    const start = new Date(TODAY);
+    start.setDate(start.getDate() + 1);
+    for (let i = 0; i <= 60; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dow = d.getDay();
+      if (!isOpen(dow)) continue;
+      const iso = d.toISOString().split("T")[0];
+      if (geslotenDagen.includes(iso)) continue;
+      dagen.push({ datum: iso, dag: DAGMAP[dow] });
+    }
+    return dagen;
+  })();
+
+  const verstuurProefrit = async () => {
+    if (!f.datum || !f.naam || !f.telefoon || bezig) return;
+    setBezig(true);
+    await onSlaProefritOp({ voorraadMotorId: proefritMotor.id, datum: f.datum, naam: f.naam, telefoon: f.telefoon, email: f.email, opmerking: f.opmerking });
+    setBezig(false);
+    setVerstuurd(true);
+  };
+
+  if (proefritMotor) {
+    if (verstuurd) {
+      return (
+        <div style={{ textAlign: "center", paddingTop: 32 }}>
+          <div style={{ fontSize: 48, marginBottom: 14 }}>✅</div>
+          <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 8 }}>Proefrit aangevraagd!</div>
+          <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.8, maxWidth: 280, margin: "0 auto" }}>
+            We nemen contact op om de proefrit te bevestigen.
+          </div>
+          <div style={{ ...css.card, marginTop: 20, textAlign: "left" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.green }}>{proefritMotor.merk} {proefritMotor.model}</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>Gevraagde datum: {fmtDatum(f.datum)}</div>
+          </div>
+          <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => setProefritMotor(null)}>← Terug naar voorraad</button>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <button onClick={() => setProefritMotor(null)}
+          style={{ background: "none", border: "none", color: T.accent, fontSize: 13, cursor: "pointer", fontFamily: "Barlow, sans-serif", padding: "0 0 16px", display: "flex", alignItems: "center", gap: 4 }}>
+          ← Terug
+        </button>
+        <div style={{ ...css.card, background: `${T.green}10`, border: `1px solid ${T.green}40`, marginBottom: 16 }}>
+          <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 18 }}>
+            🏍 {proefritMotor.merk} {proefritMotor.model}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
+            {proefritMotor.kenteken} · {proefritMotor.bouwjaar} · {proefritMotor.km?.toLocaleString()} km
+          </div>
+        </div>
+
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Jouw gegevens</div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Controleer of je gegevens kloppen.</div>
+          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Naam *</label>
+          <input style={{ ...css.input, marginBottom: 10 }} value={f.naam} onChange={e => setF(p => ({ ...p, naam: e.target.value }))} placeholder="Voornaam Achternaam" />
+          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Telefoonnummer *</label>
+          <input style={{ ...css.input, marginBottom: 10 }} type="tel" value={f.telefoon} onChange={e => setF(p => ({ ...p, telefoon: e.target.value }))} placeholder="06-12345678" />
+          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>E-mailadres</label>
+          <input style={{ ...css.input }} type="email" value={f.email} onChange={e => setF(p => ({ ...p, email: e.target.value }))} placeholder="jouw@email.nl" />
+        </div>
+
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Kies een dag</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {beschikbaar.slice(0, 30).map(d => (
+              <button key={d.datum} onClick={() => setF(p => ({ ...p, datum: d.datum }))}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 6, border: `1px solid ${f.datum === d.datum ? T.green : T.border}`, background: f.datum === d.datum ? `${T.green}15` : "transparent", cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, color: f.datum === d.datum ? T.green : T.text, textTransform: "uppercase", width: 24 }}>{d.dag}</div>
+                  <div style={{ fontSize: 14, color: T.text }}>{fmtDatum(d.datum)}</div>
+                </div>
+                {f.datum === d.datum && <span style={{ ...css.badge(T.green) }}>✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Opmerkingen (optioneel)</div>
+          <textarea style={{ ...css.input, height: 70, resize: "none" }}
+            placeholder="Bijv. voorkeur voor ochtend/middag, rijervaring, vragen..."
+            value={f.opmerking} onChange={e => setF(p => ({ ...p, opmerking: e.target.value }))} />
+        </div>
+
+        <button style={{ ...css.btn, opacity: (!f.datum || !f.naam || !f.telefoon || bezig) ? 0.4 : 1, marginTop: 4 }}
+          onClick={verstuurProefrit} disabled={!f.datum || !f.naam || !f.telefoon || bezig}>
+          {bezig ? "Versturen..." : "Proefrit aanvragen"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 14, color: T.muted, marginBottom: 16, lineHeight: 1.6 }}>
+        Bekijk ons huidige aanbod en vraag direct een proefrit aan.
+      </div>
+      {voorraad.length === 0 ? (
+        <div style={{ textAlign: "center", color: T.muted, fontSize: 14, marginTop: 40 }}>
+          Momenteel geen motors beschikbaar in de showroom.
+        </div>
+      ) : voorraad.map(motor => {
+        const fotos = Array.isArray(motor.fotos) ? motor.fotos : [];
+        return (
+          <div key={motor.id} style={{ ...css.card, padding: 0, overflow: "hidden", marginBottom: 14 }}>
+            {fotos.length > 0 && (
+              <img src={clImg(fotos[0], 600)} alt={`${motor.merk} ${motor.model}`}
+                style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+            )}
+            {fotos.length === 0 && (
+              <div style={{ height: 120, background: T.surf2, display: "flex", alignItems: "center", justifyContent: "center", color: T.muted, fontSize: 13 }}>Geen foto</div>
+            )}
+            <div style={{ padding: "14px 16px" }}>
+              <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 22, lineHeight: 1 }}>
+                {motor.merk} {motor.model}
+              </div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 6, marginBottom: 10 }}>
+                {motor.bouwjaar} · {motor.km?.toLocaleString()} km · {motor.kenteken}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 26, color: T.accent }}>
+                  €{motor.prijs?.toLocaleString()}
+                </div>
+                <button onClick={() => openProefrit(motor)}
+                  style={{ padding: "10px 16px", background: T.green, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
+                  Proefrit aanvragen →
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 export default function KlantApp({ userId }) {
   const [tab, setTab] = useState("motor");
@@ -726,6 +889,7 @@ export default function KlantApp({ userId }) {
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
+  const [voorraad, setVooraad] = useState([]);
   const [laden, setLaden] = useState(true);
 
   const kiesMotor = (id) => { sessionStorage.setItem("djm_sel_motor", id); setSelMotorId(id); };
@@ -794,6 +958,15 @@ export default function KlantApp({ userId }) {
         } else {
           setMotoren([]);
         }
+
+        // Voorraad ophalen
+        const { data: vData } = await supabase
+          .from("voorraad")
+          .select("id,merk,model,bouwjaar,km,prijs,fotos,kenteken,voorband_datum,achterband_datum")
+          .is("verkocht_op", null)
+          .neq("status", "niet_beschikbaar")
+          .order("created_at", { ascending: false });
+        setVooraad(vData || []);
       } catch(e) { console.error(e); }
       setLaden(false);
       clearTimeout(timer);
@@ -817,6 +990,21 @@ export default function KlantApp({ userId }) {
       datum: f.datum, opmerking: f.opmerking || "", status: "aangevraagd",
     });
     setBezetteDagen(prev => [...prev, f.datum]);
+  };
+
+  const slaProefritAanvraagOp = async (f) => {
+    await supabase.from("afspraken").insert({
+      klant_id: klant.id,
+      voorraad_motor_id: f.voorraadMotorId,
+      datum: f.datum,
+      naam: f.naam || klant.naam,
+      telefoon: f.telefoon || klant.telefoon || null,
+      email: f.email || klant.email || null,
+      opmerking: f.opmerking || "",
+      status: "aangevraagd",
+      type: "proefrit",
+      duur: 1,
+    });
   };
 
   const updateKlantProfiel = async (data) => {
@@ -864,13 +1052,13 @@ export default function KlantApp({ userId }) {
   };
 
   const nav = [
-    { id: "motor", icon: "🏍", label: "Motor" },
-    { id: "service", icon: "🔧", label: "Service" },
-    { id: "km", icon: "📍", label: "Km Stand" },
-    { id: "afspraak", icon: "📅", label: "Afspraak" },
-    { id: "contact", icon: "📞", label: "Contact" },
+    { id: "motor",    icon: "◧", label: "Motor"    },
+    { id: "service",  icon: "◉", label: "Service"  },
+    { id: "km",       icon: "◈", label: "Km Stand" },
+    { id: "voorraad", icon: "◫", label: "Voorraad" },
+    { id: "contact",  icon: "◎", label: "Contact"  },
   ];
-  const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", instellingen: "Instellingen" };
+  const titles = { motor: "Mijn Motor", service: "Service & Afspraken", km: "Km Stand", voorraad: "Voorraad", contact: "Contact", instellingen: "Instellingen" };
 
   const isMobile = useIsMobile();
 
@@ -984,9 +1172,16 @@ export default function KlantApp({ userId }) {
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
-            {tab === "service" && <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+            {tab === "service" && (
+              <div>
+                <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>
+                <div style={{ borderTop: `2px solid ${T.border}`, margin: "24px 0 20px" }}/>
+                <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14, color: T.muted }}>Servicegeschiedenis</div>
+                <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>
+              </div>
+            )}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
-            {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>}
+            {tab === "voorraad" && <VoorraadTab voorraad={voorraad} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
             {tab === "instellingen" && (
               <Instellingen
@@ -1033,11 +1228,18 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
-        {tab === "service" && <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} />}
-        {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp} />}
-        {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp} />}
-        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} />}
+        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+        {tab === "service" && (
+          <div>
+            <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>
+            <div style={{ borderTop: `2px solid ${T.border}`, margin: "24px 0 20px" }}/>
+            <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14, color: T.muted }}>Servicegeschiedenis</div>
+            <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>
+          </div>
+        )}
+        {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
+        {tab === "voorraad" && <VoorraadTab voorraad={voorraad} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
+        {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
         {tab === "instellingen" && (
           <Instellingen
             klant={klant} motoren={gesorteerdMotoren}
