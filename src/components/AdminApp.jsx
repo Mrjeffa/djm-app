@@ -457,7 +457,7 @@ function ServiceModal({onSave,onClose,initial}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:""});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoFiles,setFotoFiles]=useState([]);
   const [fotoPreviews,setFotoPreviews]=useState([]);
@@ -552,6 +552,10 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
         <Field label="Achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
       </Grid2>
+      <Grid2>
+        <Field label="Maat voorband"><input style={s.input} value={f.voorband_maat} onChange={set("voorband_maat")} placeholder="120/70 ZR17"/></Field>
+        <Field label="Maat achterband"><input style={s.input} value={f.achterband_maat} onChange={set("achterband_maat")} placeholder="180/55 ZR17"/></Field>
+      </Grid2>
 
       {/* Stap 4: foto's */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
@@ -589,6 +593,7 @@ function VoorraadEditModal({motor, onSave, onClose}){
     km:motor.km||"", prijs:motor.prijs||"", datum_in:motor.datum_in||TODAY,
     chassis_nummer:motor.chassis_nummer||"",
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
+    voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   const [behoudeFotos,setBehoudeFotos]=useState(Array.isArray(motor.fotos)?motor.fotos:[]);
@@ -639,6 +644,10 @@ function VoorraadEditModal({motor, onSave, onClose}){
       <Grid2>
         <Field label="Voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
         <Field label="Achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Maat voorband"><input style={s.input} value={f.voorband_maat} onChange={set("voorband_maat")} placeholder="120/70 ZR17"/></Field>
+        <Field label="Maat achterband"><input style={s.input} value={f.achterband_maat} onChange={set("achterband_maat")} placeholder="180/55 ZR17"/></Field>
       </Grid2>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Foto's</div>
@@ -1525,18 +1534,20 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                   </div>
 
                   {/* Bandendatums */}
-                  {(m.voorband_datum||m.achterband_datum)&&(
+                  {(m.voorband_datum||m.achterband_datum||m.voorband_maat||m.achterband_maat)&&(
                     <div style={{background:T.surf2,borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12}}>
-                      {m.voorband_datum&&(
-                        <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:m.achterband_datum?4:0}}>
+                      {(m.voorband_datum||m.voorband_maat)&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:(m.achterband_datum||m.achterband_maat)?4:0}}>
                           <span style={{color:T.muted,minWidth:70}}>Voorband:</span>
-                          <BandTag datum={m.voorband_datum}/>
+                          {m.voorband_maat&&<span style={{fontWeight:600,marginRight:4}}>{m.voorband_maat}</span>}
+                          {m.voorband_datum&&<BandTag datum={m.voorband_datum}/>}
                         </div>
                       )}
-                      {m.achterband_datum&&(
+                      {(m.achterband_datum||m.achterband_maat)&&(
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <span style={{color:T.muted,minWidth:70}}>Achterband:</span>
-                          <BandTag datum={m.achterband_datum}/>
+                          {m.achterband_maat&&<span style={{fontWeight:600,marginRight:4}}>{m.achterband_maat}</span>}
+                          {m.achterband_datum&&<BandTag datum={m.achterband_datum}/>}
                         </div>
                       )}
                     </div>
@@ -2425,6 +2436,7 @@ export default function AdminApp(){
       bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
       prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       chassis_nummer:f.chassis_nummer||null,
     }).select().single();
     if(v) setShowroom(p=>[v,...p]);
@@ -2438,6 +2450,7 @@ export default function AdminApp(){
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
       chassis_nummer:f.chassis_nummer||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       fotos:alleFotos,
     }).eq("id",id);
     setShowroom(p=>p.map(m=>m.id===id?{
@@ -2445,6 +2458,7 @@ export default function AdminApp(){
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
       chassis_nummer:f.chassis_nummer||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       fotos:alleFotos,
     }:m));
     if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
