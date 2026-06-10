@@ -1820,6 +1820,8 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
   const klant = (klanten||[]).find(k=>k.id===afspraak.klant_id);
   const klantMotoren = klant?.motoren || [];
   const [motorId, setMotorId] = useState(afspraak.motor_id || (klantMotoren.length===1?klantMotoren[0].id:""));
+  const [vbVervangen, setVbVervangen] = useState(false);
+  const [abVervangen, setAbVervangen] = useState(false);
   const [f,setF]=useState({
     datum: TODAY,
     km: "",
@@ -1829,13 +1831,32 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
     interne_opmerking: afspraak.interne_opmerking||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+
+  const geselecteerdeMotor = klantMotoren.find(m=>m.id===motorId);
+
+  const toggleVb = (checked) => {
+    setVbVervangen(checked);
+    setF(p=>({...p, voorband_datum: checked ? (geselecteerdeMotor?.voorband_datum||"") : ""}));
+  };
+  const toggleAb = (checked) => {
+    setAbVervangen(checked);
+    setF(p=>({...p, achterband_datum: checked ? (geselecteerdeMotor?.achterband_datum||"") : ""}));
+  };
+
+  const wisselMotor = (id) => {
+    setMotorId(id);
+    setVbVervangen(false);
+    setAbVervangen(false);
+    setF(p=>({...p,voorband_datum:"",achterband_datum:""}));
+  };
+
   return(
     <Modal title="AFSPRAAK AFWERKEN" onClose={onClose}>
       {klant&&<div style={{fontSize:13,color:T.muted,marginBottom:14}}>{klant.naam}{afspraak.soort&&<> · <span style={{color:T.text}}>{afspraak.soort}</span></>}</div>}
 
       {klantMotoren.length > 0 && (
         <Field label="Motor">
-          <select style={s.input} value={motorId} onChange={e=>setMotorId(e.target.value)}>
+          <select style={s.input} value={motorId} onChange={e=>wisselMotor(e.target.value)}>
             <option value="">— selecteer motor —</option>
             {klantMotoren.map(m=>(
               <option key={m.id} value={m.id}>{m.merk} {m.model} ({m.kenteken})</option>
@@ -1854,11 +1875,35 @@ function AfwerkModal({afspraak, klanten, onSave, onClose}){
       </Field>
 
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
-      <div style={s.sectionLabel}>Banden (optioneel — alleen invullen als vervangen)</div>
-      <Grid2>
-        <Field label="Nieuwe voorband datum"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
-        <Field label="Nieuwe achterband datum"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
-      </Grid2>
+      <div style={s.sectionLabel}>Banden vervangen?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:4}}>
+        <div>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={vbVervangen} onChange={e=>toggleVb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
+            <span style={{fontSize:13,fontWeight:500}}>Voorband vervangen</span>
+          </label>
+          {vbVervangen&&(
+            <div style={{marginTop:8,marginLeft:23}}>
+              <Field label="Productiedatum nieuwe voorband">
+                <BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/>
+              </Field>
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={abVervangen} onChange={e=>toggleAb(e.target.checked)} style={{width:15,height:15,cursor:"pointer"}}/>
+            <span style={{fontSize:13,fontWeight:500}}>Achterband vervangen</span>
+          </label>
+          {abVervangen&&(
+            <div style={{marginTop:8,marginLeft:23}}>
+              <Field label="Productiedatum nieuwe achterband">
+                <BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/>
+              </Field>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Interne opmerking (niet zichtbaar voor klant)</div>
