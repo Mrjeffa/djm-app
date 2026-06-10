@@ -740,6 +740,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
       </div>
       <div id="schade-form" style={css.card}>
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Afspraak inplannen</div>
+        {motorSelect}
         {datumKiezer}
         {fotoUpload}
         {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
@@ -757,6 +758,12 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
         Wij verkopen uw motor voor u.<br/>
         Breng uw motor en wij doen de rest.
       </div>
+      {tarievenRij([
+        { lbl: "Week 1–4", key: "consignatie_w1_4" },
+        { lbl: "Week 5–12 (verlenging)", key: "consignatie_w5_12" },
+        { lbl: "Week 13–26 (verlenging)", key: "consignatie_w13_26" },
+        { lbl: "Extra platform per 4 weken", key: "consignatie_platform" },
+      ])}
       {stappenLijst([
         "U rijdt uw motor langs voor een waardebepaling",
         "Bij akkoord poetsen wij uw motor en plaatsen hem in onze showroom en online",
@@ -862,13 +869,13 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     <div>
       {backBtn}
       <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>WINTERSTALLING</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Stall uw motor veilig en droog op bij ons. Inclusief optionele onderhoudsdiensten.</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Stal uw motor veilig en droog op bij ons. Inclusief optionele onderhoudsdiensten. <span style={{ fontStyle: "italic" }}>(Alles met 10% korting bij uitvoeren in combinatie met winterstalling.)</span></div>
       {tarievenRij([
         { lbl: "6 maanden (okt–mrt)", key: "winterstalling_6mnd" },
         { lbl: "Per extra maand", key: "winterstalling_extra_mnd" },
         { lbl: "Kleine onderhoudsbeurt", key: "winterstalling_kleine_beurt" },
         { lbl: "Grote onderhoudsbeurt", key: "winterstalling_grote_beurt" },
-        { lbl: "Bandenwisselen (voor + achter)", key: "winterstalling_banden" },
+        { lbl: "Bandenwisselen (voor / achter)", key: "winterstalling_banden" },
         { lbl: "Poetsen & bescherming", key: "winterstalling_poetsen" },
       ])}
       <div style={css.card}>
@@ -879,7 +886,8 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
           {[
             { id: "kleine_beurt", lbl: "Kleine onderhoudsbeurt" },
             { id: "grote_beurt", lbl: "Grote onderhoudsbeurt" },
-            { id: "banden", lbl: "Bandenwisselen (voor + achter)" },
+            { id: "voorband", lbl: "Voorband wisselen" },
+            { id: "achterband", lbl: "Achterband wisselen" },
             { id: "poetsen", lbl: "Poetsen & bescherming" },
           ].map(opt => (
             <label key={opt.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
@@ -940,12 +948,12 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
         <a href="https://www.google.com/maps/dir/?api=1&destination=Stevinweg+14,+Tholen"
           target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 13, color: T.accent, marginTop: 10, lineHeight: 1.8, display: "block", textDecoration: "none" }}>
-          \U0001f4cd Stevinweg 14, Tholen →
+          📍 Stevinweg 14, Tholen →
         </a>
       </div>
       {[
-        { icon: "\U0001f4de", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
-        { icon: "\U0001f4ac", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
+        { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
+        { icon: "💬", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
         { icon: "✉", label: "E-mail", sub: "dejongemotor@email.nl", href: "mailto:info@dejongemotor.nl", color: T.muted },
       ].map((c, i) => (
         <a key={i} href={c.href}
@@ -961,16 +969,16 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <div style={css.sectionTitle}>Overige diensten</div>
         {[
-          { id: "schade",            label: "Schade",             sub: "Reparatie & inspectie" },
-          { id: "consignatie",       label: "Consignatie",        sub: "Wij verkopen uw motor" },
-          { id: "aankoopkeuring",    label: "Aankoopkeuring",     sub: "Keuring vóór aankoop" },
-          { id: "zoekopdracht",      label: "Zoekopdracht",       sub: "Wij zoeken uw motor" },
-          { id: "winterstalling",    label: "Winterstalling",     sub: "Veilig stallen" },
-          { id: "seizoensklaarmaak", label: "Seizoensklaarmaak",  sub: "Motor rijklaar maken" },
+          { id: "schade",            icon: "🔧", label: "Schade",             sub: "Reparatie & inspectie" },
+          { id: "consignatie",       icon: "🏷️", label: "Consignatie",        sub: "Wij verkopen uw motor" },
+          { id: "aankoopkeuring",    icon: "🔍", label: "Aankoopkeuring",     sub: "Keuring vóór aankoop" },
+          { id: "zoekopdracht",      icon: "🔎", label: "Zoekopdracht",       sub: "Wij zoeken uw motor" },
+          { id: "winterstalling",    icon: "❄️", label: "Winterstalling",     sub: "Veilig stallen" },
+          { id: "seizoensklaarmaak", icon: "☀️", label: "Seizoensklaarmaak",  sub: "Motor rijklaar maken" },
         ].map(svc => (
           <button key={svc.id} onClick={() => openView(svc.id)}
             style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "Barlow, sans-serif", color: T.text }}>
-            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${T.accent}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, flexShrink: 0, color: T.accent, fontFamily: "Barlow Condensed, sans-serif", letterSpacing: 0.5 }}>{svc.id.substring(0,2).toUpperCase()}</div>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${T.accent}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{svc.icon}</div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{svc.label}</div>
               <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{svc.sub}</div>
