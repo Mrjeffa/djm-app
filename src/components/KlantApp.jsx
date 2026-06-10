@@ -231,11 +231,11 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
         {!eigenOpen ? (
           <button onClick={() => { setEigenOpen(true); setEigenF({ datum:TODAY, omschrijving:"", km:"" }); setEigenFout(null); setEigenOk(false); }}
             style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"8px 16px", fontSize:13, color:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", width:"100%" }}>
-            + Eigen werkzaamheden invoeren
+            + Overige werkzaamheden invoeren
           </button>
         ) : (
           <div style={css.card}>
-            <div style={css.sectionTitle}>Eigen werkzaamheden invoeren</div>
+            <div style={css.sectionTitle}>Overige werkzaamheden invoeren</div>
             <div style={{ fontSize:12, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
               Zelf olie ververst, of ergens anders iets laten doen? Voer het hier in zodat je servicehistorie compleet blijft.
             </div>
