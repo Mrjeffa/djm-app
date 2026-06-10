@@ -808,7 +808,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
         ))}
       </div>
 
-      {modus==="bestaand"?(
+      {modus==="bestaand"&&(
         <>
           <Field label="Zoek klant op naam">
             <input style={s.input} value={zoek}
@@ -843,7 +843,8 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
             </Field>
           )}
         </>
-      ):(
+      )}
+      {modus==="nieuw"&&(
         <>
           <Grid2>
             <Field label="Naam *">
@@ -1475,7 +1476,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
               </div>
               <div style={{display:"flex",gap:8,marginTop:8}}>
                 <button onClick={()=>onKeurGoed(k.id)}
-                  style={{flex:1,padding:"7px 10px",background:T.green,color:"#fff",border:"none",borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                  style={{padding:"7px 14px",background:T.green,color:"#fff",border:"none",borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
                   ✓ Goedkeuren
                 </button>
                 <button onClick={()=>{setSel(k.id);setPageTab("klanten");}}
@@ -1505,7 +1506,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
           {sv.interval_gereset&&<div style={{marginTop:4}}><span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span></div>}
           <div style={{display:"flex",gap:8,marginTop:10}}>
             <button onClick={()=>onMarkeerGezien(sv.klantId,sv.motorId,sv.id)}
-              style={{flex:1,padding:"7px 10px",background:T.surf2,color:T.muted,border:`1px solid ${T.border}`,borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+              style={{padding:"7px 14px",background:T.surf2,color:T.muted,border:`1px solid ${T.border}`,borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
               ✓ Gezien
             </button>
             <button onClick={()=>{setSel(sv.klantId);setPageTab("klanten");}}
