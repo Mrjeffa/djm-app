@@ -1807,11 +1807,94 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
     );
   };
 
-  // ── Desktop: split layout ──
+  // ── Full-width card (desktop grid, no selection) ──
+  const renderFullCard = (motor) => {
+    const fotos = Array.isArray(motor.fotos) ? motor.fotos : [];
+    const isVerkocht = !!motor.verkocht_op;
+    return (
+      <div key={motor.id} onClick={() => openDetail(motor)}
+        style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", cursor:"pointer", opacity: isVerkocht ? 0.85 : 1 }}>
+        {fotos.length > 0 ? (
+          <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"12px 12px 0", scrollbarWidth:"none" }}>
+            {fotos.map((url, i) => (
+              <img key={i} src={clImg(url, 400)} alt=""
+                style={{ height:130, width:"auto", objectFit:"cover", borderRadius:6, flexShrink:0 }} />
+            ))}
+          </div>
+        ) : (
+          <div style={{ height:110, background:T.surf2, margin:"12px 12px 0", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:12 }}>Geen foto's</div>
+        )}
+        <div style={{ padding:"12px 14px 14px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:18, lineHeight:1.1 }}>
+              {motor.merk} {motor.model}
+            </div>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:20, color: isVerkocht ? T.muted : T.accent, flexShrink:0, marginLeft:8 }}>
+              {isVerkocht ? "Verkocht" : `€${motor.prijs?.toLocaleString()}`}
+            </div>
+          </div>
+          <div style={{ fontSize:12, color:T.muted, lineHeight:1.8 }}>
+            {motor.bouwjaar} · {motor.km?.toLocaleString()} km · {motor.kenteken}
+          </div>
+          <div style={{ marginTop:10, fontSize:12, color:T.accent, fontWeight:600, textAlign:"right" }}>Meer info →</div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFullProductCard = (prod) => {
+    const fotos = Array.isArray(prod.fotos) ? prod.fotos : [];
+    return (
+      <div key={prod.id} onClick={() => { setSelectedProduct(prod); setView("productDetail"); }}
+        style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", cursor:"pointer" }}>
+        {fotos.length > 0 ? (
+          <img src={clImg(fotos[0], 400)} alt="" style={{ width:"100%", height:150, objectFit:"cover", display:"block" }} />
+        ) : (
+          <div style={{ height:110, background:T.surf2, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:12 }}>Geen foto</div>
+        )}
+        <div style={{ padding:"12px 14px 14px" }}>
+          <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:18, lineHeight:1.1, marginBottom:4 }}>{prod.naam}</div>
+          {prod.omschrijving && <div style={{ fontSize:12, color:T.muted, marginBottom:6, lineHeight:1.5 }}>{prod.omschrijving}</div>}
+          <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:18, color:T.accent }}>
+            {prod.prijs != null ? `€${prod.prijs.toLocaleString()}` : "Op aanvraag"}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Desktop layout ──
   if (!isMobile) {
+    const showSplit = !!(selectedMotor || selectedProduct);
+
+    if (!showSplit) {
+      // Full-width grid (no motor selected yet)
+      return (
+        <div>
+          {renderSubTabs()}
+          {subTab === "motoren" && (
+            voorraad.length === 0
+              ? <div style={{ color:T.muted, fontSize:14, textAlign:"center", marginTop:40 }}>Momenteel geen motors beschikbaar.</div>
+              : <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:16 }}>
+                  {voorraad.map(m => renderFullCard(m))}
+                </div>
+          )}
+          {(subTab === "onderdelen" || subTab === "accessoires") && (() => {
+            const list = producten.filter(p => p.categorie === subTab);
+            return list.length === 0
+              ? <div style={{ color:T.muted, fontSize:14, textAlign:"center", marginTop:40 }}>Geen {subTab} beschikbaar.</div>
+              : <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:16 }}>
+                  {list.map(p => renderFullProductCard(p))}
+                </div>;
+          })()}
+        </div>
+      );
+    }
+
+    // Split view (motor/product selected)
     return (
       <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
-        {/* Left: sticky motor list */}
+        {/* Left: sticky compact list */}
         <div style={{
           width:300, flexShrink:0,
           position:"sticky", top:0,
