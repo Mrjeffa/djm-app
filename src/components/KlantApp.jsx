@@ -1442,8 +1442,9 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
 const clImg = (url, w = 600) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
 function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], openingstijden = null, onSlaProefritOp, onNaarContact }) {
-  const [view, setView] = useState("list"); // "list" | "detail" | "proefrit" | "verstuurd" | "productDetail" | "betalen" | "aanbetaling"
-  const [subTab, setSubTab] = useState("motoren"); // "motoren" | "onderdelen" | "accessoires"
+  const isMobile = useIsMobile();
+  const [view, setView] = useState("list");
+  const [subTab, setSubTab] = useState("motoren");
   const [selectedMotor, setSelectedMotor] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [f, setF] = useState({ naam: "", telefoon: "", email: "", datum: null, opmerking: "" });
@@ -1451,12 +1452,12 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
 
   const openDetail = (motor) => { setSelectedMotor(motor); setView("detail"); };
   const openProefrit = () => {
-    setF({ naam: klant.naam || "", telefoon: klant.telefoon || "", email: klant.email || "", datum: null, opmerking: "" });
+    setF({ naam: klant?.naam || "", telefoon: klant?.telefoon || "", email: klant?.email || "", datum: null, opmerking: "" });
     setView("proefrit");
   };
 
   const DAGMAP = ["zo","ma","di","wo","do","vr","za"];
-  const isOpen = (dow) => {
+  const isOpenDag = (dow) => {
     if (openingstijden) return openingstijden[DAGMAP[dow]]?.gesloten !== true;
     return [3,4,5].includes(dow);
   };
@@ -1468,7 +1469,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const dow = d.getDay();
-      if (!isOpen(dow)) continue;
+      if (!isOpenDag(dow)) continue;
       const iso = d.toISOString().split("T")[0];
       if (geslotenDagen.includes(iso)) continue;
       dagen.push({ datum: iso, dag: DAGMAP[dow] });
@@ -1484,184 +1485,107 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
     setView("verstuurd");
   };
 
-  const backBtn = (label, to) => (
+  // Back button — "list" target hidden on desktop (list panel stays visible)
+  const backBtn = (label, to) => (to === "list" && !isMobile) ? null : (
     <button onClick={() => setView(to)}
       style={{ background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 }}>
       ← {label}
     </button>
   );
 
-  if (view === "verstuurd") {
-    return (
-      <div style={{ textAlign: "center", paddingTop: 32 }}>
-        <div style={{ fontSize: 48, marginBottom: 14 }}>✅</div>
-        <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 8 }}>Proefrit aangevraagd!</div>
-        <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.8, maxWidth: 280, margin: "0 auto" }}>
-          We nemen contact op om de proefrit te bevestigen.
-        </div>
-        <div style={{ ...css.card, marginTop: 20, textAlign: "left" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: T.green }}>{selectedMotor.merk} {selectedMotor.model}</div>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>Gevraagde datum: {fmtDatum(f.datum)}</div>
-        </div>
-        <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => setView("detail")}>← Terug naar motor</button>
-      </div>
-    );
-  }
+  // ── Sub-tab switcher ──
+  const renderSubTabs = (compact = false) => (
+    <div style={{ display:"flex", marginBottom:compact?10:16, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+      {[["motoren","Motoren"],["onderdelen","Onderdelen"],["accessoires","Accessoires"]].map(([id,label]) => (
+        <button key={id}
+          onClick={() => { setSubTab(id); setView("list"); setSelectedMotor(null); setSelectedProduct(null); }}
+          style={{ flex:1, padding:compact?"7px 4px":"10px 0", background:subTab===id?T.accent:"transparent", color:subTab===id?"#fff":T.muted, border:"none", borderRight:id!=="accessoires"?`1px solid ${T.border}`:"none", cursor:"pointer", fontFamily:"Barlow, sans-serif", fontWeight:subTab===id?600:400, fontSize:compact?12:13 }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 
-  if (view === "proefrit") {
+  // ── Compact list card (desktop left panel) ──
+  const renderCompactCard = (item, isMotor) => {
+    const fotos = Array.isArray(item.fotos) ? item.fotos : [];
+    const isVerkocht = isMotor ? !!item.verkocht_op : false;
+    const isSelected = isMotor ? selectedMotor?.id === item.id : selectedProduct?.id === item.id;
     return (
-      <div>
-        {backBtn(`${selectedMotor.merk} ${selectedMotor.model}`, "detail")}
-        <div style={css.card}>
-          <div style={css.sectionTitle}>Jouw gegevens</div>
-          <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Controleer of je gegevens kloppen.</div>
-          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Naam *</label>
-          <input style={{ ...css.input, marginBottom: 10 }} value={f.naam} onChange={e => setF(p => ({ ...p, naam: e.target.value }))} placeholder="Voornaam Achternaam" />
-          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Telefoonnummer *</label>
-          <input style={{ ...css.input, marginBottom: 10 }} type="tel" value={f.telefoon} onChange={e => setF(p => ({ ...p, telefoon: e.target.value }))} placeholder="06-12345678" />
-          <label style={{ fontSize: 11, color: T.muted, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>E-mailadres</label>
-          <input style={{ ...css.input }} type="email" value={f.email} onChange={e => setF(p => ({ ...p, email: e.target.value }))} placeholder="jouw@email.nl" />
-        </div>
-        <div style={css.card}>
-          <div style={css.sectionTitle}>Kies een dag</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {beschikbaar.slice(0, 30).map(d => (
-              <button key={d.datum} onClick={() => setF(p => ({ ...p, datum: d.datum }))}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 6, border: `1px solid ${f.datum === d.datum ? T.green : T.border}`, background: f.datum === d.datum ? `${T.green}15` : "transparent", cursor: "pointer", fontFamily: "Barlow, sans-serif" }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, color: f.datum === d.datum ? T.green : T.text, textTransform: "uppercase", width: 24 }}>{d.dag}</div>
-                  <div style={{ fontSize: 14, color: T.text }}>{fmtDatum(d.datum)}</div>
-                </div>
-                {f.datum === d.datum && <span style={{ ...css.badge(T.green) }}>✓</span>}
-              </button>
-            ))}
+      <div key={item.id}
+        onClick={() => isMotor ? openDetail(item) : (setSelectedProduct(item), setView("productDetail"))}
+        style={{ display:"flex", gap:10, padding:"10px 12px", borderRadius:8, cursor:"pointer", marginBottom:6,
+          background: isSelected ? T.accentSoft : "transparent",
+          border: `1px solid ${isSelected ? T.accent + "60" : T.border}`,
+          opacity: isVerkocht ? 0.7 : 1 }}>
+        {fotos.length > 0 ? (
+          <img src={clImg(fotos[0], 200)} alt=""
+            style={{ width:76, height:58, objectFit:"cover", borderRadius:6, flexShrink:0, filter: isVerkocht ? "grayscale(40%)" : "none" }} />
+        ) : (
+          <div style={{ width:76, height:58, background:T.surf2, borderRadius:6, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:isMotor?18:13 }}>
+            {isMotor ? "🏍" : "📦"}
+          </div>
+        )}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:14, lineHeight:1.2, marginBottom:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+            {isMotor ? `${item.merk} ${item.model}` : item.naam}
+          </div>
+          <div style={{ fontSize:11, color:T.muted, marginBottom:4, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+            {isMotor ? `${item.bouwjaar} · ${item.km?.toLocaleString()} km` : (item.omschrijving || "")}
+          </div>
+          <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:15, color: isVerkocht ? T.muted : T.accent }}>
+            {isMotor
+              ? (isVerkocht ? "Verkocht" : (item.prijs ? `€${item.prijs.toLocaleString()}` : "—"))
+              : (item.prijs != null ? `€${item.prijs.toLocaleString()}` : "Op aanvraag")}
           </div>
         </div>
-        <div style={css.card}>
-          <div style={css.sectionTitle}>Opmerkingen (optioneel)</div>
-          <textarea style={{ ...css.input, height: 70, resize: "none" }}
-            placeholder="Bijv. voorkeur voor ochtend/middag, rijervaring, vragen..."
-            value={f.opmerking} onChange={e => setF(p => ({ ...p, opmerking: e.target.value }))} />
-        </div>
-        <button style={{ ...css.btn, opacity: (!f.datum || !f.naam || !f.telefoon || bezig) ? 0.4 : 1, marginTop: 4 }}
-          onClick={verstuurProefrit} disabled={!f.datum || !f.naam || !f.telefoon || bezig}>
-          {bezig ? "Versturen..." : "Proefrit aanvragen"}
-        </button>
       </div>
     );
-  }
+  };
 
-  if (view === "detail" && selectedMotor) {
-    const fotos = Array.isArray(selectedMotor.fotos) ? selectedMotor.fotos : [];
+  // ── Left panel (desktop) ──
+  const renderLeftPanel = () => {
+    const prodLijst = (subTab === "onderdelen" || subTab === "accessoires")
+      ? producten.filter(p => p.categorie === subTab) : [];
+    return (
+      <div>
+        {renderSubTabs(true)}
+        {subTab === "motoren" && (
+          voorraad.length === 0
+            ? <div style={{ color:T.muted, fontSize:13, textAlign:"center", paddingTop:20 }}>Geen motors in de showroom</div>
+            : voorraad.map(m => renderCompactCard(m, true))
+        )}
+        {(subTab === "onderdelen" || subTab === "accessoires") && (
+          prodLijst.length === 0
+            ? <div style={{ color:T.muted, fontSize:13, textAlign:"center", paddingTop:20 }}>Geen {subTab} beschikbaar</div>
+            : prodLijst.map(p => renderCompactCard(p, false))
+        )}
+      </div>
+    );
+  };
+
+  // ── Motor detail ──
+  const renderDetail = () => {
+    const m = selectedMotor;
+    if (!m) return null;
+    const fotos = Array.isArray(m.fotos) ? m.fotos : [];
     const specs = [
-      ["Bouwjaar", selectedMotor.bouwjaar],
-      ["Kilometerstand", selectedMotor.km ? `${selectedMotor.km.toLocaleString()} km` : "—"],
-      ["Kenteken", selectedMotor.kenteken],
-      ...(selectedMotor.datum_in ? [["In showroom", fmtDatum(selectedMotor.datum_in)]] : []),
-      ...(selectedMotor.voorband_datum ? [["Voorband", selectedMotor.voorband_datum]] : []),
-      ...(selectedMotor.achterband_datum ? [["Achterband", selectedMotor.achterband_datum]] : []),
-    ];
+      ["Bouwjaar", m.bouwjaar],
+      ["Kilometerstand", m.km ? `${m.km.toLocaleString()} km` : "—"],
+      ["Kenteken", m.kenteken],
+      ...(m.datum_in ? [["In showroom", fmtDatum(m.datum_in)]] : []),
+      ...(m.voorband_datum ? [["Voorband", m.voorband_datum]] : []),
+      ...(m.achterband_datum ? [["Achterband", m.achterband_datum]] : []),
+    ].filter(([,v]) => v);
     return (
       <div>
         {backBtn("Terug naar voorraad", "list")}
         {fotos.length > 0 ? (
           <>
-            <div style={{ display: "flex", overflowX: "auto", gap: 8, marginBottom: 6, scrollSnapType: "x mandatory", borderRadius: 10, WebkitOverflowScrolling: "touch" }}>
-              {fotos.map((url, i) => (
-                <img key={i} src={clImg(url, 900)} alt={`${selectedMotor.merk} ${selectedMotor.model}`}
-                  style={{ minWidth: "100%", height: 220, objectFit: "cover", borderRadius: 10, scrollSnapAlign: "start", flexShrink: 0, display: "block" }} />
-              ))}
-            </div>
-            {fotos.length > 1 && (
-              <div style={{ fontSize: 11, color: T.muted, marginBottom: 14, textAlign: "center" }}>
-                Veeg om alle {fotos.length} foto's te zien
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{ height: 140, background: T.surf2, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: T.muted, fontSize: 13, marginBottom: 16 }}>
-            Geen foto beschikbaar
-          </div>
-        )}
-        <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 30, lineHeight: 1, marginBottom: 4 }}>
-          {selectedMotor.merk} {selectedMotor.model}
-        </div>
-        <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 26, color: T.accent, marginBottom: 16 }}>
-          €{selectedMotor.prijs?.toLocaleString()}
-        </div>
-        <div style={css.card}>
-          <div style={css.sectionTitle}>Specificaties</div>
-          {specs.map(([label, val]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 13, color: T.muted }}>{label}</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{val}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ ...css.card, color: T.muted, fontSize: 13, textAlign: "center" }}>
-          Beschrijving en opties volgen binnenkort
-        </div>
-        {!selectedMotor.verkocht_op && (
-          <>
-            <button style={{ ...css.btn, marginTop: 4 }} onClick={openProefrit}>
-              Proefrit aanvragen →
-            </button>
-            <button style={{ ...css.btn, background: T.green, marginTop: 8 }} onClick={() => setView("aanbetaling")}>
-              Aanbetalen — €500
-            </button>
-          </>
-        )}
-        {selectedMotor.verkocht_op && (
-          <div style={{ ...css.card, background: `${T.green}12`, border: `1px solid ${T.green}40`, textAlign:"center", marginTop:8 }}>
-            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:16, color:T.green }}>✓ Verkocht</div>
-            <div style={{ fontSize:13, color:T.muted, marginTop:4, lineHeight:1.6 }}>Deze motor is verkocht. Bekijk ons andere aanbod!</div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (view === "aanbetaling") {
-    const backBtnStyle = { background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 };
-    return (
-      <div>
-        <button onClick={() => setView("detail")} style={backBtnStyle}>← Terug</button>
-        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>AANBETALING</div>
-        <div style={{ ...css.card, marginBottom:16 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedMotor.merk} {selectedMotor.model}</div>
-          {selectedMotor.prijs && <div style={{ fontSize:16, color:T.muted, marginBottom:4 }}>Vraagprijs: € {selectedMotor.prijs.toLocaleString("nl-NL")}</div>}
-        </div>
-        <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
-          <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Reserveer deze motor</div>
-          <div style={{ fontSize:13, color:T.text, lineHeight:1.7, marginBottom:8 }}>
-            Door een aanbetaling van <strong>€500</strong> te doen reserveert u deze motor. Het bedrag wordt verrekend bij aankoop.
-          </div>
-          <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
-            iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om de aanbetaling te regelen.
-          </div>
-          <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
-            Neem contact op
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Product detail view
-  if (view === "productDetail" && selectedProduct) {
-    const fotos = Array.isArray(selectedProduct.fotos) ? selectedProduct.fotos : [];
-    return (
-      <div>
-        <button onClick={() => setView("list")}
-          style={{ background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 }}>
-          ← Terug naar {subTab}
-        </button>
-        {fotos.length > 0 ? (
-          <>
             <div style={{ display:"flex", overflowX:"auto", gap:8, marginBottom:6, scrollSnapType:"x mandatory", borderRadius:10, WebkitOverflowScrolling:"touch" }}>
               {fotos.map((url, i) => (
-                <img key={i} src={clImg(url, 900)} alt={selectedProduct.naam}
-                  style={{ minWidth:"100%", height:220, objectFit:"cover", borderRadius:10, scrollSnapAlign:"start", flexShrink:0, display:"block" }} />
+                <img key={i} src={clImg(url, 900)} alt={`${m.merk} ${m.model}`}
+                  style={{ minWidth: isMobile?"100%":"auto", maxWidth:"100%", height: isMobile?220:260, objectFit:"cover", borderRadius:10, scrollSnapAlign:"start", flexShrink:0, display:"block" }} />
               ))}
             </div>
             {fotos.length > 1 && (
@@ -1676,73 +1600,255 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           </div>
         )}
         <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:30, lineHeight:1, marginBottom:4 }}>
-          {selectedProduct.naam}
+          {m.merk} {m.model}
         </div>
-        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, color:T.accent, marginBottom:16 }}>
-          {selectedProduct.prijs != null ? `€${selectedProduct.prijs.toLocaleString()}` : "Op aanvraag"}
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, color: m.verkocht_op ? T.muted : T.accent, marginBottom:16 }}>
+          {m.verkocht_op ? "Verkocht" : `€${m.prijs?.toLocaleString()}`}
         </div>
-        {selectedProduct.omschrijving && (
-          <div style={{ ...css.card }}>
-            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:13, letterSpacing:2, color:T.muted, textTransform:"uppercase", marginBottom:12 }}>Omschrijving</div>
-            <div style={{ fontSize:14, color:T.text, lineHeight:1.7 }}>{selectedProduct.omschrijving}</div>
-          </div>
-        )}
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Specificaties</div>
+          {specs.map(([label, val]) => (
+            <div key={label} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${T.border}` }}>
+              <div style={{ fontSize:13, color:T.muted }}>{label}</div>
+              <div style={{ fontSize:13, fontWeight:600 }}>{val}</div>
+            </div>
+          ))}
+        </div>
         <div style={{ ...css.card, color:T.muted, fontSize:13, textAlign:"center" }}>
-          Neem contact op voor meer informatie of bestelling
+          Beschrijving en opties volgen binnenkort
         </div>
-        {!selectedProduct.verkocht_op && selectedProduct.actief !== false && (
-          <button style={{ ...css.btn, marginTop:12 }} onClick={() => setView("betalen")}>
-            Kopen — {selectedProduct.prijs ? `€ ${selectedProduct.prijs}` : "Prijs op aanvraag"}
-          </button>
+        {!m.verkocht_op && (
+          <>
+            <button style={{ ...css.btn, marginTop:4 }} onClick={openProefrit}>
+              Proefrit aanvragen →
+            </button>
+            <button style={{ ...css.btn, background:T.green, marginTop:8 }} onClick={() => setView("aanbetaling")}>
+              Aanbetalen — €500
+            </button>
+          </>
+        )}
+        {m.verkocht_op && (
+          <div style={{ ...css.card, background:`${T.green}12`, border:`1px solid ${T.green}40`, textAlign:"center", marginTop:8 }}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:16, color:T.green }}>✓ Verkocht</div>
+            <div style={{ fontSize:13, color:T.muted, marginTop:4, lineHeight:1.6 }}>Deze motor is verkocht. Bekijk ons andere aanbod!</div>
+          </div>
         )}
       </div>
     );
-  }
+  };
 
-  if (view === "betalen") {
-    const backBtnStyle = { background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 };
+  // ── Proefrit form ──
+  const renderProefrit = () => (
+    <div>
+      {backBtn(`${selectedMotor?.merk} ${selectedMotor?.model}`, "detail")}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Jouw gegevens</div>
+        <div style={{ fontSize:12, color:T.muted, marginBottom:10 }}>Controleer of je gegevens kloppen.</div>
+        <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Naam *</label>
+        <input style={{ ...css.input, marginBottom:10 }} value={f.naam} onChange={e => setF(p => ({...p, naam:e.target.value}))} placeholder="Voornaam Achternaam" />
+        <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Telefoonnummer *</label>
+        <input style={{ ...css.input, marginBottom:10 }} type="tel" value={f.telefoon} onChange={e => setF(p => ({...p, telefoon:e.target.value}))} placeholder="06-12345678" />
+        <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>E-mailadres</label>
+        <input style={css.input} type="email" value={f.email} onChange={e => setF(p => ({...p, email:e.target.value}))} placeholder="jouw@email.nl" />
+      </div>
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Kies een dag</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {beschikbaar.slice(0, 30).map(d => (
+            <button key={d.datum} onClick={() => setF(p => ({...p, datum:d.datum}))}
+              style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 14px", borderRadius:6, border:`1px solid ${f.datum===d.datum?T.green:T.border}`, background:f.datum===d.datum?`${T.green}15`:"transparent", cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+              <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+                <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:13, letterSpacing:1, color:f.datum===d.datum?T.green:T.text, textTransform:"uppercase", width:24 }}>{d.dag}</div>
+                <div style={{ fontSize:14, color:T.text }}>{fmtDatum(d.datum)}</div>
+              </div>
+              {f.datum === d.datum && <span style={{ ...css.badge(T.green) }}>✓</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Opmerkingen (optioneel)</div>
+        <textarea style={{ ...css.input, height:70, resize:"none" }}
+          placeholder="Bijv. voorkeur voor ochtend/middag, rijervaring, vragen..."
+          value={f.opmerking} onChange={e => setF(p => ({...p, opmerking:e.target.value}))} />
+      </div>
+      <button style={{ ...css.btn, opacity:(!f.datum||!f.naam||!f.telefoon||bezig)?0.4:1, marginTop:4 }}
+        onClick={verstuurProefrit} disabled={!f.datum||!f.naam||!f.telefoon||bezig}>
+        {bezig ? "Versturen..." : "Proefrit aanvragen"}
+      </button>
+    </div>
+  );
+
+  // ── Verstuurd ──
+  const renderVerstuurd = () => (
+    <div style={{ textAlign:"center", paddingTop:32 }}>
+      <div style={{ fontSize:48, marginBottom:14 }}>✅</div>
+      <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:22, marginBottom:8 }}>Proefrit aangevraagd!</div>
+      <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+        We nemen contact op om de proefrit te bevestigen.
+      </div>
+      <div style={{ ...css.card, marginTop:20, textAlign:"left" }}>
+        <div style={{ fontSize:13, fontWeight:600, color:T.green }}>{selectedMotor?.merk} {selectedMotor?.model}</div>
+        <div style={{ fontSize:12, color:T.muted, marginTop:4 }}>Gevraagde datum: {fmtDatum(f.datum)}</div>
+      </div>
+      <button style={{ ...css.btnGhost, marginTop:12 }} onClick={() => setView("detail")}>← Terug naar motor</button>
+    </div>
+  );
+
+  // ── Aanbetaling ──
+  const renderAanbetaling = () => (
+    <div>
+      <button onClick={() => setView("detail")}
+        style={{ background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 }}>
+        ← Terug naar {selectedMotor?.merk} {selectedMotor?.model}
+      </button>
+      <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>AANBETALING</div>
+      <div style={{ ...css.card, marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedMotor?.merk} {selectedMotor?.model}</div>
+        {selectedMotor?.prijs && <div style={{ fontSize:16, color:T.muted, marginBottom:4 }}>Vraagprijs: € {selectedMotor.prijs.toLocaleString("nl-NL")}</div>}
+      </div>
+      <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
+        <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Reserveer deze motor</div>
+        <div style={{ fontSize:13, color:T.text, lineHeight:1.7, marginBottom:8 }}>
+          Door een aanbetaling van <strong>€500</strong> te doen reserveert u deze motor. Het bedrag wordt verrekend bij aankoop.
+        </div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
+          iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om de aanbetaling te regelen.
+        </div>
+        <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
+          Neem contact op
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Product detail ──
+  const renderProductDetail = () => {
+    const prod = selectedProduct;
+    if (!prod) return null;
+    const fotos = Array.isArray(prod.fotos) ? prod.fotos : [];
     return (
       <div>
-        <button onClick={() => setView("productDetail")} style={backBtnStyle}>← Terug</button>
-        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>BESTELLEN</div>
-        <div style={{ ...css.card, marginBottom:16 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedProduct.naam}</div>
-          {selectedProduct.prijs && <div style={{ fontSize:20, fontWeight:700, color:T.accent, marginBottom:8 }}>€ {selectedProduct.prijs}</div>}
-          {selectedProduct.omschrijving && <div style={{ fontSize:13, color:T.muted }}>{selectedProduct.omschrijving}</div>}
+        {backBtn(`Terug naar ${subTab}`, "list")}
+        {fotos.length > 0 ? (
+          <>
+            <div style={{ display:"flex", overflowX:"auto", gap:8, marginBottom:6, scrollSnapType:"x mandatory", borderRadius:10, WebkitOverflowScrolling:"touch" }}>
+              {fotos.map((url, i) => (
+                <img key={i} src={clImg(url, 900)} alt={prod.naam}
+                  style={{ minWidth: isMobile?"100%":"auto", maxWidth:"100%", height: isMobile?220:260, objectFit:"cover", borderRadius:10, scrollSnapAlign:"start", flexShrink:0, display:"block" }} />
+              ))}
+            </div>
+            {fotos.length > 1 && <div style={{ fontSize:11, color:T.muted, marginBottom:14, textAlign:"center" }}>Veeg om alle {fotos.length} foto's te zien</div>}
+          </>
+        ) : (
+          <div style={{ height:140, background:T.surf2, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13, marginBottom:16 }}>Geen foto beschikbaar</div>
+        )}
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:30, lineHeight:1, marginBottom:4 }}>{prod.naam}</div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:26, color:T.accent, marginBottom:16 }}>
+          {prod.prijs != null ? `€${prod.prijs.toLocaleString()}` : "Op aanvraag"}
         </div>
-        <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
-          <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Betalen via iDEAL</div>
-          <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
-            iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om dit product te reserveren.
+        {prod.omschrijving && (
+          <div style={css.card}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:13, letterSpacing:2, color:T.muted, textTransform:"uppercase", marginBottom:12 }}>Omschrijving</div>
+            <div style={{ fontSize:14, color:T.text, lineHeight:1.7 }}>{prod.omschrijving}</div>
           </div>
-          <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
-            Neem contact op
+        )}
+        <div style={{ ...css.card, color:T.muted, fontSize:13, textAlign:"center" }}>Neem contact op voor meer informatie of bestelling</div>
+        {!prod.verkocht_op && prod.actief !== false && (
+          <button style={{ ...css.btn, marginTop:12 }} onClick={() => setView("betalen")}>
+            Kopen — {prod.prijs ? `€ ${prod.prijs}` : "Prijs op aanvraag"}
           </button>
+        )}
+      </div>
+    );
+  };
+
+  // ── Betalen ──
+  const renderBetalen = () => (
+    <div>
+      <button onClick={() => setView("productDetail")}
+        style={{ background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 }}>
+        ← Terug naar {selectedProduct?.naam}
+      </button>
+      <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>BESTELLEN</div>
+      <div style={{ ...css.card, marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedProduct?.naam}</div>
+        {selectedProduct?.prijs && <div style={{ fontSize:20, fontWeight:700, color:T.accent, marginBottom:8 }}>€ {selectedProduct.prijs}</div>}
+        {selectedProduct?.omschrijving && <div style={{ fontSize:13, color:T.muted }}>{selectedProduct.omschrijving}</div>}
+      </div>
+      <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
+        <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Betalen via iDEAL</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
+          iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om dit product te reserveren.
+        </div>
+        <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
+          Neem contact op
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Desktop right-panel content ──
+  const renderRightContent = () => {
+    if (view === "verstuurd" && selectedMotor) return renderVerstuurd();
+    if (view === "proefrit" && selectedMotor) return renderProefrit();
+    if (view === "aanbetaling" && selectedMotor) return renderAanbetaling();
+    if (view === "betalen" && selectedProduct) return renderBetalen();
+    if (view === "productDetail" && selectedProduct) return renderProductDetail();
+    if ((view === "detail" || view === "proefrit" || view === "verstuurd" || view === "aanbetaling") && selectedMotor) return renderDetail();
+    if (selectedProduct) return renderProductDetail();
+    // Empty state
+    return (
+      <div style={{ textAlign:"center", paddingTop:60, color:T.muted }}>
+        <div style={{ fontSize:40, marginBottom:12 }}>🏍</div>
+        <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:8 }}>Kies een motor</div>
+        <div style={{ fontSize:14, lineHeight:1.7 }}>Selecteer een motor links om de details te bekijken.</div>
+      </div>
+    );
+  };
+
+  // ── Desktop: split layout ──
+  if (!isMobile) {
+    return (
+      <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
+        {/* Left: sticky motor list */}
+        <div style={{
+          width:300, flexShrink:0,
+          position:"sticky", top:0,
+          maxHeight:"calc(100vh - 130px)",
+          overflowY:"auto",
+          borderRight:`1px solid ${T.border}`,
+          paddingRight:16,
+          marginRight:20,
+        }}>
+          {renderLeftPanel()}
+        </div>
+        {/* Right: detail / form */}
+        <div style={{ flex:1, minWidth:0 }}>
+          {renderRightContent()}
         </div>
       </div>
     );
   }
 
-  // Main list view (with sub-tab switcher)
+  // ── Mobile: single-column views ──
+  if (view === "verstuurd") return renderVerstuurd();
+  if (view === "proefrit") return renderProefrit();
+  if (view === "aanbetaling") return renderAanbetaling();
+  if (view === "betalen") return renderBetalen();
+  if (view === "productDetail" && selectedProduct) return renderProductDetail();
+  if (view === "detail" && selectedMotor) return renderDetail();
+
+  // Mobile: main list
   return (
     <div>
-      {/* Tab switcher */}
-      <div style={{ display:"flex", gap:0, marginBottom:16, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
-        {[["motoren","Motoren"],["onderdelen","Onderdelen"],["accessoires","Accessoires"]].map(([id,label]) => (
-          <button key={id} onClick={() => { setSubTab(id); if(id !== "motoren") setView("list"); }}
-            style={{ flex:1, padding:"10px 0", background:subTab===id?T.accent:"transparent", color:subTab===id?"#fff":T.muted, border:"none", borderRight:id!=="accessoires"?`1px solid ${T.border}`:"none", cursor:"pointer", fontFamily:"Barlow, sans-serif", fontWeight:subTab===id?600:400, fontSize:13 }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Motoren lijst */}
+      {renderSubTabs()}
       {subTab === "motoren" && (
         <>
           <div style={{ fontSize:14, color:T.muted, marginBottom:16, lineHeight:1.6 }}>
             Bekijk ons huidige aanbod en vraag direct een proefrit aan.
           </div>
-          {voorraad.filter(m=>!m.verkocht_op).length === 0 && voorraad.length === 0 ? (
+          {voorraad.filter(m => !m.verkocht_op).length === 0 && voorraad.length === 0 ? (
             <div style={{ textAlign:"center", color:T.muted, fontSize:14, marginTop:40 }}>
               Momenteel geen motors beschikbaar in de showroom.
             </div>
@@ -1784,8 +1890,6 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           })}
         </>
       )}
-
-      {/* Onderdelen / Accessoires lijst */}
       {(subTab === "onderdelen" || subTab === "accessoires") && (() => {
         const prodLijst = producten.filter(p => p.categorie === subTab);
         if (prodLijst.length === 0) {
