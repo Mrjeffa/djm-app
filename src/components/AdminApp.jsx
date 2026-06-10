@@ -51,6 +51,7 @@ const WSTART = 540; const WEND = 1020; // 09:00 - 17:00
 const MIDI_MIN = 780; // 13:00 — middag begint na lunch (12-13)
 const TODAY = new Date().toISOString().split("T")[0];
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
+const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
 // ── Cloudinary ──────────────────────────────────────────────────────────────
@@ -2189,7 +2190,11 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {aanvragen.map(a=>(
                 <div key={a.id} style={{...s.card,padding:"12px 14px",border:`1px solid ${T.yellow}35`,background:`${T.yellow}08`}}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>{a.klant||"Onbekende klant"} · {a.datum}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                    {a.type&&TYPE_LABEL[a.type]&&<span style={{...s.badge(T.accent),fontSize:10,fontWeight:700}}>{TYPE_LABEL[a.type]}</span>}
+                    <span style={{fontSize:13,fontWeight:600}}>{a.klant||"Onbekende klant"}</span>
+                    <span style={{fontSize:12,color:T.muted}}>· {a.datum}</span>
+                  </div>
                   {(a.opmerking||a.omschrijving)&&<div style={{fontSize:12,color:T.muted,marginBottom:8}}>{a.opmerking||a.omschrijving}</div>}
                   <div style={{display:"flex",gap:8}}>
                     <button style={{...s.btn,flex:1,padding:"8px"}} onClick={()=>setEditAfspraak(a)}>Inplannen</button>
@@ -2333,6 +2338,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                     <span style={{...s.badge(T.yellow),fontSize:10}}>Aanvraag</span>
+                    {a.type&&TYPE_LABEL[a.type]&&<span style={{...s.badge(T.accent),fontSize:10,fontWeight:700}}>{TYPE_LABEL[a.type]}</span>}
                     <span style={{fontSize:13,fontWeight:600}}>{a.klant||"Onbekende klant"}</span>
                     <span style={{fontSize:12,color:T.muted}}>· {a.datum}</span>
                   </div>
