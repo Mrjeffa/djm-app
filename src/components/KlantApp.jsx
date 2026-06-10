@@ -617,9 +617,11 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     setFotoBezig(false);
   };
 
+  const SOORTEN_MET_MOTOR = ["schade", "consignatie", "winterstalling", "seizoenscheck"];
   const stuur = async (soort) => {
     setBezig(true); setFout(null);
     const data = { ...f };
+    if (SOORTEN_MET_MOTOR.includes(soort) && !data.motor_id && motoren.length > 0) data.motor_id = motoren[0].id;
     if (soort === "winterstalling" && winOpts.length > 0) data.extra_opties = winOpts.join(", ");
     if (fotos.length > 0) data.fotos = fotos;
     const err = onVerzendAanvraag ? await onVerzendAanvraag(soort, data) : null;
