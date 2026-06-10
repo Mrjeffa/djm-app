@@ -1329,6 +1329,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
 
 function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[]}){
   const isMobile=useIsMobile();
+  const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("alle");
   const [sel,setSel]=useState(null);
@@ -1338,6 +1339,15 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   const geenAccount=klanten.filter(k=>!k.user_id);
   const inAfwachting=klanten.filter(k=>k.status==="in_afwachting");
 
+  // Alle klant-ingevoerde servicemeldingen, nieuwste eerst
+  const meldingen = klanten.flatMap(k =>
+    (k.motoren||[]).flatMap(m =>
+      (m.service||[]).filter(sv => sv.klant_invoer).map(sv => ({
+        ...sv, klantId:k.id, klantNaam:k.naam, motorLabel:`${m.merk} ${m.model}`, kenteken:m.kenteken, motorId:m.id,
+      }))
+    )
+  ).sort((a,b) => (b.datum||"").localeCompare(a.datum||""));
+
   const filtered=klanten.filter(k=>{
     const matchSearch=k.naam.toLowerCase().includes(search.toLowerCase())||
       (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()));
@@ -1345,6 +1355,41 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
     return matchSearch&&matchFilter;
   });
   const klant=sel?klanten.find(k=>k.id===sel):null;
+
+  const tabBar=(
+    <div style={{display:"flex",gap:0,marginBottom:12,background:T.surf2,borderRadius:6,padding:2,border:`1px solid ${T.border}`}}>
+      {[["klanten","Klanten"],["meldingen",`Meldingen${meldingen.length>0?` (${meldingen.length})`:""}`]].map(([id,lbl])=>(
+        <button key={id} onClick={()=>setPageTab(id)}
+          style={{flex:1,padding:"7px 10px",borderRadius:4,border:"none",background:pageTab===id?T.surf:"transparent",color:pageTab===id?T.text:T.muted,fontSize:12,fontWeight:pageTab===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif",boxShadow:pageTab===id?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
+          {lbl}
+        </button>
+      ))}
+    </div>
+  );
+
+  const meldingenPanel=(
+    <div style={{display:"flex",flexDirection:"column",gap:0}}>
+      {meldingen.length===0?(
+        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Nog geen klantmeldingen</div>
+      ):meldingen.map((sv,i)=>(
+        <div key={sv.id||i} onClick={()=>{setSel(sv.klantId);setPageTab("klanten");}}
+          style={{padding:"12px 14px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:6,marginBottom:6,cursor:"pointer",transition:"border-color 0.1s"}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+          onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{sv.klantNaam}</div>
+            <div style={{fontSize:11,color:T.muted,whiteSpace:"nowrap",marginLeft:8}}>{sv.datum}</div>
+          </div>
+          <div style={{fontSize:11,color:T.muted,marginBottom:6}}>{sv.motorLabel} · {sv.kenteken}</div>
+          <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{sv.omschrijving}</div>
+          {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>bij {sv.km.toLocaleString()} km</div>}
+          <div style={{display:"flex",gap:6,marginTop:sv.interval_gereset?6:0}}>
+            {sv.interval_gereset&&<span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   const listPanel=(
     <div style={{display:"flex",flexDirection:"column",gap:8,height:"100%"}}>
@@ -1382,7 +1427,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   if(isMobile){
     return(
       <div>
-        {sel&&klant?(
+        {sel&&klant&&pageTab==="klanten"?(
           <KlantDetail
             klant={klant}
             onUpdateKlant={onUpdateKlant}
@@ -1396,7 +1441,12 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
             isMobile={true}/>
-        ):listPanel}
+        ):(
+          <div>
+            {tabBar}
+            {pageTab==="klanten" ? listPanel : meldingenPanel}
+          </div>
+        )}
         {modal==="addKlant"&&<KlantModal onSave={onAddKlant} onClose={()=>setModal(null)} voorraad={voorraad}/>}
         {uitnodigKlant&&<UitnodigingModal klant={uitnodigKlant} onClose={()=>setUitnodigKlant(null)}/>}
       </div>
@@ -1404,27 +1454,34 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   }
 
   return(
-    <div style={{display:"flex",gap:18,height:"100%"}}>
-      <div style={{width:300,flexShrink:0}}>{listPanel}</div>
-      <div style={{flex:1,overflowY:"auto"}}>
-        {!klant?(
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,color:T.muted,fontSize:13}}>← Selecteer een klant</div>
-        ):(
-          <KlantDetail
-            klant={klant}
-            onUpdateKlant={onUpdateKlant}
-            onAddMotor={onAddMotor}
-            onAddService={onAddService}
-            onUpdateService={onUpdateService}
-            onDeleteService={onDeleteService}
-            onDeleteKlant={onDeleteKlant}
-            onUpdateMotorInterval={onUpdateMotorInterval}
-            onUpdateMotor={onUpdateMotor}
-            onUitnodig={setUitnodigKlant}
-            onBack={()=>setSel(null)}
-            isMobile={false}/>
-        )}
-      </div>
+    <div style={{display:"flex",flexDirection:"column",gap:0,height:"100%"}}>
+      <div style={{flexShrink:0,marginBottom:4}}>{tabBar}</div>
+      {pageTab==="meldingen"?(
+        <div style={{flex:1,overflowY:"auto"}}>{meldingenPanel}</div>
+      ):(
+        <div style={{display:"flex",gap:18,flex:1,overflow:"hidden"}}>
+          <div style={{width:300,flexShrink:0,overflowY:"auto"}}>{listPanel}</div>
+          <div style={{flex:1,overflowY:"auto"}}>
+            {!klant?(
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,color:T.muted,fontSize:13}}>← Selecteer een klant</div>
+            ):(
+              <KlantDetail
+                klant={klant}
+                onUpdateKlant={onUpdateKlant}
+                onAddMotor={onAddMotor}
+                onAddService={onAddService}
+                onUpdateService={onUpdateService}
+                onDeleteService={onDeleteService}
+                onDeleteKlant={onDeleteKlant}
+                onUpdateMotorInterval={onUpdateMotorInterval}
+                onUpdateMotor={onUpdateMotor}
+                onUitnodig={setUitnodigKlant}
+                onBack={()=>setSel(null)}
+                isMobile={false}/>
+            )}
+          </div>
+        </div>
+      )}
       {modal==="addKlant"&&<KlantModal onSave={onAddKlant} onClose={()=>setModal(null)} voorraad={voorraad}/>}
       {uitnodigKlant&&<UitnodigingModal klant={uitnodigKlant} onClose={()=>setUitnodigKlant(null)}/>}
     </div>
