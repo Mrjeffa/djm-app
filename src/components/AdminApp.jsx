@@ -1351,18 +1351,20 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
               )}
               {motor.bijzonderheden&&<div style={{fontSize:12,color:T.muted,marginTop:3,fontStyle:"italic"}}>{motor.bijzonderheden}</div>}
             </div>
-            <div style={{position:"relative",flexShrink:0}}>
-              <button style={{...s.btnGhost,width:34,height:34,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,letterSpacing:0}} onClick={()=>setMotorMenuId(v=>v===motor.id?null:motor.id)}>⋯</button>
-              {motorMenuId===motor.id&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMotorMenuId(null)}/>}
-              {motorMenuId===motor.id&&(
-                <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:160,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
-                  <button onClick={()=>{setEditMotorItem(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
-                  <button onClick={()=>{setSelMotorId(motor.id);setModal("addService");setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>+ Service</button>
-                  <button onClick={()=>{setInruilConfirmId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Inruilen →</button>
-                  <div style={{height:1,background:T.border}}/>
-                  <button onClick={()=>{setDelMotorId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
-                </div>
-              )}
+            <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+              <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
+              <div style={{position:"relative"}}>
+                <button style={{...s.btnGhost,width:34,height:34,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,letterSpacing:0}} onClick={()=>setMotorMenuId(v=>v===motor.id?null:motor.id)}>⋯</button>
+                {motorMenuId===motor.id&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMotorMenuId(null)}/>}
+                {motorMenuId===motor.id&&(
+                  <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:160,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
+                    <button onClick={()=>{setEditMotorItem(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
+                    <button onClick={()=>{setInruilConfirmId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Inruilen →</button>
+                    <div style={{height:1,background:T.border}}/>
+                    <button onClick={()=>{setDelMotorId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           {/* Inruil bevestiging */}
