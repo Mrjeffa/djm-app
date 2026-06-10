@@ -691,7 +691,7 @@ const SOORT_DUUR = {
   "Voorband vervangen":1,"Achterband vervangen":1,"Beide banden vervangen":2,"Ketting en tandwielen vervangen":2,"Vering aanpassen of vervangen":2,
   "Remmen vervangen/controleren":1,"Remvloeistof vervangen":1,
   "Diagnose bij storingen":1,"Elektrische problemen oplossen":2,"Accu vervangen":1,
-  "Schadeherstel":3,"Verzekeringsschade opnemen":1,"Aankoopkeuring":1,"Rijklaar maken":2,"Taxatie of technische inspectie":1,
+  "Schade inspectie":1,"Schade rapport":2,"Schadeherstel":3,"Verzekeringsschade opnemen":1,"Aankoopkeuring":1,"Rijklaar maken":2,"Taxatie of technische inspectie":1,
   "Accessoires monteren":1,"Motor afstellen of synchroniseren":2,"Anders":1,
 };
 const SOORT_GROEPEN = [
@@ -699,7 +699,7 @@ const SOORT_GROEPEN = [
   {label:"Banden & Aandrijving",items:["Voorband vervangen","Achterband vervangen","Beide banden vervangen","Ketting en tandwielen vervangen","Vering aanpassen of vervangen"]},
   {label:"Remmen & Hydraulica",items:["Remmen vervangen/controleren","Remvloeistof vervangen"]},
   {label:"Elektrisch & Diagnose",items:["Diagnose bij storingen","Elektrische problemen oplossen","Accu vervangen"]},
-  {label:"Schade & Keuring",items:["Schadeherstel","Verzekeringsschade opnemen","Aankoopkeuring","Rijklaar maken","Taxatie of technische inspectie"]},
+  {label:"Schade & Keuring",items:["Schade inspectie","Schade rapport","Schadeherstel","Verzekeringsschade opnemen","Aankoopkeuring","Rijklaar maken","Taxatie of technische inspectie"]},
   {label:"Overig",items:["Accessoires monteren","Motor afstellen of synchroniseren","Anders"]},
 ];
 
@@ -722,6 +722,8 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
   const [adres,setAdres]=useState({adres:"",postcode:"",woonplaats:""});
   // Gemeenschappelijk
   const [soorten,setSoorten]=useState(new Set());
+  const [openGroepen,setOpenGroepen]=useState(new Set());
+  const toggleGroep=(label)=>setOpenGroepen(prev=>{const n=new Set(prev);n.has(label)?n.delete(label):n.add(label);return n;});
   const toggleSoort=(opt)=>{
     setSoorten(prev=>{
       const next=new Set(prev);
@@ -871,27 +873,43 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
         </Field>
       ))}
       <Field label="Soort afspraak (meerdere mogelijk)">
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {SOORT_GROEPEN.map(g=>(
-            <div key={g.label}>
-              <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5}}>{g.label}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                {g.items.map(opt=>{
-                  const sel=soorten.has(opt);
-                  return(
-                    <button key={opt} onClick={()=>toggleSoort(opt)}
-                      style={{padding:"5px 11px",borderRadius:4,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400,transition:"all 0.1s"}}>
-                      {opt}{SOORT_DUUR[opt]>1?` · ${SOORT_DUUR[opt]}u`:""}
-                    </button>
-                  );
-                })}
+        <div style={{fontSize:11,color:T.muted,marginBottom:8,fontStyle:"italic"}}>Tijden zijn schattingen en kunnen in werkelijkheid afwijken.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:5}}>
+          {SOORT_GROEPEN.map(g=>{
+            const open=openGroepen.has(g.label);
+            const geselecteerd=g.items.filter(i=>soorten.has(i));
+            const heeftSel=geselecteerd.length>0;
+            return(
+              <div key={g.label} style={{border:`1px solid ${heeftSel?T.accent:T.border}`,borderRadius:6,overflow:"hidden"}}>
+                <button onClick={()=>toggleGroep(g.label)}
+                  style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:heeftSel?`${T.accent}10`:T.surf2,border:"none",cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:13,fontWeight:heeftSel?600:400,color:heeftSel?T.accent:T.text}}>{g.label}</span>
+                    {heeftSel&&<span style={{...s.badge(T.accent),fontSize:10}}>{geselecteerd.length} geselecteerd</span>}
+                  </div>
+                  <span style={{fontSize:11,color:T.muted,display:"inline-block",transform:open?"rotate(180deg)":"none",transition:"transform 0.15s"}}>{open?"▲":"▼"}</span>
+                </button>
+                {open&&(
+                  <div style={{padding:"10px 12px",display:"flex",flexWrap:"wrap",gap:5,borderTop:`1px solid ${T.border}`,background:T.surf}}>
+                    {g.items.map(opt=>{
+                      const sel=soorten.has(opt);
+                      return(
+                        <button key={opt} onClick={()=>toggleSoort(opt)}
+                          style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.text,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400,transition:"all 0.1s"}}>
+                          {opt}{SOORT_DUUR[opt]>1?` · ${SOORT_DUUR[opt]}u`:" · 1u"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {soorten.size>0&&(
-          <div style={{marginTop:8,fontSize:12,color:T.accent,fontWeight:500}}>
-            Geschatte duur: {Math.min([...soorten].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),8)}u
+          <div style={{marginTop:10,fontSize:12,color:T.accent,fontWeight:600,padding:"8px 10px",background:`${T.accent}10`,borderRadius:4}}>
+            Geschatte totale duur: {Math.min([...soorten].reduce((s,o)=>s+(SOORT_DUUR[o]||1),0),8)}u
+            <span style={{fontWeight:400,color:T.muted}}> (max. 8u per dag)</span>
           </div>
         )}
       </Field>
@@ -1074,8 +1092,9 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
                 <div style={{background:T.accent,color:"#fff",padding:"3px 8px",borderRadius:3,fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd}</div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
-                  {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString()} km`:""}</div>}
-                  <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving} · {a.duur}u</div>
+                  {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString("nl-NL")} km`:""}</div>}
+                  {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{a.soort}</div>}
+                  <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{a.omschrijving?` · ${a.omschrijving}`:""}</div>
                 </div>
               </div>
             );
@@ -1093,8 +1112,9 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
-                    {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString()} km`:""}</div>}
-                    <div style={{fontSize:12,color:T.muted,marginTop:2}}>{a.omschrijving}</div>
+                    {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString("nl-NL")} km`:""}</div>}
+                    {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{a.soort}</div>}
+                    {a.omschrijving&&<div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.omschrijving}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
                     <div style={{fontSize:12,color:T.accent}}>{fmtDate(a.datum)}</div>
@@ -2174,13 +2194,14 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             {dayApts.map(a=>{
               const kleur=a.type==="proefrit"?T.green:T.accent;
               const naam=a.type==="proefrit"?(a.naam||a.klant):a.klant;
-              const sub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):(a.omschrijving||a.opmerking||"");
+              const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):null;
               return(
                 <div key={a.id} onClick={()=>setEditAfspraak(a)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
                   <div style={{background:kleur,color:"#fff",padding:"4px 8px",borderRadius:3,fontSize:13,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd||"—"}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:14,fontWeight:600}}>{naam}</div>
-                    <div style={{fontSize:12,color:T.muted,marginTop:2}}>{sub} · {a.duur}u</div>
+                    {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.soort}</div>}
+                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{motorSub?` · ${motorSub}`:(a.omschrijving?` · ${a.omschrijving}`:"")}</div>
                   </div>
                 </div>
               );
@@ -2327,7 +2348,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                         transition:"opacity 0.1s"}}>
                       <div style={{fontSize:11,fontWeight:700,color:kleur}}>{a.tijd}</div>
                       <div style={{fontSize:10,color:T.text,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayNaam}</div>
-                      {height>8&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u · {displaySub}</div>}
+                      {height>8&&a.soort&&<div style={{fontSize:10,color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.soort}</div>}
+                      {height>8&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u{!a.soort&&displaySub?` · ${displaySub}`:""}</div>}
                     </div>
                   );
                 })}
