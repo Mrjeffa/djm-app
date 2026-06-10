@@ -2104,6 +2104,12 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
   // Splits geplande vs aangevraagde afspraken
   const geplandAfspraken=afspraken.filter(a=>a.status!=="aangevraagd");
   const aanvragen=afspraken.filter(a=>a.status==="aangevraagd").sort((a,b)=>a.datum.localeCompare(b.datum));
+  const getMotorInfo=(motorId)=>{
+    const motor=(klanten||[]).flatMap(k=>k.motoren||[]).find(m=>m.id===motorId);
+    if(!motor) return {label:null,km:null,kenteken:null};
+    const lastKm=(motor.kmHistory||[]).slice().sort((x,y)=>x.datum.localeCompare(y.datum)).pop()?.km||null;
+    return {label:[motor.merk,motor.model].filter(Boolean).join(" ")||null,km:lastKm,kenteken:motor.kenteken||null};
+  };
   const weekDates=getWeekDates(weekBase);
   const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
   const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
