@@ -1036,9 +1036,9 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
 
   const getMotorInfo = (motorId) => {
     const motor = klanten.flatMap(k=>k.motoren||[]).find(m=>m.id===motorId);
-    if(!motor) return {label:null,km:null};
+    if(!motor) return {label:null,km:null,kenteken:null};
     const lastKm = (motor.kmHistory||[]).slice().sort((x,y)=>x.datum.localeCompare(y.datum)).pop()?.km||null;
-    return {label:[motor.merk,motor.model].filter(Boolean).join(" ")||null, km:lastKm};
+    return {label:[motor.merk,motor.model].filter(Boolean).join(" ")||null, km:lastKm, kenteken:motor.kenteken||null};
   };
 
   return(
@@ -2188,20 +2188,30 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
               Aanvragen ({aanvragen.length})
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {aanvragen.map(a=>(
+              {aanvragen.map(a=>{
+                const mi=a.motor_id?getMotorInfo(a.motor_id):{label:null,km:null,kenteken:null};
+                return(
                 <div key={a.id} style={{...s.card,padding:"12px 14px",border:`1px solid ${T.yellow}35`,background:`${T.yellow}08`}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
                     {a.type&&TYPE_LABEL[a.type]&&<span style={{...s.badge(T.accent),fontSize:10,fontWeight:700}}>{TYPE_LABEL[a.type]}</span>}
                     <span style={{fontSize:13,fontWeight:600}}>{a.klant||"Onbekende klant"}</span>
                     <span style={{fontSize:12,color:T.muted}}>· {a.datum}</span>
                   </div>
+                  {(mi.label||mi.kenteken)&&(
+                    <div style={{fontSize:12,color:T.text,marginBottom:4,display:"flex",gap:8,alignItems:"center"}}>
+                      <span>🏍️</span>
+                      <span>{[mi.label,mi.kenteken].filter(Boolean).join(" — ")}</span>
+                      {mi.km&&<span style={{color:T.muted}}>· {mi.km.toLocaleString("nl-NL")} km</span>}
+                    </div>
+                  )}
                   {(a.opmerking||a.omschrijving)&&<div style={{fontSize:12,color:T.muted,marginBottom:8}}>{a.opmerking||a.omschrijving}</div>}
                   <div style={{display:"flex",gap:8}}>
                     <button style={{...s.btn,flex:1,padding:"8px"}} onClick={()=>setEditAfspraak(a)}>Inplannen</button>
                     <button style={{...s.btn,flex:1,padding:"8px",background:T.red}} onClick={()=>onDeleteAfspraak(a.id)}>Afwijzen</button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2333,7 +2343,9 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             <span style={{...s.badge(T.yellow),fontSize:11}}>{aanvragen.length}</span>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {aanvragen.map(a=>(
+            {aanvragen.map(a=>{
+              const mi=a.motor_id?getMotorInfo(a.motor_id):{label:null,km:null,kenteken:null};
+              return(
               <div key={a.id} style={{...s.card,display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",border:`1px solid ${T.yellow}35`,background:`${T.yellow}08`}}>
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -2342,6 +2354,13 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                     <span style={{fontSize:13,fontWeight:600}}>{a.klant||"Onbekende klant"}</span>
                     <span style={{fontSize:12,color:T.muted}}>· {a.datum}</span>
                   </div>
+                  {(mi.label||mi.kenteken)&&(
+                    <div style={{fontSize:12,color:T.text,marginBottom:3,display:"flex",gap:8,alignItems:"center"}}>
+                      <span>🏍️</span>
+                      <span>{[mi.label,mi.kenteken].filter(Boolean).join(" — ")}</span>
+                      {mi.km&&<span style={{color:T.muted}}>· {mi.km.toLocaleString("nl-NL")} km</span>}
+                    </div>
+                  )}
                   {(a.opmerking||a.omschrijving)&&(
                     <div style={{fontSize:12,color:T.muted}}>{a.opmerking||a.omschrijving}</div>
                   )}
@@ -2355,7 +2374,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
