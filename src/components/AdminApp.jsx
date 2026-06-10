@@ -12,9 +12,9 @@ const useIsMobile = () => {
 };
 
 const T = {
-  bg: "#080808", surf: "#111111", surf2: "#1A1A1A", border: "#252525",
-  accent: "#E8520A", text: "#EEEBE6", muted: "#666660",
-  green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
+  bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2", border: "#E0E0E0",
+  accent: "#E31E24", text: "#1A1A1A", muted: "#767676",
+  green: "#16A34A", yellow: "#D97706", red: "#DC2626",
 };
 
 const s = {
@@ -89,8 +89,8 @@ const bandStatus = (jaren) => {
   if(jaren === null) return null;
   if(jaren >= 10) return { kleur: T.red,    icon: "✕", label: "vervangen!" };
   if(jaren >= 8)  return { kleur: T.red,    icon: "⚠", label: `${jaren.toFixed(1)} jr` };
-  if(jaren >= 5)  return { kleur: "#F59E0B", icon: "⚠", label: `${jaren.toFixed(1)} jr` };
-  return               { kleur: "#22C55E",  icon: "✓", label: `${jaren.toFixed(1)} jr` };
+  if(jaren >= 5)  return { kleur: T.yellow,  icon: "⚠", label: `${jaren.toFixed(1)} jr` };
+  return               { kleur: T.green,   icon: "✓", label: `${jaren.toFixed(1)} jr` };
 };
 
 const getWeekDates = base => {

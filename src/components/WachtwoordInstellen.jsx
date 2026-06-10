@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const T = { bg:'#0E0E0E', surf:'#161616', border:'#2A2A2A', accent:'#E8520A', text:'#F0ECE6', muted:'#666660', red:'#EF4444', green:'#22C55E' }
+const T = { bg:'#F8F8F8', surf:'#FFFFFF', border:'#E0E0E0', accent:'#E31E24', text:'#1A1A1A', muted:'#767676', red:'#DC2626', green:'#16A34A' }
 
 export default function WachtwoordInstellen({ onKlaar }) {
   const [wachtwoord, setWachtwoord] = useState('')
@@ -42,10 +42,10 @@ export default function WachtwoordInstellen({ onKlaar }) {
               <div style={{ fontSize:13, color:T.muted, marginBottom:20, lineHeight:1.6 }}>
                 Kies een wachtwoord voor je account. Minimaal 8 tekens.
               </div>
-              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
+              <input style={{ width:'100%', background:'#F2F2F2', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:'#1A1A1A', fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
                 type="password" placeholder="Nieuw wachtwoord"
                 value={wachtwoord} onChange={e=>setWachtwoord(e.target.value)}/>
-              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
+              <input style={{ width:'100%', background:'#F2F2F2', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:'#1A1A1A', fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
                 type="password" placeholder="Herhaal wachtwoord"
                 value={herhaal} onChange={e=>setHerhaal(e.target.value)}
                 onKeyDown={e=>e.key==='Enter'&&slaOp()}/>

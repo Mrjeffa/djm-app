@@ -3,9 +3,9 @@ import { supabase, uitloggen } from "../lib/supabase.js";
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 const T = {
-  bg: "#0E0E0E", surf: "#161616", surf2: "#1E1E1E", surf3: "#242424",
-  border: "#2A2A2A", accent: "#E8520A", accentSoft: "#E8520A22",
-  text: "#F0ECE6", muted: "#666660", green: "#22C55E", yellow: "#F59E0B", red: "#EF4444",
+  bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2", surf3: "#EBEBEB",
+  border: "#E0E0E0", accent: "#E31E24", accentSoft: "#E31E2418",
+  text: "#1A1A1A", muted: "#767676", green: "#16A34A", yellow: "#D97706", red: "#DC2626",
 };
 
 // ── Utils ──────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ function MotorSelector({ motoren, selected, onSelect }) {
         <select value={selected} onChange={e => onSelect(e.target.value)}
           style={{ width: "100%", background: T.surf2, border: `1px solid ${T.accent}50`, borderRadius: 8, padding: "11px 40px 11px 14px", color: T.text, fontSize: 15, fontFamily: "Barlow, sans-serif", fontWeight: 600, outline: "none", appearance: "none", WebkitAppearance: "none", cursor: "pointer" }}>
           {motoren.map(m => (
-            <option key={m.id} value={m.id} style={{ background: "#1E1E1E" }}>
+            <option key={m.id} value={m.id} style={{ background: "#FFFFFF" }}>
               {m.merk} {m.model} · {m.kenteken}
             </option>
           ))}
