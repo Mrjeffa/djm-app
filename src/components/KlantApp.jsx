@@ -569,7 +569,269 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
   );
 }
 
-function Contact({ openingstijden, geslotenDagen, opmerking }) {
+function Contact({ openingstijden, geslotenDagen, opmerking, klant = {}, motoren = [], dienstenTarieven = {}, onVerzendAanvraag }) {
+  const [view, setView] = useState(null);
+  const [f, setF] = useState({});
+  const [winOpts, setWinOpts] = useState([]);
+  const [bezig, setBezig] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [fout, setFout] = useState(null);
+
+  const p = (key) => dienstenTarieven[key] ? `€ ${Number(dienstenTarieven[key]).toLocaleString("nl-NL")}` : "Op aanvraag";
+  const setFld = (key, val) => setF(prev => ({ ...prev, [key]: val }));
+  const openView = (id) => { setView(id); setF({}); setWinOpts([]); setOk(false); setFout(null); };
+
+  const stuur = async (soort) => {
+    setBezig(true); setFout(null);
+    const data = { ...f };
+    if (soort === "winterstalling" && winOpts.length > 0) data.extra_opties = winOpts.join(", ");
+    const err = onVerzendAanvraag ? await onVerzendAanvraag(soort, data) : null;
+    setBezig(false);
+    if (err) { setFout(err); return; }
+    setOk(true);
+    setTimeout(() => { setOk(false); setView(null); }, 2500);
+  };
+
+  const backBtn = (
+    <button onClick={() => setView(null)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:13, padding:"0 0 16px", fontFamily:"Barlow, sans-serif" }}>
+      ← Terug naar Contact
+    </button>
+  );
+
+  const verzendKnop = (soort, label = "Aanvraag versturen") => (
+    <button
+      disabled={bezig || ok}
+      onClick={() => stuur(soort)}
+      style={{ ...css.btn, background: ok ? T.green : T.accent, marginTop: 12, opacity: bezig ? 0.6 : 1 }}>
+      {ok ? "✓ Aanvraag verstuurd!" : bezig ? "Bezig..." : label}
+    </button>
+  );
+
+  const stappenLijst = (stappen) => (
+    <div style={{ ...css.card, marginBottom: 16 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Stap voor stap</div>
+      {stappen.map((tekst, i) => (
+        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: i < stappen.length - 1 ? 10 : 0 }}>
+          <div style={{ width: 24, height: 24, borderRadius: "50%", background: T.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.7, color: T.text }}>{tekst}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const tarievenRij = (rijen) => (
+    <div style={{ ...css.card, marginBottom: 16 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Tarieven</div>
+      {rijen.map((r, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < rijen.length - 1 ? `1px solid ${T.border}` : "none" }}>
+          <span style={{ fontSize: 13, color: T.text }}>{r.lbl}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{p(r.key)}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const motorSelect = (
+    motoren.length > 0 ? (
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Motor</label>
+        <select style={css.input} value={f.motor_id || motoren[0]?.id || ""} onChange={e => setFld("motor_id", e.target.value)}>
+          {motoren.map(m => <option key={m.id} value={m.id}>{m.merk} {m.model}{m.kenteken ? ` (${m.kenteken})` : ""}</option>)}
+        </select>
+      </div>
+    ) : null
+  );
+
+  // ── Schade ──────────────────────────────────────────────────────────────
+  if (view === "schade") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>SCHADE</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Heeft u schade? Wij helpen u snel en vakkundig verder.</div>
+      {stappenLijst([
+        "Maak duidelijke foto's van de schade",
+        "Plan een afspraak via onderstaand formulier",
+        "Breng uw motor langs voor een schade-inspectie",
+        "Wij geven u een kostenraming en plannen de reparatie",
+      ])}
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Gewenste datum</label>
+        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Omschrijving schade</label>
+        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Beschrijf de schade kort..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("schade", "Afspraak aanvragen")}
+      </div>
+    </div>
+  );
+
+  // ── Consignatie ──────────────────────────────────────────────────────────
+  if (view === "consignatie") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>CONSIGNATIE</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Wij verkopen uw motor voor u. U rijdt hem in — wij doen de rest.</div>
+      {tarievenRij([
+        { lbl: "Week 1–4", key: "consignatie_w1_4" },
+        { lbl: "Week 5–12 (verlenging)", key: "consignatie_w5_12" },
+        { lbl: "Week 13–26 (verlenging)", key: "consignatie_w13_26" },
+        { lbl: "Extra platform per 4 weken", key: "consignatie_platform" },
+      ])}
+      {stappenLijst([
+        "U rijdt uw motor langs voor een waardebepaling",
+        "Wij plaatsen uw motor in onze showroom en online",
+        "Wij regelen de bezichtigingen en onderhandelingen",
+        "Na verkoop wordt het bedrag met u verrekend",
+      ])}
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Gewenste datum</label>
+        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
+        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw vraagprijs..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("consignatie", "Afspraak aanvragen")}
+      </div>
+    </div>
+  );
+
+  // ── Aankoopkeuring ───────────────────────────────────────────────────────
+  if (view === "aankoopkeuring") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>AANKOOPKEURING</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Laat een tweedehands motor keuren vóór aankoop. Wij rijden naar de verkoper toe.</div>
+      {tarievenRij([
+        { lbl: "Basis (incl. 20 min enkele reis)", key: "aankoopkeuring_basis" },
+        { lbl: "Per extra 10 min rijden", key: "aankoopkeuring_extra_10min" },
+      ])}
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Keuring aanvragen</div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Locatie van de motor</label>
+        <input style={css.input} value={f.locatie || ""} onChange={e => setFld("locatie", e.target.value)} placeholder="Stad of adres van de verkoper"/>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Gewenste datum</label>
+        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Notities</label>
+        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. merk, model en uw opmerkingen..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("aankoopkeuring")}
+      </div>
+    </div>
+  );
+
+  // ── Zoekopdracht ─────────────────────────────────────────────────────────
+  if (view === "zoekopdracht") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>ZOEKOPDRACHT</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Wij zoeken voor u de perfecte motor. Geef uw wensen op — wij regelen de rest.</div>
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 8px" }}>
+          <span style={{ fontSize: 13 }}>Bemiddelingskosten</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{p("zoekopdracht_bemiddeling")}</span>
+        </div>
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Alleen in rekening gebracht bij een succesvolle aankoop.</div>
+      </div>
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Uw zoekopdracht</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Merk</label>
+            <input style={{ ...css.input, marginBottom: 0 }} value={f.merk || ""} onChange={e => setFld("merk", e.target.value)} placeholder="Bijv. Honda"/>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Model</label>
+            <input style={{ ...css.input, marginBottom: 0 }} value={f.model || ""} onChange={e => setFld("model", e.target.value)} placeholder="Bijv. CB500F"/>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Bouwjaar (v.a.)</label>
+            <input style={{ ...css.input, marginBottom: 0 }} type="number" value={f.bouwjaar || ""} onChange={e => setFld("bouwjaar", e.target.value)} placeholder="2015"/>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Max km-stand</label>
+            <input style={{ ...css.input, marginBottom: 0 }} type="number" value={f.km || ""} onChange={e => setFld("km", e.target.value)} placeholder="30000"/>
+          </div>
+        </div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Budget (max)</label>
+        <div style={{ position: "relative", marginBottom: 10 }}>
+          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 13, pointerEvents: "none" }}>€</span>
+          <input style={{ ...css.input, paddingLeft: 28 }} type="number" value={f.budget || ""} onChange={e => setFld("budget", e.target.value)} placeholder="5000"/>
+        </div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4 }}>Overige wensen</label>
+        <textarea style={{ ...css.input, height: 80, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Bijv. kleur, type, vermogen..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("zoekopdracht")}
+      </div>
+    </div>
+  );
+
+  // ── Winterstalling ───────────────────────────────────────────────────────
+  if (view === "winterstalling") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>WINTERSTALLING</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Stall uw motor veilig en droog op bij ons. Inclusief optionele onderhoudsdiensten.</div>
+      {tarievenRij([
+        { lbl: "6 maanden (okt–mrt)", key: "winterstalling_6mnd" },
+        { lbl: "Per extra maand", key: "winterstalling_extra_mnd" },
+        { lbl: "Kleine onderhoudsbeurt", key: "winterstalling_kleine_beurt" },
+        { lbl: "Grote onderhoudsbeurt", key: "winterstalling_grote_beurt" },
+        { lbl: "Bandenwisselen (voor + achter)", key: "winterstalling_banden" },
+        { lbl: "Poetsen & bescherming", key: "winterstalling_poetsen" },
+      ])}
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Aanmelden voor winterstalling</div>
+        {motorSelect}
+        <div style={{ marginTop: 6 }}>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Extra opties</div>
+          {[
+            { id: "kleine_beurt", lbl: "Kleine onderhoudsbeurt" },
+            { id: "grote_beurt", lbl: "Grote onderhoudsbeurt" },
+            { id: "banden", lbl: "Bandenwisselen (voor + achter)" },
+            { id: "poetsen", lbl: "Poetsen & bescherming" },
+          ].map(opt => (
+            <label key={opt.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+              <input type="checkbox" checked={winOpts.includes(opt.id)} onChange={e => setWinOpts(prev => e.target.checked ? [...prev, opt.id] : prev.filter(o => o !== opt.id))} style={{ accentColor: T.accent, width: 16, height: 16 }}/>
+              <span style={{ fontSize: 13 }}>{opt.lbl}</span>
+            </label>
+          ))}
+        </div>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
+        <textarea style={{ ...css.input, height: 60, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("winterstalling", "Aanmelden winterstalling")}
+      </div>
+    </div>
+  );
+
+  // ── Seizoensklaarmaak ────────────────────────────────────────────────────
+  if (view === "seizoensklaarmaak") return (
+    <div>
+      {backBtn}
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>SEIZOENSKLAARMAAK</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Klaar voor het nieuwe seizoen? Wij maken uw motor rijklaar.</div>
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 8px" }}>
+          <span style={{ fontSize: 13 }}>Seizoensklaarmaak</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{p("seizoensklaarmaak")}</span>
+        </div>
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Inclusief vloeistoffen, accu, banden en algemene controle.</div>
+      </div>
+      <div style={css.card}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Afspraak aanvragen</div>
+        {motorSelect}
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: motoren.length > 0 ? 10 : 0 }}>Gewenste datum</label>
+        <input style={css.input} type="date" value={f.datum || ""} onChange={e => setFld("datum", e.target.value)} min={TODAY}/>
+        <label style={{ fontSize: 12, color: T.muted, display: "block", marginBottom: 4, marginTop: 10 }}>Opmerkingen</label>
+        <textarea style={{ ...css.input, height: 60, resize: "vertical" }} value={f.opmerking || ""} onChange={e => setFld("opmerking", e.target.value)} placeholder="Eventuele opmerkingen..."/>
+        {fout && <div style={{ color: T.red, fontSize: 12, marginTop: 8 }}>{fout}</div>}
+        {verzendKnop("seizoensklaarmaak")}
+      </div>
+    </div>
+  );
+
+  // ── Hoofdview ────────────────────────────────────────────────────────────
   return (
     <div>
       {opmerking ? (
@@ -601,6 +863,30 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
           <div style={{ marginLeft: "auto", color: T.muted, fontSize: 16 }}>→</div>
         </a>
       ))}
+
+      {/* Overige diensten */}
+      <div style={{ marginTop: 20, marginBottom: 20 }}>
+        <div style={css.sectionTitle}>Overige diensten</div>
+        {[
+          { id: "schade",           icon: "🔧", label: "Schade",            sub: "Reparatie & inspectie" },
+          { id: "consignatie",      icon: "🏷", label: "Consignatie",       sub: "Wij verkopen uw motor" },
+          { id: "aankoopkeuring",   icon: "🔍", label: "Aankoopkeuring",    sub: "Keuring vóór aankoop" },
+          { id: "zoekopdracht",     icon: "🔎", label: "Zoekopdracht",      sub: "Wij zoeken uw motor" },
+          { id: "winterstalling",   icon: "❄️",  label: "Winterstalling",    sub: "Veilig stallen" },
+          { id: "seizoensklaarmaak",icon: "☀️",  label: "Seizoensklaarmaak", sub: "Motor rijklaar maken" },
+        ].map(svc => (
+          <button key={svc.id} onClick={() => openView(svc.id)}
+            style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "Barlow, sans-serif", color: T.text }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${T.accent}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{svc.icon}</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{svc.label}</div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{svc.sub}</div>
+            </div>
+            <div style={{ marginLeft: "auto", color: T.muted, fontSize: 16 }}>→</div>
+          </button>
+        ))}
+      </div>
+
       <WeekKalender openingstijden={openingstijden} geslotenDagen={geslotenDagen} />
     </div>
   );
@@ -1258,6 +1544,7 @@ export default function KlantApp({ userId }) {
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
+  const [dienstenTarieven, setDienstenTarieven] = useState({});
   const [voorraad, setVooraad] = useState([]);
   const [producten, setProducten] = useState([]);
   const [laden, setLaden] = useState(true);
@@ -1277,7 +1564,7 @@ export default function KlantApp({ userId }) {
         const [klantRes, afsprakenRes, instRes, userRes] = await Promise.all([
           supabase.from("klanten").select("*").eq("user_id", userId).single(),
           supabase.from("afspraken").select("datum").gte("datum", TODAY),
-          supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single(),
+          supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven").single(),
           supabase.auth.getUser(),
         ]);
 
@@ -1306,6 +1593,7 @@ export default function KlantApp({ userId }) {
         setBezetteDagen([...(afsprakenRes.data||[]).map(a => a.datum), ...gesloten]);
         if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
         if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
+        if (inst?.diensten_tarieven) setDienstenTarieven(inst.diensten_tarieven);
 
         // Motoren ophalen (heeft klant_id nodig)
         const { data: motorenData } = await supabase
@@ -1479,6 +1767,34 @@ export default function KlantApp({ userId }) {
     return null;
   };
 
+  const verzendDienstAanvraag = async (soort, data) => {
+    const { datum, motor_id, opmerking: opm, ...extra } = data;
+    const lines = [];
+    if (extra.locatie) lines.push(`Locatie: ${extra.locatie}`);
+    if (extra.merk) lines.push(`Merk: ${extra.merk}`);
+    if (extra.model) lines.push(`Model: ${extra.model}`);
+    if (extra.bouwjaar) lines.push(`Bouwjaar v.a.: ${extra.bouwjaar}`);
+    if (extra.km) lines.push(`Max km-stand: ${extra.km}`);
+    if (extra.budget) lines.push(`Budget: € ${extra.budget}`);
+    if (extra.extra_opties) lines.push(`Opties: ${extra.extra_opties}`);
+    const fullOpmerking = [opm, ...lines].filter(Boolean).join("\n");
+    const { error } = await supabase.from("afspraken").insert({
+      klant_id: klant.id,
+      motor_id: motor_id || null,
+      datum: datum || TODAY,
+      naam: klant.naam,
+      telefoon: klant.telefoon || null,
+      email: klant.email || null,
+      opmerking: fullOpmerking || "",
+      status: "aangevraagd",
+      type: soort,
+      duur: 1,
+    });
+    if (error) return error.message;
+    if (datum) setBezetteDagen(prev => [...prev, datum]);
+    return null;
+  };
+
   const nav = [
     { id: "motor",    icon: "◧", label: "Motor"    },
     { id: "service",  icon: "◉", label: "Service"  },
@@ -1603,7 +1919,7 @@ export default function KlantApp({ userId }) {
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
-            {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
+            {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
             {tab === "instellingen" && (
               <Instellingen
                 klant={klant} motoren={gesorteerdMotoren}
@@ -1664,6 +1980,7 @@ export default function KlantApp({ userId }) {
             onVoegMotorToe={voegMotorToeVanKlant}
             onVerwijderMotor={verwijderMotor}
             onWijzigWachtwoord={wijzigWachtwoord}
+            onUpdateBanden={updateMotorBanden}
           />
         )}
       </div>

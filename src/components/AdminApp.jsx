@@ -2387,7 +2387,7 @@ const DEFAULT_TIJDEN = {
   zo:{open:"",sluit:"",gesloten:true}
 };
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -2395,6 +2395,11 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   useEffect(()=>{ setOpmTekst(opmerking); },[opmerking]);
   const [periodeVan,setPeriodeVan]=useState("");
   const [periodeTot,setPeriodeTot]=useState("");
+  const [tarieven,setTarieven]=useState(dienstenTarieven);
+  const [tarievenOk,setTarievenOk]=useState(false);
+  useEffect(()=>setTarieven(dienstenTarieven),[dienstenTarieven]);
+  const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
+  const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
 
   useEffect(()=>{ if(openingstijden) setTijden(openingstijden); },[openingstijden]);
 
@@ -2514,6 +2519,59 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
           </div>
         </div>
       </div>
+
+      {/* Diensten tarieven */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={s.sectionLabel}>Diensten tarieven</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Prijzen zichtbaar voor klanten in de app. Laat leeg om "op aanvraag" te tonen.</div>
+        {[
+          {label:"Winterstalling",velden:[
+            {key:"winterstalling_6mnd",lbl:"6 maanden (okt–mrt)"},
+            {key:"winterstalling_extra_mnd",lbl:"Per extra maand"},
+            {key:"winterstalling_kleine_beurt",lbl:"Kleine onderhoudsbeurt"},
+            {key:"winterstalling_grote_beurt",lbl:"Grote onderhoudsbeurt"},
+            {key:"winterstalling_banden",lbl:"Bandenwisselen (voor + achter)"},
+            {key:"winterstalling_poetsen",lbl:"Poetsen & bescherming"},
+          ]},
+          {label:"Seizoensklaarmaak",velden:[{key:"seizoensklaarmaak",lbl:"Vast tarief"}]},
+          {label:"Aankoopkeuring",velden:[
+            {key:"aankoopkeuring_basis",lbl:"Basis (incl. 20 min enkele reis)"},
+            {key:"aankoopkeuring_extra_10min",lbl:"Per extra 10 min rijden"},
+          ]},
+          {label:"Consignatie",velden:[
+            {key:"consignatie_w1_4",lbl:"Week 1–4"},
+            {key:"consignatie_w5_12",lbl:"Week 5–12 (verlenging)"},
+            {key:"consignatie_w13_26",lbl:"Week 13–26 (verlenging)"},
+            {key:"consignatie_platform",lbl:"Extra platform per 4 weken"},
+          ]},
+          {label:"Zoekopdracht",velden:[{key:"zoekopdracht_bemiddeling",lbl:"Bemiddelingskosten"}]},
+        ].map(sectie=>(
+          <div key={sectie.label} style={{marginBottom:16,paddingBottom:16,borderBottom:`1px solid ${T.border}`}}>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:T.text}}>{sectie.label}</div>
+            {sectie.velden.map(veld=>(
+              <div key={veld.key} style={{display:"grid",gridTemplateColumns:"1fr 130px",gap:8,alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:12,color:T.muted}}>{veld.lbl}</span>
+                <div style={{position:"relative"}}>
+                  <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:T.muted}}>€</span>
+                  <input
+                    style={{...s.input,marginBottom:0,paddingLeft:22,fontSize:13}}
+                    type="number"
+                    min="0"
+                    placeholder="op aanvraag"
+                    value={tarieven[veld.key]||""}
+                    onChange={e=>setT(veld.key,e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+          <button style={{...s.btn,background:tarievenOk?T.green:T.accent,width:"auto",padding:"9px 20px"}} onClick={slaaTarievenOp}>
+            {tarievenOk?"✓ Opgeslagen!":"Opslaan"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2581,10 +2639,11 @@ export default function AdminApp(){
         }));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
+        if(inst.data?.diensten_tarieven) setDienstenTarieven(inst.data.diensten_tarieven);
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -2978,6 +3037,7 @@ export default function AdminApp(){
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
   const [opmerking, setOpmerking] = useState("");
+  const [dienstenTarieven, setDienstenTarieven] = useState({});
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
@@ -2989,6 +3049,12 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("instellingen").update({ opmerking: tekst }).eq("id", 1);
     setOpmerking(tekst);
+  };
+
+  const slaDienstenTarievenOp = async (tarieven) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ diensten_tarieven: tarieven }).eq("id", 1);
+    setDienstenTarieven(tarieven);
   };
 
   // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten
@@ -3063,7 +3129,7 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp}/>}
     </>
   );
 
