@@ -1504,7 +1504,6 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:18 }}>{motor.merk} {motor.model}</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, alignItems:"center", marginTop:4 }}>
-              <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:3, fontSize:12, fontWeight:700, background:`${T.yellow}15`, color:T.text, border:`1px solid ${T.yellow}70`, fontFamily:"Barlow Condensed, sans-serif", letterSpacing:1 }}>{motor.kenteken}</span>
               {isGereserveerd && <span style={{ ...css.badge(T.yellow) }}>Gereserveerd</span>}
               {isVerkocht && <span style={{ ...css.badge(T.green) }}>Verkocht</span>}
             </div>
@@ -1514,7 +1513,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           </div>
         </div>
         <div style={{ fontSize:12, color:T.muted, lineHeight:1.8 }}>
-          {motor.bouwjaar} · {motor.km?.toLocaleString()} km · Binnen: {motor.datum_in}
+          {motor.bouwjaar} · {motor.km?.toLocaleString()} km
         </div>
       </div>
     );
@@ -1564,7 +1563,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           onClick={e => { if (e.target === e.currentTarget) { setDetailMotor(null); setLichtbakFoto(null); }}}>
           <div style={{ background:T.surf, borderRadius:10, maxWidth:640, width:"100%", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
             <button onClick={() => setDetailMotor(null)}
-              style={{ position:"absolute", top:12, right:14, background:"none", border:"none", color:T.muted, fontSize:22, cursor:"pointer", zIndex:1, lineHeight:1, padding:4 }}>✕</button>
+              style={{ position:"absolute", top:10, right:10, background:"rgba(0,0,0,0.55)", border:"none", color:"#fff", fontSize:18, cursor:"pointer", zIndex:2, lineHeight:1, width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             {fotos.length > 0 ? (
               <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 0", scrollbarWidth:"none" }}>
                 {fotos.map((url, i) => (
@@ -1710,7 +1709,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
           onClick={e => { if (e.target === e.currentTarget) { setDetailProduct(null); setLichtbakFoto(null); }}}>
           <div style={{ background:T.surf, borderRadius:10, maxWidth:620, width:"100%", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
-            <button onClick={() => setDetailProduct(null)} style={{ position:"absolute", top:12, right:14, background:"none", border:"none", color:T.muted, fontSize:22, cursor:"pointer", zIndex:1, lineHeight:1, padding:4 }}>✕</button>
+            <button onClick={() => setDetailProduct(null)} style={{ position:"absolute", top:10, right:10, background:"rgba(0,0,0,0.55)", border:"none", color:"#fff", fontSize:18, cursor:"pointer", zIndex:2, lineHeight:1, width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             {fotos.length > 0 ? (
               <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 0", scrollbarWidth:"none" }}>
                 {fotos.map((url, i) => (
