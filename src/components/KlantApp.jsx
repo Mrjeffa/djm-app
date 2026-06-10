@@ -119,11 +119,13 @@ function MotorSelector({ motoren, selected, onSelect }) {
 }
 
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
-function MijnMotor({ motoren, selMotorId, onSelMotor, onUpdateBanden }) {
+function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
-  const [editBanden, setEditBanden] = useState(false);
-  const [bandenF, setBandenF] = useState({ voorband_maat:"", achterband_maat:"", bijzonderheden:"" });
-  const [bandenBezig, setBandenBezig] = useState(false);
+  const [eigenOpen, setEigenOpen] = useState(false);
+  const [eigenF, setEigenF] = useState({ datum: TODAY, omschrijving: "", km: "" });
+  const [eigenBezig, setEigenBezig] = useState(false);
+  const [eigenOk, setEigenOk] = useState(false);
+  const [eigenFout, setEigenFout] = useState(null);
 
   if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
 
@@ -226,25 +228,39 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onUpdateBanden }) {
         </div>
       )}
       <div style={{ marginTop:8 }}>
-        {!editBanden ? (
-          <button onClick={() => { setEditBanden(true); setBandenF({voorband_maat:motor.voorband_maat||"",achterband_maat:motor.achterband_maat||"",bijzonderheden:motor.bijzonderheden||""}); }}
+        {!eigenOpen ? (
+          <button onClick={() => { setEigenOpen(true); setEigenF({ datum:TODAY, omschrijving:"", km:"" }); setEigenFout(null); setEigenOk(false); }}
             style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"8px 16px", fontSize:13, color:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", width:"100%" }}>
-            ✏ Bandenmaat / bijzonderheden bijwerken
+            + Eigen werkzaamheden invoeren
           </button>
         ) : (
           <div style={css.card}>
-            <div style={css.sectionTitle}>Bandenmaat & bijzonderheden bijwerken</div>
-            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat voorband</label>
-            <input style={{ ...css.input, marginBottom:10 }} value={bandenF.voorband_maat} onChange={e=>setBandenF(p=>({...p,voorband_maat:e.target.value}))} placeholder="120/70 ZR17"/>
-            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat achterband</label>
-            <input style={{ ...css.input, marginBottom:10 }} value={bandenF.achterband_maat} onChange={e=>setBandenF(p=>({...p,achterband_maat:e.target.value}))} placeholder="180/55 ZR17"/>
-            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Bijzonderheden</label>
-            <textarea style={{ ...css.input, height:70, resize:"none", marginBottom:12 }} value={bandenF.bijzonderheden} onChange={e=>setBandenF(p=>({...p,bijzonderheden:e.target.value}))} placeholder="Originele onderdelen, modificaties, aandachtspunten..."/>
+            <div style={css.sectionTitle}>Eigen werkzaamheden invoeren</div>
+            <div style={{ fontSize:12, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
+              Zelf olie ververst, of ergens anders iets laten doen? Voer het hier in zodat je servicehistorie compleet blijft.
+            </div>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Datum</label>
+            <input type="date" style={{ ...css.input, marginBottom:10 }} value={eigenF.datum} onChange={e=>setEigenF(p=>({...p,datum:e.target.value}))}/>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Omschrijving</label>
+            <textarea style={{ ...css.input, height:70, resize:"none", marginBottom:10 }} value={eigenF.omschrijving} onChange={e=>setEigenF(p=>({...p,omschrijving:e.target.value}))} placeholder="bijv. Olie en filter vervangen, rem vloeistof bijgevuld..."/>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Kilometerstand</label>
+            <input type="number" style={{ ...css.input, marginBottom:12 }} value={eigenF.km} onChange={e=>setEigenF(p=>({...p,km:e.target.value}))} placeholder="bijv. 23500"/>
+            {eigenFout && <div style={{ fontSize:12, color:T.red, marginBottom:10 }}>{eigenFout}</div>}
+            {eigenOk && <div style={{ fontSize:12, color:T.green, marginBottom:10, fontWeight:600 }}>✓ Werkzaamheden opgeslagen!</div>}
             <div style={{ display:"flex", gap:8 }}>
-              <button style={{ ...css.btn, flex:1, opacity:bandenBezig?0.5:1 }} onClick={async()=>{ setBandenBezig(true); await onUpdateBanden(motor.id,bandenF); setBandenBezig(false); setEditBanden(false); }} disabled={bandenBezig}>
-                {bandenBezig?"Opslaan...":"Opslaan"}
+              <button style={{ ...css.btn, flex:1, opacity:eigenBezig?0.5:1 }} disabled={eigenBezig} onClick={async()=>{
+                if (!eigenF.omschrijving.trim()) { setEigenFout("Voer een omschrijving in."); return; }
+                setEigenBezig(true); setEigenFout(null);
+                const err = await onVoegServiceToe(motor.id, eigenF);
+                setEigenBezig(false);
+                if (err) { setEigenFout(err); return; }
+                setEigenOk(true);
+                setEigenF({ datum:TODAY, omschrijving:"", km:"" });
+                setTimeout(() => { setEigenOk(false); setEigenOpen(false); }, 2000);
+              }}>
+                {eigenBezig ? "Opslaan..." : "Opslaan"}
               </button>
-              <button style={{ ...css.btnGhost }} onClick={()=>setEditBanden(false)}>Annuleer</button>
+              <button style={{ ...css.btnGhost }} onClick={() => setEigenOpen(false)}>Annuleer</button>
             </div>
           </div>
         )}
@@ -538,7 +554,7 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
 }
 
 // ── Scherm: Instellingen ───────────────────────────────────────────────────
-function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord }) {
+function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden }) {
   const [profiel, setProfiel] = useState({
     naam: klant.naam || "", telefoon: klant.telefoon || "",
     adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
@@ -564,6 +580,13 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   const [verwijderBevestigId, setVerwijderBevestigId] = useState(null);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
   const [verwijderFout, setVerwijderFout] = useState(null);
+
+  const [menuMotorId, setMenuMotorId] = useState(null);
+  const [wijzigMotorId, setWijzigMotorId] = useState(null);
+  const [wijzigF, setWijzigF] = useState({ voorband_maat:"", achterband_maat:"", bijzonderheden:"" });
+  const [wijzigBezig, setWijzigBezig] = useState(false);
+  const [wijzigOk, setWijzigOk] = useState(false);
+  const [wijzigFout, setWijzigFout] = useState(null);
 
   const slaProfielOp = async () => {
     setProfielBezig(true); setProfielFout(null);
@@ -691,10 +714,50 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
                   style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", padding: "4px 2px", lineHeight: 1, color: m.id === hoofdMotorId ? T.accent : T.muted, opacity: m.id === hoofdMotorId ? 1 : 0.5 }}>
                   {m.id === hoofdMotorId ? "★" : "☆"}
                 </button>
-                <button onClick={() => { setVerwijderBevestigId(verwijderBevestigId === m.id ? null : m.id); setVerwijderFout(null); }}
-                  style={{ background: "none", border: "none", color: verwijderBevestigId === m.id ? T.red : T.muted, fontSize: 16, cursor: "pointer", padding: "4px 2px", lineHeight: 1 }}>🗑</button>
+                <div style={{ position:"relative" }}>
+                  <button onClick={() => setMenuMotorId(menuMotorId === m.id ? null : m.id)}
+                    style={{ background:"none", border:"none", color:T.muted, fontSize:20, cursor:"pointer", padding:"4px 6px", lineHeight:1, fontWeight:700, letterSpacing:1 }}>⋮</button>
+                  {menuMotorId === m.id && (
+                    <div style={{ position:"absolute", right:0, top:"100%", background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, boxShadow:"0 4px 16px rgba(0,0,0,0.12)", zIndex:100, minWidth:140, overflow:"hidden" }}>
+                      <button onClick={() => { setMenuMotorId(null); setWijzigMotorId(m.id); setWijzigF({ voorband_maat:m.voorband_maat||"", achterband_maat:m.achterband_maat||"", bijzonderheden:m.bijzonderheden||"" }); setWijzigOk(false); setWijzigFout(null); }}
+                        style={{ display:"block", width:"100%", padding:"11px 16px", background:"none", border:"none", textAlign:"left", fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", color:T.text, borderBottom:`1px solid ${T.border}` }}>
+                        Wijzigen
+                      </button>
+                      <button onClick={() => { setMenuMotorId(null); setVerwijderBevestigId(verwijderBevestigId === m.id ? null : m.id); setVerwijderFout(null); }}
+                        style={{ display:"block", width:"100%", padding:"11px 16px", background:"none", border:"none", textAlign:"left", fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", color:T.red }}>
+                        Verwijderen
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+            {wijzigMotorId === m.id && (
+              <div style={{ background:T.surf2, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 12px", margin:"6px 0 8px" }}>
+                <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:12 }}>Bandenmaat & bijzonderheden</div>
+                <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat voorband</label>
+                <input style={{ ...css.input, marginBottom:10 }} value={wijzigF.voorband_maat} onChange={e=>setWijzigF(p=>({...p,voorband_maat:e.target.value}))} placeholder="120/70 ZR17"/>
+                <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat achterband</label>
+                <input style={{ ...css.input, marginBottom:10 }} value={wijzigF.achterband_maat} onChange={e=>setWijzigF(p=>({...p,achterband_maat:e.target.value}))} placeholder="180/55 ZR17"/>
+                <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Bijzonderheden</label>
+                <textarea style={{ ...css.input, height:64, resize:"none", marginBottom:12 }} value={wijzigF.bijzonderheden} onChange={e=>setWijzigF(p=>({...p,bijzonderheden:e.target.value}))} placeholder="Modificaties, aandachtspunten..."/>
+                {wijzigFout && <div style={{ fontSize:12, color:T.red, marginBottom:8 }}>{wijzigFout}</div>}
+                {wijzigOk && <div style={{ fontSize:12, color:T.green, marginBottom:8, fontWeight:600 }}>✓ Opgeslagen!</div>}
+                <div style={{ display:"flex", gap:8 }}>
+                  <button style={{ ...css.btn, flex:1, opacity:wijzigBezig?0.5:1 }} disabled={wijzigBezig} onClick={async()=>{
+                    setWijzigBezig(true); setWijzigFout(null);
+                    const err = await onUpdateBanden(m.id, wijzigF);
+                    setWijzigBezig(false);
+                    if (err) { setWijzigFout(err); return; }
+                    setWijzigOk(true);
+                    setTimeout(() => { setWijzigOk(false); setWijzigMotorId(null); }, 1500);
+                  }}>
+                    {wijzigBezig ? "Opslaan..." : "Opslaan"}
+                  </button>
+                  <button style={{ ...css.btnGhost }} onClick={() => setWijzigMotorId(null)}>Annuleer</button>
+                </div>
+              </div>
+            )}
             {verwijderBevestigId === m.id && (
               <div style={{ background: `${T.red}12`, border: `1px solid ${T.red}35`, borderRadius: 6, padding: "10px 12px", margin: "6px 0 8px" }}>
                 <div style={{ fontSize: 13, color: T.red, marginBottom: 8, fontWeight: 600 }}>{m.merk} {m.model} verwijderen?</div>
@@ -1318,6 +1381,22 @@ export default function KlantApp({ userId }) {
     return error?.message || null;
   };
 
+  const voegEigenServiceToe = async (motorId, data) => {
+    const { error } = await supabase.from("service_beurten").insert({
+      motor_id: motorId,
+      datum: data.datum,
+      omschrijving: data.omschrijving,
+      km: data.km ? parseInt(data.km) : null,
+    });
+    if (!error) {
+      setMotoren(prev => prev.map(m => m.id === motorId ? {
+        ...m,
+        service: [...(m.service || []), { datum: data.datum, omschrijving: data.omschrijving, km: data.km ? parseInt(data.km) : null }]
+      } : m));
+    }
+    return error?.message || null;
+  };
+
   const nav = [
     { id: "motor",    icon: "◧", label: "Motor"    },
     { id: "service",  icon: "◉", label: "Service"  },
@@ -1438,7 +1517,7 @@ export default function KlantApp({ userId }) {
           </div>
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
-            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onUpdateBanden={updateMotorBanden}/>}
+            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
@@ -1452,6 +1531,7 @@ export default function KlantApp({ userId }) {
                 onVoegMotorToe={voegMotorToeVanKlant}
                 onVerwijderMotor={verwijderMotor}
                 onWijzigWachtwoord={wijzigWachtwoord}
+                onUpdateBanden={updateMotorBanden}
               />
             )}
           </div>
@@ -1488,7 +1568,7 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onUpdateBanden={updateMotorBanden}/>}
+        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
