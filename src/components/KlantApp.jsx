@@ -911,14 +911,14 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
   if (view === "seizoensklaarmaak") return (
     <div>
       {backBtn}
-      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>SEIZOENSKLAARMAAK</div>
+      <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>SEIZOENSCHECK</div>
       <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Klaar voor het nieuwe seizoen? Wij maken uw motor rijklaar.</div>
       <div style={{ ...css.card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 8px" }}>
-          <span style={{ fontSize: 13 }}>Seizoensklaarmaak</span>
+          <span style={{ fontSize: 13 }}>Seizoenscheck</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{p("seizoensklaarmaak")}</span>
         </div>
-        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Inclusief vloeistoffen, accu, banden en algemene controle.</div>
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Wij checken vloeistoffen, accu, banden en algemene controle. (let op: dit is alleen een controle en geven advies, geen vervanging)</div>
       </div>
       <div style={css.card}>
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Afspraak aanvragen</div>
@@ -974,7 +974,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
           { id: "aankoopkeuring",    icon: "🔍", label: "Aankoopkeuring",     sub: "Keuring vóór aankoop" },
           { id: "zoekopdracht",      icon: "🔎", label: "Zoekopdracht",       sub: "Wij zoeken uw motor" },
           { id: "winterstalling",    icon: "❄️", label: "Winterstalling",     sub: "Veilig stallen" },
-          { id: "seizoensklaarmaak", icon: "☀️", label: "Seizoensklaarmaak",  sub: "Motor rijklaar maken" },
+          { id: "seizoensklaarmaak", icon: "☀️", label: "Seizoenscheck",  sub: "Motor rijklaar maken" },
         ].map(svc => (
           <button key={svc.id} onClick={() => openView(svc.id)}
             style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "Barlow, sans-serif", color: T.text }}>
