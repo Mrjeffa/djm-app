@@ -1382,19 +1382,24 @@ export default function KlantApp({ userId }) {
   };
 
   const voegEigenServiceToe = async (motorId, data) => {
+    const km = data.km ? parseInt(data.km) : null;
     const { error } = await supabase.from("service_beurten").insert({
       motor_id: motorId,
       datum: data.datum,
       omschrijving: data.omschrijving,
-      km: data.km ? parseInt(data.km) : null,
+      km,
     });
-    if (!error) {
-      setMotoren(prev => prev.map(m => m.id === motorId ? {
-        ...m,
-        service: [...(m.service || []), { datum: data.datum, omschrijving: data.omschrijving, km: data.km ? parseInt(data.km) : null }]
-      } : m));
+    if (error) return error.message;
+    if (km) {
+      await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: data.datum });
     }
-    return error?.message || null;
+    setMotoren(prev => prev.map(m => {
+      if (m.id !== motorId) return m;
+      const nieuweService = [...(m.service || []), { datum: data.datum, omschrijving: data.omschrijving, km }];
+      const nieuweKm = km ? [...(m.kmHistory || []), { datum: data.datum, km }] : m.kmHistory;
+      return { ...m, service: nieuweService, kmHistory: nieuweKm };
+    }));
+    return null;
   };
 
   const nav = [
