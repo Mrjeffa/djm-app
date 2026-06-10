@@ -1028,6 +1028,8 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
   const gepland=afspraken.filter(a=>a.status!=="aangevraagd");
   const vandaag=gepland.filter(a=>a.datum===TODAY);
   const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
+  const klantAanmeldingen=klanten.filter(k=>k.status==="in_afwachting").length;
+  const klantMeldingen=klanten.reduce((a,k)=>a+(k.motoren||[]).reduce((b,m)=>b+(m.service||[]).filter(sv=>sv.klant_invoer).length,0),0);
   const [editAfspraakItem,setEditAfspraakItem]=useState(null);
   const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
 
@@ -1041,11 +1043,21 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
   return(
     <div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:22}}>
-        {[{num:klanten.length,lbl:"Klanten"},{num:totalMotoren,lbl:"Motoren"},{num:showroom.length,lbl:"Voorraad"},{num:vandaag.length,lbl:"Afspraken vandaag",sub:aanvragen.length>0?`+ ${aanvragen.length} aanvraag`:null}].map((x,i)=>(
+        {[
+          {num:klanten.length,lbl:"Klanten",subs:[
+            klantAanmeldingen>0&&{text:`+ ${klantAanmeldingen} aanmelding${klantAanmeldingen>1?"en":""}`,color:T.yellow},
+            klantMeldingen>0&&{text:`+ ${klantMeldingen} melding${klantMeldingen>1?"en":""}`,color:T.accent},
+          ].filter(Boolean)},
+          {num:totalMotoren,lbl:"Motoren",subs:[]},
+          {num:showroom.length,lbl:"Voorraad",subs:[]},
+          {num:vandaag.length,lbl:"Afspraken vandaag",subs:[aanvragen.length>0&&{text:`+ ${aanvragen.length} aanvraag${aanvragen.length>1?"en":""}`,color:T.yellow}].filter(Boolean)},
+        ].map((x,i)=>(
           <div key={i} style={s.statCard}>
             <div style={s.statNum}>{x.num}</div>
             <div style={s.statLabel}>{x.lbl}</div>
-            {x.sub&&<div style={{fontSize:11,color:T.yellow,marginTop:4,fontWeight:600}}>{x.sub}</div>}
+            {(x.subs||[]).map((sub,j)=>(
+              <div key={j} style={{fontSize:11,color:sub.color,marginTop:4,fontWeight:600}}>{sub.text}</div>
+            ))}
           </div>
         ))}
       </div>
@@ -1358,7 +1370,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
 
   const tabBar=(
     <div style={{display:"flex",gap:0,marginBottom:12,background:T.surf2,borderRadius:6,padding:2,border:`1px solid ${T.border}`}}>
-      {[["klanten","Klanten"],["meldingen",`Meldingen${meldingen.length>0?` (${meldingen.length})`:""}`]].map(([id,lbl])=>(
+      {(()=>{const totaal=meldingen.length+inAfwachting.length;return[["klanten","Klanten"],["meldingen",`Meldingen${totaal>0?` (${totaal})`:""}`]]})().map(([id,lbl])=>(
         <button key={id} onClick={()=>setPageTab(id)}
           style={{flex:1,padding:"7px 10px",borderRadius:4,border:"none",background:pageTab===id?T.surf:"transparent",color:pageTab===id?T.text:T.muted,fontSize:12,fontWeight:pageTab===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif",boxShadow:pageTab===id?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
           {lbl}
@@ -1369,8 +1381,31 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
 
   const meldingenPanel=(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
-      {meldingen.length===0?(
-        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Nog geen klantmeldingen</div>
+
+      {/* Aanmeldingen sectie */}
+      {inAfwachting.length>0&&(
+        <>
+          <div style={{...s.sectionLabel,marginBottom:8}}>Nieuwe aanmeldingen</div>
+          {inAfwachting.map(k=>(
+            <div key={k.id} onClick={()=>{setSel(k.id);setPageTab("klanten");}}
+              style={{padding:"12px 14px",background:`${T.yellow}10`,border:`1px solid ${T.yellow}50`,borderRadius:6,marginBottom:6,cursor:"pointer",transition:"border-color 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=T.yellow}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=`${T.yellow}50`}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{k.naam}</div>
+                <span style={{fontSize:10,background:`${T.yellow}25`,color:T.yellow,padding:"2px 7px",borderRadius:3,fontWeight:600}}>Wacht op goedkeuring</span>
+              </div>
+              {k.email&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>{k.email}</div>}
+            </div>
+          ))}
+          {meldingen.length>0&&<div style={{height:1,background:T.border,margin:"10px 0 14px"}}/>}
+        </>
+      )}
+
+      {/* Klant-ingevoerde werkzaamheden */}
+      {meldingen.length>0&&<div style={{...s.sectionLabel,marginBottom:8}}>Ingevoerde werkzaamheden</div>}
+      {meldingen.length===0&&inAfwachting.length===0?(
+        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Nog geen meldingen</div>
       ):meldingen.map((sv,i)=>(
         <div key={sv.id||i} onClick={()=>{setSel(sv.klantId);setPageTab("klanten");}}
           style={{padding:"12px 14px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:6,marginBottom:6,cursor:"pointer",transition:"border-color 0.1s"}}
@@ -1383,9 +1418,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
           <div style={{fontSize:11,color:T.muted,marginBottom:6}}>{sv.motorLabel} · {sv.kenteken}</div>
           <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{sv.omschrijving}</div>
           {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>bij {sv.km.toLocaleString()} km</div>}
-          <div style={{display:"flex",gap:6,marginTop:sv.interval_gereset?6:0}}>
-            {sv.interval_gereset&&<span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span>}
-          </div>
+          {sv.interval_gereset&&<div style={{marginTop:6}}><span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span></div>}
         </div>
       ))}
     </div>
