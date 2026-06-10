@@ -1021,7 +1021,7 @@ function ProefritModal({motor, afspraken, klanten=[], onSave, onClose, geslotenD
 }
 
 // ── Pages ────────────────────────────────────────────────────────────────────
-function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfspraak}){
+function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak}){
   const isMobile=useIsMobile();
   const totalMotoren=klanten.reduce((a,k)=>a+(k.motoren||[]).length,0);
   const aanvragen=afspraken.filter(a=>a.status==="aangevraagd");
@@ -1029,6 +1029,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
   const vandaag=gepland.filter(a=>a.datum===TODAY);
   const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
   const [editAfspraakItem,setEditAfspraakItem]=useState(null);
+  const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
 
   const getMotorInfo = (motorId) => {
     const motor = klanten.flatMap(k=>k.motoren||[]).find(m=>m.id===motorId);
@@ -1099,13 +1100,56 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           voorraad={showroom}
           onSave={a=>{onEditAfspraak(a);setEditAfspraakItem(null);}}
           onDelete={id=>{onDeleteAfspraak(id);setEditAfspraakItem(null);}}
-          onClose={()=>setEditAfspraakItem(null)}/>
+          onClose={()=>setEditAfspraakItem(null)}
+          onAfwerken={()=>{setAfwerkAfspraakItem(editAfspraakItem);setEditAfspraakItem(null);}}/>
+      )}
+      {afwerkAfspraakItem&&(
+        <AfwerkModal
+          afspraak={afwerkAfspraakItem}
+          klanten={klanten}
+          onSave={onAfwerkAfspraak}
+          onClose={()=>setAfwerkAfspraakItem(null)}/>
       )}
     </div>
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUitnodig,onBack,isMobile}){
+function MotorEditModal({motor, onSave, onClose}){
+  const [f,setF]=useState({
+    merk:motor.merk||"", model:motor.model||"", kenteken:motor.kenteken||"",
+    bouwjaar:motor.bouwjaar||"", aankoopdatum:motor.aankoopdatum||"",
+    voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
+    voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
+    bijzonderheden:motor.bijzonderheden||"",
+  });
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  return(
+    <Modal title="MOTOR WIJZIGEN" onClose={onClose}>
+      <div style={s.sectionLabel}>Algemeen</div>
+      <Grid2>
+        <Field label="Merk"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
+        <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
+        <Field label="Kenteken"><input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,letterSpacing:1,textTransform:"uppercase"}} value={f.kenteken} onChange={set("kenteken")} placeholder="AB-123-C"/></Field>
+        <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
+      </Grid2>
+      <Field label="Aankoopdatum"><input style={s.input} type="date" value={f.aankoopdatum} onChange={set("aankoopdatum")}/></Field>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Banden</div>
+      <Grid2>
+        <Field label="Maat voorband"><input style={s.input} value={f.voorband_maat} onChange={set("voorband_maat")} placeholder="120/70 ZR17"/></Field>
+        <Field label="Maat achterband"><input style={s.input} value={f.achterband_maat} onChange={set("achterband_maat")} placeholder="180/55 ZR17"/></Field>
+        <Field label="Datum voorband"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
+        <Field label="Datum achterband"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Bijzonderheden</div>
+      <textarea style={{...s.input,height:80,resize:"none"}} value={f.bijzonderheden} onChange={set("bijzonderheden")} placeholder="Bijv. originele onderdelen, bekende problemen, modificaties..."/>
+      <ModalFooter onClose={onClose} label="Opslaan" onClick={()=>{onSave(motor.id,f);onClose();}}/>
+    </Modal>
+  );
+}
+
+function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
@@ -1114,6 +1158,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   const [delSvcId,setDelSvcId]=useState(null);
   const [delKlant,setDelKlant]=useState(false);
   const [toonMenu,setToonMenu]=useState(false);
+  const [editMotorItem,setEditMotorItem]=useState(null);
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -1198,8 +1243,22 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
               <div style={{fontSize:12,color:T.muted,marginTop:4}}>
                 {motor.bouwjaar} · {motor.kmHistory?.length ? motor.kmHistory[motor.kmHistory.length-1].km.toLocaleString() : "—"} km · {motor.aankoopdatum ? `Gekocht ${motor.aankoopdatum}` : "Eigen motor"}
               </div>
+              {(motor.voorband_datum||motor.voorband_maat||motor.achterband_datum||motor.achterband_maat)&&(
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:4,fontSize:12,color:T.muted}}>
+                  {(motor.voorband_datum||motor.voorband_maat)&&(
+                    <span>V: {motor.voorband_maat&&<strong style={{color:T.text,marginRight:3}}>{motor.voorband_maat}</strong>}{motor.voorband_datum&&<BandTag datum={motor.voorband_datum}/>}</span>
+                  )}
+                  {(motor.achterband_datum||motor.achterband_maat)&&(
+                    <span>A: {motor.achterband_maat&&<strong style={{color:T.text,marginRight:3}}>{motor.achterband_maat}</strong>}{motor.achterband_datum&&<BandTag datum={motor.achterband_datum}/>}</span>
+                  )}
+                </div>
+              )}
+              {motor.bijzonderheden&&<div style={{fontSize:12,color:T.muted,marginTop:3,fontStyle:"italic"}}>{motor.bijzonderheden}</div>}
             </div>
-            <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button style={{...s.btnGhost,flexShrink:0,fontSize:12}} onClick={()=>setEditMotorItem(motor)}>Wijzigen</button>
+              <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
+            </div>
           </div>
           {/* Onderhoudsinterval */}
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surf2,borderRadius:4,marginBottom:10,flexWrap:"wrap"}}>
@@ -1259,11 +1318,12 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
       {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)}/>}
       {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
       {editSvc&&<ServiceModal initial={editSvc} onSave={f=>{ onUpdateService(klant.id,editSvc.motorId,editSvc.id,f); setEditSvc(null); }} onClose={()=>setEditSvc(null)}/>}
+      {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)}/>}
     </div>
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[]}){
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("alle");
@@ -1328,6 +1388,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onDeleteService={onDeleteService}
             onDeleteKlant={onDeleteKlant}
             onUpdateMotorInterval={onUpdateMotorInterval}
+            onUpdateMotor={onUpdateMotor}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
             isMobile={true}/>
@@ -1354,6 +1415,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
             onDeleteService={onDeleteService}
             onDeleteKlant={onDeleteKlant}
             onUpdateMotorInterval={onUpdateMotorInterval}
+            onUpdateMotor={onUpdateMotor}
             onUitnodig={setUitnodigKlant}
             onBack={()=>setSel(null)}
             isMobile={false}/>
@@ -1754,7 +1816,61 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
   );
 }
 
-function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClose}){
+function AfwerkModal({afspraak, klanten, onSave, onClose}){
+  const klant = (klanten||[]).find(k=>k.id===afspraak.klant_id);
+  const klantMotoren = klant?.motoren || [];
+  const [motorId, setMotorId] = useState(afspraak.motor_id || (klantMotoren.length===1?klantMotoren[0].id:""));
+  const [f,setF]=useState({
+    datum: TODAY,
+    km: "",
+    omschrijving: [afspraak.soort||"", afspraak.opmerking||afspraak.omschrijving||""].filter(Boolean).join(" — "),
+    voorband_datum: "",
+    achterband_datum: "",
+    interne_opmerking: afspraak.interne_opmerking||"",
+  });
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  return(
+    <Modal title="AFSPRAAK AFWERKEN" onClose={onClose}>
+      {klant&&<div style={{fontSize:13,color:T.muted,marginBottom:14}}>{klant.naam}{afspraak.soort&&<> · <span style={{color:T.text}}>{afspraak.soort}</span></>}</div>}
+
+      {klantMotoren.length > 0 && (
+        <Field label="Motor">
+          <select style={s.input} value={motorId} onChange={e=>setMotorId(e.target.value)}>
+            <option value="">— selecteer motor —</option>
+            {klantMotoren.map(m=>(
+              <option key={m.id} value={m.id}>{m.merk} {m.model} ({m.kenteken})</option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <Grid2>
+        <Field label="Datum afgewerkt"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+        <Field label="Kilometerstand bij beurt"><input style={s.input} type="number" value={f.km} onChange={set("km")} placeholder="15500"/></Field>
+      </Grid2>
+
+      <Field label="Uitgevoerde werkzaamheden *">
+        <textarea style={{...s.input,height:100,resize:"none"}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving van de uitgevoerde werkzaamheden..."/>
+      </Field>
+
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Banden (optioneel — alleen invullen als vervangen)</div>
+      <Grid2>
+        <Field label="Nieuwe voorband datum"><BandInput value={f.voorband_datum} onChange={v=>setF(p=>({...p,voorband_datum:v}))}/></Field>
+        <Field label="Nieuwe achterband datum"><BandInput value={f.achterband_datum} onChange={v=>setF(p=>({...p,achterband_datum:v}))}/></Field>
+      </Grid2>
+
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Interne opmerking (niet zichtbaar voor klant)</div>
+      <textarea style={{...s.input,height:70,resize:"none"}} value={f.interne_opmerking} onChange={set("interne_opmerking")} placeholder="Bijv. technische bevindingen, aandachtspunten voor volgende keer..."/>
+
+      <ModalFooter onClose={onClose} label="Afwerken & Opslaan"
+        onClick={()=>{if(f.omschrijving.trim()){onSave({motorId,afspraakId:afspraak.id,...f});onClose();}}}/>
+    </Modal>
+  );
+}
+
+function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClose, onAfwerken}){
   const isAanvraag=afspraak.status==="aangevraagd";
   const isProefrit=afspraak.type==="proefrit";
   const [f,setF]=useState({
@@ -1808,6 +1924,24 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"none"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))}/>
       </Field>
+      {afspraak.type !== "proefrit" && afspraak.status !== "afgewerkt" && onAfwerken && (
+        <div style={{marginBottom:12,marginTop:16}}>
+          <button onClick={onAfwerken}
+            style={{width:"100%",padding:"11px",background:T.green,color:"#fff",border:"none",borderRadius:4,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+            ✓ Afwerken & Service registreren
+          </button>
+        </div>
+      )}
+      {afspraak.status === "afgewerkt" && (
+        <div style={{padding:"8px 12px",background:`${T.green}15`,border:`1px solid ${T.green}40`,borderRadius:4,marginBottom:12,marginTop:16,fontSize:13,color:T.green}}>
+          ✓ Afgewerkt op {afspraak.datum}
+        </div>
+      )}
+      {afspraak.interne_opmerking && (
+        <div style={{padding:"8px 12px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,marginBottom:12,fontSize:12,color:T.muted}}>
+          <span style={{fontWeight:600,color:T.text}}>Interne opmerking: </span>{afspraak.interne_opmerking}
+        </div>
+      )}
       <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
         <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
         <div style={{display:"flex",gap:10}}>
@@ -1819,11 +1953,12 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
   );
 }
 
-function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden}){
+function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden}){
   const isMobile=useIsMobile();
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
   const [editAfspraak,setEditAfspraak]=useState(null);
+  const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
   const [dragId,setDragId]=useState(null);
   const [selDay,setSelDay]=useState(TODAY);
   // Splits geplande vs aangevraagde afspraken
@@ -1931,7 +2066,15 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
             onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
             onDelete={id=>{onDeleteAfspraak(id);setEditAfspraak(null);}}
-            onClose={()=>setEditAfspraak(null)}/>
+            onClose={()=>setEditAfspraak(null)}
+            onAfwerken={()=>{setAfwerkAfspraakItem(editAfspraak);setEditAfspraak(null);}}/>
+        )}
+        {afwerkAfspraakItem&&(
+          <AfwerkModal
+            afspraak={afwerkAfspraakItem}
+            klanten={klanten}
+            onSave={onAfwerkAfspraak}
+            onClose={()=>setAfwerkAfspraakItem(null)}/>
         )}
       </div>
     );
@@ -2080,7 +2223,15 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           voorraad={voorraad}
           onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
           onDelete={id=>{onDeleteAfspraak(id);setEditAfspraak(null);}}
-          onClose={()=>setEditAfspraak(null)}/>
+          onClose={()=>setEditAfspraak(null)}
+          onAfwerken={()=>{setAfwerkAfspraakItem(editAfspraak);setEditAfspraak(null);}}/>
+      )}
+      {afwerkAfspraakItem&&(
+        <AfwerkModal
+          afspraak={afwerkAfspraakItem}
+          klanten={klanten}
+          onSave={onAfwerkAfspraak}
+          onClose={()=>setAfwerkAfspraakItem(null)}/>
       )}
     </div>
   );
@@ -2384,6 +2535,21 @@ export default function AdminApp(){
     setKlanten(p=>p.map(k=>({...k,motoren:k.motoren.map(m=>m.id===motorId?{...m,interval_km:intervalKm}:m)})));
   };
 
+  const updateMotor = async (motorId, f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("motoren").update({
+      merk:f.merk, model:f.model, kenteken:f.kenteken,
+      bouwjaar:parseInt(f.bouwjaar)||0, aankoopdatum:f.aankoopdatum||null,
+      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
+      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
+      bijzonderheden:f.bijzonderheden||null,
+    }).eq("id", motorId);
+    setKlanten(prev => prev.map(k => ({
+      ...k,
+      motoren: (k.motoren||[]).map(m => m.id===motorId ? {...m,...f,bouwjaar:parseInt(f.bouwjaar)||m.bouwjaar} : m)
+    })));
+  };
+
   const updateService = async (klantId, motorId, svcId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const kmVal = f.km ? parseInt(f.km) : null;
@@ -2588,6 +2754,47 @@ export default function AdminApp(){
     setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,status:nieuweStatus}:a));
   };
 
+  const afwerkAfspraak = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    // Update afspraak status + interne_opmerking
+    const { data: updatedAfs } = await sb.from("afspraken").update({
+      status: "afgewerkt",
+      interne_opmerking: f.interne_opmerking||null,
+    }).eq("id", f.afspraakId).select("*, klanten(naam), motoren(merk, model, kenteken)").single();
+    if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, klant: updatedAfs.klanten?.naam||"Onbekend", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:null} : a));
+
+    // Insert service_beurt if motor is known
+    if(f.motorId){
+      const svcData = {
+        motor_id: f.motorId,
+        datum: f.datum,
+        omschrijving: f.omschrijving,
+        km: f.km ? parseInt(f.km) : null,
+        voorband_datum: f.voorband_datum||null,
+        achterband_datum: f.achterband_datum||null,
+      };
+      const { data: svc } = await sb.from("service_beurten").insert(svcData).select().single();
+      if(svc){
+        setKlanten(prev => prev.map(k => ({
+          ...k,
+          motoren: (k.motoren||[]).map(m => {
+            if(m.id !== f.motorId) return m;
+            const updated = {...m, service:[...(m.service||[]),svc]};
+            if(f.voorband_datum) updated.voorband_datum = f.voorband_datum;
+            if(f.achterband_datum) updated.achterband_datum = f.achterband_datum;
+            return updated;
+          })
+        })));
+        if(f.voorband_datum||f.achterband_datum){
+          const update = {};
+          if(f.voorband_datum) update.voorband_datum = f.voorband_datum;
+          if(f.achterband_datum) update.achterband_datum = f.achterband_datum;
+          await sb.from("motoren").update(update).eq("id", f.motorId);
+        }
+      }
+    }
+  };
+
   const deleteAfspraak = async (id) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const afs = afspraken.find(a=>a.id===id);
@@ -2679,10 +2886,10 @@ export default function AdminApp(){
 
   const pageContent = (
     <>
-      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
+      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
-      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
+      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
   );

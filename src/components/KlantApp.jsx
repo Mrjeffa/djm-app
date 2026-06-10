@@ -28,6 +28,23 @@ const fmtDatum = d => {
   return `${dt.getDate()} ${MAANDEN_NL[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 
+const bandLeeftijdJaren = (datum) => {
+  if (!datum) return null;
+  const match = datum.match(/(\d{2})(\d{4})/);
+  if (!match) return null;
+  const week = parseInt(match[1]);
+  const year = parseInt(match[2]);
+  const productie = new Date(year, 0, 1 + (week - 1) * 7);
+  const leeftijd = (new Date() - productie) / (1000 * 60 * 60 * 24 * 365.25);
+  return Math.round(leeftijd * 10) / 10;
+};
+const BandAgeLabel = ({ datum }) => {
+  const jaren = bandLeeftijdJaren(datum);
+  if (!jaren) return <span style={{ fontSize:12, color:T.muted }}>{datum}</span>;
+  const kleur = jaren > 6 ? T.red : jaren > 4 ? T.yellow : T.green;
+  return <span style={{ fontSize:12, color:kleur, fontWeight:600 }}>{jaren.toFixed(1)} jaar ({datum})</span>;
+};
+
 const getBeschikbareDagen = (bezet = [], geslotenDagen = [], openingstijden = null) => {
   const DAGMAP_KL = ["zo","ma","di","wo","do","vr","za"];
   const isOpen = (dayOfWeek) => {
@@ -102,8 +119,12 @@ function MotorSelector({ motoren, selected, onSelect }) {
 }
 
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
-function MijnMotor({ motoren, selMotorId, onSelMotor }) {
+function MijnMotor({ motoren, selMotorId, onSelMotor, onUpdateBanden }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
+  const [editBanden, setEditBanden] = useState(false);
+  const [bandenF, setBandenF] = useState({ voorband_maat:"", achterband_maat:"", bijzonderheden:"" });
+  const [bandenBezig, setBandenBezig] = useState(false);
+
   if (!motor) return <div style={{ color: T.muted, textAlign: "center", marginTop: 60, fontSize: 14 }}>Geen motor gekoppeld</div>;
 
   const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
@@ -175,6 +196,59 @@ function MijnMotor({ motoren, selMotorId, onSelMotor }) {
           <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>bij {motor.service[motor.service.length - 1].km?.toLocaleString()} km</div>
         </div>
       )}
+      {(motor.voorband_maat || motor.voorband_datum || motor.achterband_maat || motor.achterband_datum) && (
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Banden</div>
+          {(motor.voorband_maat || motor.voorband_datum) && (
+            <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${T.border}` }}>
+              <div style={{ fontSize:13, color:T.muted }}>Voorband</div>
+              <div style={{ fontSize:13, fontWeight:600 }}>
+                {motor.voorband_maat && <span style={{ marginRight:8 }}>{motor.voorband_maat}</span>}
+                {motor.voorband_datum && <BandAgeLabel datum={motor.voorband_datum}/>}
+              </div>
+            </div>
+          )}
+          {(motor.achterband_maat || motor.achterband_datum) && (
+            <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 0" }}>
+              <div style={{ fontSize:13, color:T.muted }}>Achterband</div>
+              <div style={{ fontSize:13, fontWeight:600 }}>
+                {motor.achterband_maat && <span style={{ marginRight:8 }}>{motor.achterband_maat}</span>}
+                {motor.achterband_datum && <BandAgeLabel datum={motor.achterband_datum}/>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {motor.bijzonderheden && (
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Bijzonderheden</div>
+          <div style={{ fontSize:14, color:T.text, lineHeight:1.7 }}>{motor.bijzonderheden}</div>
+        </div>
+      )}
+      <div style={{ marginTop:8 }}>
+        {!editBanden ? (
+          <button onClick={() => { setEditBanden(true); setBandenF({voorband_maat:motor.voorband_maat||"",achterband_maat:motor.achterband_maat||"",bijzonderheden:motor.bijzonderheden||""}); }}
+            style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"8px 16px", fontSize:13, color:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", width:"100%" }}>
+            ✏ Bandenmaat / bijzonderheden bijwerken
+          </button>
+        ) : (
+          <div style={css.card}>
+            <div style={css.sectionTitle}>Bandenmaat & bijzonderheden bijwerken</div>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat voorband</label>
+            <input style={{ ...css.input, marginBottom:10 }} value={bandenF.voorband_maat} onChange={e=>setBandenF(p=>({...p,voorband_maat:e.target.value}))} placeholder="120/70 ZR17"/>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Maat achterband</label>
+            <input style={{ ...css.input, marginBottom:10 }} value={bandenF.achterband_maat} onChange={e=>setBandenF(p=>({...p,achterband_maat:e.target.value}))} placeholder="180/55 ZR17"/>
+            <label style={{ fontSize:11, color:T.muted, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>Bijzonderheden</label>
+            <textarea style={{ ...css.input, height:70, resize:"none", marginBottom:12 }} value={bandenF.bijzonderheden} onChange={e=>setBandenF(p=>({...p,bijzonderheden:e.target.value}))} placeholder="Originele onderdelen, modificaties, aandachtspunten..."/>
+            <div style={{ display:"flex", gap:8 }}>
+              <button style={{ ...css.btn, flex:1, opacity:bandenBezig?0.5:1 }} onClick={async()=>{ setBandenBezig(true); await onUpdateBanden(motor.id,bandenF); setBandenBezig(false); setEditBanden(false); }} disabled={bandenBezig}>
+                {bandenBezig?"Opslaan...":"Opslaan"}
+              </button>
+              <button style={{ ...css.btnGhost }} onClick={()=>setEditBanden(false)}>Annuleer</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1238,6 +1312,12 @@ export default function KlantApp({ userId }) {
     return null;
   };
 
+  const updateMotorBanden = async (motorId, data) => {
+    const { error } = await supabase.from("motoren").update(data).eq("id", motorId);
+    if (!error) setMotoren(prev => prev.map(m => m.id===motorId ? {...m,...data} : m));
+    return error?.message || null;
+  };
+
   const nav = [
     { id: "motor",    icon: "◧", label: "Motor"    },
     { id: "service",  icon: "◉", label: "Service"  },
@@ -1358,7 +1438,7 @@ export default function KlantApp({ userId }) {
           </div>
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
-            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onUpdateBanden={updateMotorBanden}/>}
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
@@ -1408,7 +1488,7 @@ export default function KlantApp({ userId }) {
       </div>
 
       <div style={css.scroll}>
-        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+        {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onUpdateBanden={updateMotorBanden}/>}
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
