@@ -819,13 +819,13 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     <div>
       {backBtn}
       <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: 1, marginBottom: 4 }}>ZOEKOPDRACHT</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Wij zoeken voor u de perfecte motor. Geef uw wensen op — wij regelen de rest.</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.8 }}>Wij zoeken voor u de perfecte motor. Geef uw wensen op en wij regelen de rest.</div>
       <div style={{ ...css.card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 8px" }}>
           <span style={{ fontSize: 13 }}>Bemiddelingskosten</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{p("zoekopdracht_bemiddeling")}</span>
         </div>
-        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Alleen in rekening gebracht bij een succesvolle aankoop.</div>
+        <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.7 }}>Alleen in rekening gebracht bij een succesvolle aankoop. Excl. transport, rijklaar maken en RDW kosten.</div>
       </div>
       <div style={css.card}>
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Uw zoekopdracht</div>
