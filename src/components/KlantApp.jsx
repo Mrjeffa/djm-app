@@ -1,6 +1,16 @@
 import { useState, useEffect } from "react";
 import { supabase, uitloggen } from "../lib/supabase.js";
 
+const useIsMobile = () => {
+  const [mob, setMob] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setMob(window.innerWidth < 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+  return mob;
+};
+
 // ── Theme ──────────────────────────────────────────────────────────────────
 const T = {
   bg: "#F8F8F8", surf: "#FFFFFF", surf2: "#F2F2F2", surf3: "#EBEBEB",
@@ -862,6 +872,8 @@ export default function KlantApp({ userId }) {
   ];
   const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", instellingen: "Instellingen" };
 
+  const isMobile = useIsMobile();
+
   if (laden) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg }}>
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
@@ -921,6 +933,79 @@ export default function KlantApp({ userId }) {
     </div>
   );
 
+  // Desktop layout
+  if (!isMobile) {
+    return (
+      <div style={{ display:"flex", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" }}>
+        {/* Zijbalk */}
+        <div style={{ width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 }}>
+          {/* Logo */}
+          <div style={{ padding:"24px 20px 20px", borderBottom:`1px solid ${T.border}` }}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:20, letterSpacing:2, color:T.text, lineHeight:1 }}>DE JONGE</div>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:600, fontSize:11, letterSpacing:5, color:T.accent, marginTop:3 }}>MOTOREN</div>
+            <div style={{ fontSize:11, color:T.muted, marginTop:8, fontWeight:500 }}>Mijn Garage</div>
+          </div>
+          {/* Klant info */}
+          <div style={{ padding:"14px 20px", borderBottom:`1px solid ${T.border}` }}>
+            <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{klant.naam?.split(" ")[0] || klant.naam}</div>
+            <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{motoren.length} motor{motoren.length!==1?"en":""}</div>
+          </div>
+          {/* Navigatie */}
+          <div style={{ flex:1, paddingTop:8 }}>
+            {nav.map(n=>(
+              <button key={n.id} onClick={()=>setTab(n.id)}
+                style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"12px 20px", background:tab===n.id?`${T.accent}15`:"transparent", border:"none", borderLeft:tab===n.id?`3px solid ${T.accent}`:"3px solid transparent", color:tab===n.id?T.accent:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", fontSize:14, fontWeight:tab===n.id?600:400, boxSizing:"border-box", textAlign:"left" }}>
+                <span style={{fontSize:18,lineHeight:1}}>{n.icon}</span>
+                {n.label}
+              </button>
+            ))}
+          </div>
+          {/* Instellingen + uitloggen */}
+          <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:4, paddingBottom:12 }}>
+            <button onClick={()=>setTab(tab==="instellingen"?"motor":"instellingen")}
+              style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"12px 20px", background:tab==="instellingen"?`${T.accent}15`:"transparent", border:"none", borderLeft:tab==="instellingen"?`3px solid ${T.accent}`:"3px solid transparent", color:tab==="instellingen"?T.accent:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", fontSize:14, fontWeight:tab==="instellingen"?600:400, boxSizing:"border-box", textAlign:"left" }}>
+              <GearIcon size={16}/> Instellingen
+            </button>
+            <button onClick={uitloggen}
+              style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"12px 20px", background:"transparent", border:"none", borderLeft:"3px solid transparent", color:T.muted, cursor:"pointer", fontFamily:"Barlow, sans-serif", fontSize:14, boxSizing:"border-box", textAlign:"left" }}>
+              <span style={{fontSize:16,lineHeight:1}}>↪</span> Uitloggen
+            </button>
+          </div>
+        </div>
+
+        {/* Hoofdinhoud */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+          {/* Header */}
+          <div style={{ padding:"18px 32px", borderBottom:`1px solid ${T.border}`, flexShrink:0, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:28, letterSpacing:0.5 }}>
+              {titles[tab] || titles.motor}
+            </div>
+          </div>
+          {/* Scrollbaar content */}
+          <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
+            {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+            {tab === "service" && <Servicegeschiedenis motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor}/>}
+            {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
+            {tab === "afspraak" && <Afspraak motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaOp={slaAfspraakOp}/>}
+            {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} opmerking={opmerking}/>}
+            {tab === "instellingen" && (
+              <Instellingen
+                klant={klant} motoren={gesorteerdMotoren}
+                hoofdMotorId={hoofdMotorId}
+                onKiesHoofd={kiesHoofdMotor}
+                onUpdateKlant={updateKlantProfiel}
+                onVoegMotorToe={voegMotorToeVanKlant}
+                onVerwijderMotor={verwijderMotor}
+                onWijzigWachtwoord={wijzigWachtwoord}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Mobiele layout (ongewijzigd)
   return (
     <div style={css.app}>
       <div style={css.topBar}>
