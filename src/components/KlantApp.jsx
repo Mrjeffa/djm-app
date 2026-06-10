@@ -424,18 +424,38 @@ function KmStand({ motoren, selMotorId, onSelMotor, onSlaOp }) {
 }
 
 // ── Scherm: Afspraak ───────────────────────────────────────────────────────
+const K_SOORT_DUUR = {
+  "Kleine beurt":2,"Grote beurt":3,"Jaarlijkse inspectie":1,"Olie- en filterwissel":1,"Cardan olie verversen":1,"Winterklaar maken":1,
+  "Voorband vervangen":1,"Achterband vervangen":1,"Beide banden vervangen":2,"Ketting en tandwielen vervangen":2,"Vering aanpassen of vervangen":2,
+  "Remmen vervangen/controleren":1,"Remvloeistof vervangen":1,
+  "Diagnose bij storingen":1,"Elektrische problemen oplossen":2,"Accu vervangen":1,
+  "Aankoopkeuring":1,"Rijklaar maken":2,"Accessoires monteren":1,"Motor afstellen of synchroniseren":2,"Anders":1,
+};
+const K_SOORT_GROEPEN = [
+  {label:"Onderhoud",items:["Kleine beurt","Grote beurt","Jaarlijkse inspectie","Olie- en filterwissel","Cardan olie verversen","Winterklaar maken"]},
+  {label:"Banden & Aandrijving",items:["Voorband vervangen","Achterband vervangen","Beide banden vervangen","Ketting en tandwielen vervangen","Vering aanpassen of vervangen"]},
+  {label:"Remmen & Hydraulica",items:["Remmen vervangen/controleren","Remvloeistof vervangen"]},
+  {label:"Elektrisch & Diagnose",items:["Diagnose bij storingen","Elektrische problemen oplossen","Accu vervangen"]},
+  {label:"Keuring & Overig",items:["Aankoopkeuring","Rijklaar maken","Accessoires monteren","Motor afstellen of synchroniseren","Anders"]},
+];
+
 function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], geslotenDagen = [], openingstijden = null, onSlaOp }) {
+  const [soorten, setSoorten] = useState(new Set());
+  const [openGroepen, setOpenGroepen] = useState(new Set());
   const [selDatum, setSelDatum] = useState(null);
   const [notitie, setNotitie] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
-  const beschikbaar = getBeschikbareDagen(bezetteDagen, geslotenDagen, openingstijden);
+  const totaalUur = Math.min([...soorten].reduce((s, o) => s + (K_SOORT_DUUR[o] || 1), 0), 8);
+
+  const toggleSoort = (opt) => setSoorten(prev => { const n = new Set(prev); n.has(opt) ? n.delete(opt) : n.add(opt); return n; });
+  const toggleGroep = (lbl) => setOpenGroepen(prev => { const n = new Set(prev); n.has(lbl) ? n.delete(lbl) : n.add(lbl); return n; });
 
   const verstuur = async () => {
-    if (!selDatum || bezig) return;
+    if (!selDatum || soorten.size === 0 || bezig) return;
     setBezig(true);
-    await onSlaOp({ motorId: selMotorId, datum: selDatum, opmerking: notitie });
+    await onSlaOp({ motorId: selMotorId || motor?.id, datum: selDatum, soort: [...soorten].join(", "), duur: totaalUur, opmerking: notitie });
     setBezig(false);
     setVerstuurd(true);
   };
@@ -445,18 +465,15 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
       <div style={{ textAlign: "center", paddingTop: 40 }}>
         <div style={{ fontSize: 52, marginBottom: 16 }}>✅</div>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 24, marginBottom: 8 }}>Aanvraag verstuurd!</div>
-        <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.8, maxWidth: 280, margin: "0 auto" }}>
-          We nemen contact met je op om de afspraak te bevestigen.
-        </div>
+        <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.8, maxWidth: 280, margin: "0 auto" }}>We nemen contact met je op om de afspraak te bevestigen.</div>
         <div style={{ ...css.card, marginTop: 24, textAlign: "left" }}>
           <div style={{ fontSize: 12, color: T.accent, marginBottom: 4 }}>Gevraagde datum</div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{fmtDatum(selDatum)}</div>
           {motor && <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{motor.merk} {motor.model} · {motor.kenteken}</div>}
-          {notitie && <div style={{ fontSize: 13, color: T.muted, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>{notitie}</div>}
+          <div style={{ fontSize: 13, color: T.text, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>{[...soorten].join(", ")}</div>
+          {notitie && <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{notitie}</div>}
         </div>
-        <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => { setVerstuurd(false); setSelDatum(null); setNotitie(""); }}>
-          Nieuwe aanvraag
-        </button>
+        <button style={{ ...css.btnGhost, marginTop: 12 }} onClick={() => { setVerstuurd(false); setSelDatum(null); setNotitie(""); setSoorten(new Set()); }}>Nieuwe aanvraag</button>
       </div>
     );
   }
@@ -464,39 +481,58 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
   return (
     <div>
       <MotorSelector motoren={motoren} selected={selMotorId} onSelect={onSelMotor} />
-
-      <div style={{ background: T.accentSoft, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 13, lineHeight: 1.7, color: T.text }}>
-        Door drukte kan de tijd uitlopen — we bellen je als de motor klaar is. 🔧
-      </div>
-
-      <div style={css.card}>
-        <div style={css.sectionTitle}>Kies een dag</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {beschikbaar.map(d => (
-            <button key={d.datum} onClick={() => !d.bezet && setSelDatum(d.datum)} disabled={d.bezet}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 6, border: `1px solid ${selDatum === d.datum ? T.accent : T.border}`, background: selDatum === d.datum ? T.accentSoft : d.bezet ? T.surf2 : "transparent", cursor: d.bezet ? "default" : "pointer", fontFamily: "Barlow, sans-serif" }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, color: d.bezet ? T.muted : selDatum === d.datum ? T.accent : T.text, textTransform: "uppercase", width: 24 }}>
-                  {d.dag}
-                </div>
-                <div style={{ fontSize: 14, color: d.bezet ? T.muted : T.text }}>{fmtDatum(d.datum)}</div>
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Wat moet er gebeuren?</div>
+        <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, fontStyle: "italic" }}>Tijden zijn schattingen en kunnen in werkelijkheid afwijken.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {K_SOORT_GROEPEN.map(g => {
+            const open = openGroepen.has(g.label);
+            const geselecteerd = g.items.filter(i => soorten.has(i));
+            const heeftSel = geselecteerd.length > 0;
+            return (
+              <div key={g.label} style={{ border: `1px solid ${heeftSel ? T.accent : T.border}`, borderRadius: 6, overflow: "hidden" }}>
+                <button onClick={() => toggleGroep(g.label)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: heeftSel ? T.accentSoft : T.surf2, border: "none", cursor: "pointer", fontFamily: "Barlow, sans-serif", textAlign: "left" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: heeftSel ? 600 : 400, color: heeftSel ? T.accent : T.text }}>{g.label}</span>
+                    {heeftSel && <span style={{ ...css.badge(T.accent), fontSize: 10 }}>{geselecteerd.length}</span>}
+                  </div>
+                  <span style={{ fontSize: 11, color: T.muted }}>{open ? "▲" : "▼"}</span>
+                </button>
+                {open && (
+                  <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 5, borderTop: `1px solid ${T.border}`, background: T.surf }}>
+                    {g.items.map(opt => {
+                      const sel = soorten.has(opt);
+                      return (
+                        <button key={opt} onClick={() => toggleSoort(opt)}
+                          style={{ padding: "6px 12px", borderRadius: 4, border: `1px solid ${sel ? T.accent : T.border}`, background: sel ? T.accentSoft : "transparent", color: sel ? T.accent : T.text, cursor: "pointer", fontSize: 12, fontFamily: "Barlow, sans-serif", fontWeight: sel ? 600 : 400 }}>
+                          {opt}{K_SOORT_DUUR[opt] > 1 ? ` · ${K_SOORT_DUUR[opt]}u` : " · 1u"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              {d.bezet ? <span style={css.badge(T.muted)}>Vol</span> : selDatum === d.datum ? <span style={css.badge(T.accent)}>✓</span> : <span style={{ fontSize: 12, color: T.muted }}>Vrij</span>}
-            </button>
-          ))}
+            );
+          })}
         </div>
+        {soorten.size > 0 && (
+          <div style={{ marginTop: 10, fontSize: 12, color: T.accent, fontWeight: 600, padding: "8px 10px", background: T.accentSoft, borderRadius: 4 }}>
+            Geschatte totale duur: {totaalUur}u
+            <span style={{ fontWeight: 400, color: T.muted }}> (max. 8u per dag)</span>
+          </div>
+        )}
       </div>
-
+      <div style={{ ...css.card, marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Kies een dag</div>
+        <DatumKiezer bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} value={selDatum || ""} onChange={setSelDatum} />
+      </div>
       <div style={css.card}>
-        <div style={css.sectionTitle}>Beschrijving werkzaamheden</div>
-        <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Verplicht — zo kunnen we de juiste tijd inplannen.</div>
-        <textarea style={{ ...css.input, height: 80, resize: "none" }}
-          placeholder="Bijv. grote beurt, remmen controleren, bandenwissel..."
-          value={notitie} onChange={e => setNotitie(e.target.value)} />
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Opmerkingen <span style={{ fontWeight: 400, color: T.muted }}>(optioneel)</span></div>
+        <textarea style={{ ...css.input, height: 70, resize: "none" }} placeholder="Aanvullende informatie..." value={notitie} onChange={e => setNotitie(e.target.value)} />
       </div>
-
-      <button style={{ ...css.btn, opacity: !selDatum || !notitie.trim() || bezig ? 0.4 : 1, marginTop: 4 }} onClick={verstuur}
-        disabled={!selDatum || !notitie.trim() || bezig}>
+      <button style={{ ...css.btn, opacity: !selDatum || soorten.size === 0 || bezig ? 0.4 : 1, marginTop: 14 }} onClick={verstuur}
+        disabled={!selDatum || soorten.size === 0 || bezig}>
         {bezig ? "Versturen..." : "Afspraak aanvragen"}
       </button>
     </div>
@@ -1764,6 +1800,8 @@ export default function KlantApp({ userId }) {
     await supabase.from("afspraken").insert({
       klant_id: klant.id, motor_id: motor?.id || null,
       datum: f.datum, opmerking: f.opmerking || "", status: "aangevraagd",
+      type: "service", soort: f.soort || null, duur: f.duur || 1,
+      naam: klant.naam || null, telefoon: klant.telefoon || null, email: klant.email || null,
     });
     setBezetteDagen(prev => [...prev, f.datum]);
   };
