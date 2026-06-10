@@ -642,11 +642,29 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
   const setFld = (key, val) => setF(prev => ({ ...prev, [key]: val }));
   const openView = (id) => { setView(id); setF({}); setWinOpts([]); setFotos([]); setOk(false); setFout(null); };
 
+  const compressImage = async (file) => {
+    if (file.size <= 1024 * 1024) return file;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    await new Promise(r => { img.onload = r; img.src = url; });
+    URL.revokeObjectURL(url);
+    const canvas = document.createElement('canvas');
+    const MAX = 1920;
+    let w = img.width, h = img.height;
+    if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    let q = 0.85, blob;
+    do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob.size > 1024 * 1024 && q > 0.1);
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+  };
+
   const uploadFoto = async (file) => {
     setFotoBezig(true);
     try {
+      const compressed = await compressImage(file);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", compressed);
       form.append("upload_preset", "Djm app");
       const res = await fetch("https://api.cloudinary.com/v1_1/dkfdwnep4/image/upload", { method: "POST", body: form });
       const data = await res.json();
@@ -1383,8 +1401,8 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
 // ── Scherm: Voorraad ───────────────────────────────────────────────────────
 const clImg = (url, w = 600) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
-function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], openingstijden = null, onSlaProefritOp }) {
-  const [view, setView] = useState("list"); // "list" | "detail" | "proefrit" | "verstuurd" | "productDetail"
+function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], openingstijden = null, onSlaProefritOp, onNaarContact }) {
+  const [view, setView] = useState("list"); // "list" | "detail" | "proefrit" | "verstuurd" | "productDetail" | "betalen" | "aanbetaling"
   const [subTab, setSubTab] = useState("motoren"); // "motoren" | "onderdelen" | "accessoires"
   const [selectedMotor, setSelectedMotor] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -1546,6 +1564,35 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
         <button style={{ ...css.btn, marginTop: 4 }} onClick={openProefrit}>
           Proefrit aanvragen →
         </button>
+        <button style={{ ...css.btn, background: T.green, marginTop: 8 }} onClick={() => setView("aanbetaling")}>
+          Aanbetalen — €500
+        </button>
+      </div>
+    );
+  }
+
+  if (view === "aanbetaling") {
+    const backBtnStyle = { background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 };
+    return (
+      <div>
+        <button onClick={() => setView("detail")} style={backBtnStyle}>← Terug</button>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>AANBETALING</div>
+        <div style={{ ...css.card, marginBottom:16 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedMotor.merk} {selectedMotor.model}</div>
+          {selectedMotor.prijs && <div style={{ fontSize:16, color:T.muted, marginBottom:4 }}>Vraagprijs: € {selectedMotor.prijs.toLocaleString("nl-NL")}</div>}
+        </div>
+        <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
+          <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Reserveer deze motor</div>
+          <div style={{ fontSize:13, color:T.text, lineHeight:1.7, marginBottom:8 }}>
+            Door een aanbetaling van <strong>€500</strong> te doen reserveert u deze motor. Het bedrag wordt verrekend bij aankoop.
+          </div>
+          <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
+            iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om de aanbetaling te regelen.
+          </div>
+          <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
+            Neem contact op
+          </button>
+        </div>
       </div>
     );
   }
@@ -1592,6 +1639,35 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
         )}
         <div style={{ ...css.card, color:T.muted, fontSize:13, textAlign:"center" }}>
           Neem contact op voor meer informatie of bestelling
+        </div>
+        {!selectedProduct.verkocht_op && selectedProduct.actief !== false && (
+          <button style={{ ...css.btn, marginTop:12 }} onClick={() => setView("betalen")}>
+            Kopen — {selectedProduct.prijs ? `€ ${selectedProduct.prijs}` : "Prijs op aanvraag"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (view === "betalen") {
+    const backBtnStyle = { background:"none", border:"none", color:T.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif", padding:"0 0 16px", display:"flex", alignItems:"center", gap:4 };
+    return (
+      <div>
+        <button onClick={() => setView("productDetail")} style={backBtnStyle}>← Terug</button>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, marginBottom:8 }}>BESTELLEN</div>
+        <div style={{ ...css.card, marginBottom:16 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>{selectedProduct.naam}</div>
+          {selectedProduct.prijs && <div style={{ fontSize:20, fontWeight:700, color:T.accent, marginBottom:8 }}>€ {selectedProduct.prijs}</div>}
+          {selectedProduct.omschrijving && <div style={{ fontSize:13, color:T.muted }}>{selectedProduct.omschrijving}</div>}
+        </div>
+        <div style={{ ...css.card, background:`${T.accent}08`, border:`1px solid ${T.accent}30` }}>
+          <div style={{ fontWeight:600, fontSize:14, marginBottom:8 }}>Betalen via iDEAL</div>
+          <div style={{ fontSize:13, color:T.muted, lineHeight:1.7 }}>
+            iDEAL betaling wordt binnenkort beschikbaar. Neem contact op om dit product te reserveren.
+          </div>
+          <button style={{ ...css.btn, marginTop:14 }} onClick={() => { if (onNaarContact) onNaarContact(); }}>
+            Neem contact op
+          </button>
         </div>
       </div>
     );
@@ -2074,7 +2150,7 @@ export default function KlantApp({ userId }) {
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
-            {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
+            {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
             {tab === "instellingen" && (
               <Instellingen
@@ -2125,7 +2201,7 @@ export default function KlantApp({ userId }) {
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe}/>}
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
-        {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp}/>}
+        {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
         {tab === "instellingen" && (
           <Instellingen
