@@ -1129,7 +1129,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           ].filter(Boolean)},
           {num:totalMotoren,lbl:"Motoren",subs:[]},
           {num:showroom.length,lbl:"Voorraad",subs:[]},
-          {num:vandaag.length,lbl:"Afspraken vandaag",subs:[aanvragen.length>0&&{text:`+ ${aanvragen.length} aanvraag${aanvragen.length>1?"en":""}`,color:T.yellow}].filter(Boolean)},
+          {num:vandaag.length,lbl:"Afspraken vandaag",subs:[aanvragen.length>0&&{text:`+ ${aanvragen.length} aanvra${aanvragen.length>1?"gen":"ag"}`,color:T.yellow}].filter(Boolean)},
         ].map((x,i)=>(
           <div key={i} style={s.statCard}>
             <div style={s.statNum}>{x.num}</div>
