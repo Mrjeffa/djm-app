@@ -1563,7 +1563,7 @@ export default function KlantApp({ userId }) {
         // Klant, instellingen, afspraken en huidige user parallel ophalen
         const [klantRes, afsprakenRes, instRes, userRes] = await Promise.all([
           supabase.from("klanten").select("*").eq("user_id", userId).single(),
-          supabase.from("afspraken").select("datum").gte("datum", TODAY),
+          supabase.rpc("get_bezette_dagen"),
           supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven").single(),
           supabase.auth.getUser(),
         ]);
@@ -1590,7 +1590,7 @@ export default function KlantApp({ userId }) {
         const inst = instRes.data;
         const gesloten = inst?.gesloten_dagen || [];
         setGeslotenDagen(gesloten);
-        setBezetteDagen([...(afsprakenRes.data||[]).map(a => a.datum), ...gesloten]);
+        setBezetteDagen([...(afsprakenRes.data||[]).map(a => String(a.datum)), ...gesloten]);
         if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
         if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
         if (inst?.diensten_tarieven) setDienstenTarieven(inst.diensten_tarieven);
