@@ -153,11 +153,15 @@ function Grid2({children}){
   return <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>{children}</div>;
 }
 
-function ModalFooter({onClose,label="Opslaan",onClick}){
+function ModalFooter({onClose,label="Opslaan",onClick,onSave,danger=false,disabled=false}){
+  const handler = onSave || onClick;
+  const btnStyle = danger
+    ? {padding:"9px 16px",background:T.red,color:"#fff",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif",opacity:disabled?0.5:1}
+    : {...s.btn,opacity:disabled?0.5:1};
   return(
     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
       <button style={s.btnGhost} onClick={onClose}>Annuleer</button>
-      <button style={s.btn} onClick={onClick}>{label}</button>
+      <button style={btnStyle} onClick={handler} disabled={disabled}>{label}</button>
     </div>
   );
 }
@@ -1352,7 +1356,99 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null}){
+function ProductModal({categorie, product=null, onSave, onClose}){
+  const isEdit = !!product;
+  const [f,setF]=useState({
+    naam: product?.naam||"",
+    omschrijving: product?.omschrijving||"",
+    prijs: product?.prijs!=null ? String(product.prijs) : "",
+    actief: product?.actief !== false,
+  });
+  const [fotoFiles,setFotoFiles]=useState([]);
+  const [fotoPreviews,setFotoPreviews]=useState([]);
+  const [bestaandeFotos,setBestaandeFotos]=useState(product?.fotos||[]);
+  const [uploadStatus,setUploadStatus]=useState(null);
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+
+  const voegFotosToe = (e) => {
+    const files = Array.from(e.target.files||[]);
+    if(!files.length) return;
+    setFotoFiles(p=>[...p,...files]);
+    setFotoPreviews(p=>[...p,...files.map(f=>URL.createObjectURL(f))]);
+    e.target.value = "";
+  };
+
+  const verwijderBestaandeFoto = (i) => setBestaandeFotos(p=>p.filter((_,j)=>j!==i));
+  const verwijderNieuweFoto = (i) => {
+    URL.revokeObjectURL(fotoPreviews[i]);
+    setFotoFiles(p=>p.filter((_,j)=>j!==i));
+    setFotoPreviews(p=>p.filter((_,j)=>j!==i));
+  };
+
+  const label = categorie === "onderdelen" ? "Onderdeel" : "Accessoire";
+
+  const opslaan = async () => {
+    if(!f.naam.trim()) return;
+    setUploadStatus("laden");
+    try {
+      const nieuweUrls = fotoFiles.length > 0 ? await Promise.all(fotoFiles.map(file=>uploadFoto(file))) : [];
+      onSave({ ...f, fotos: [...bestaandeFotos, ...nieuweUrls], categorie });
+      onClose();
+    } catch(e) { setUploadStatus("fout: "+e.message); }
+  };
+
+  return(
+    <Modal title={`${isEdit?"WIJZIGEN":"TOEVOEGEN"} — ${label.toUpperCase()}`} onClose={onClose}>
+      <div style={s.sectionLabel}>Naam *</div>
+      <input style={{...s.input,marginBottom:10}} value={f.naam} onChange={set("naam")} placeholder={`Naam van ${label.toLowerCase()}`}/>
+
+      <div style={s.sectionLabel}>Omschrijving</div>
+      <textarea style={{...s.input,height:80,resize:"none",marginBottom:10}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving, maat, kleur, enz."/>
+
+      <div style={s.sectionLabel}>Prijs (€)</div>
+      <input style={{...s.input,marginBottom:14}} type="number" value={f.prijs} onChange={set("prijs")} placeholder="0"/>
+
+      <div style={s.sectionLabel}>Foto's</div>
+      {bestaandeFotos.length>0&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          {bestaandeFotos.map((url,i)=>(
+            <div key={i} style={{position:"relative"}}>
+              <img src={url} alt="" style={{width:72,height:72,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
+              <button onClick={()=>verwijderBestaandeFoto(i)} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,border:"none",color:"#fff",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {fotoPreviews.length>0&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          {fotoPreviews.map((src,i)=>(
+            <div key={i} style={{position:"relative"}}>
+              <img src={src} alt="" style={{width:72,height:72,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
+              <button onClick={()=>verwijderNieuweFoto(i)} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,border:"none",color:"#fff",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label style={{display:"inline-block",padding:"8px 14px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",marginBottom:10}}>
+        + Foto's toevoegen
+        <input type="file" accept="image/*" multiple onChange={voegFotosToe} style={{display:"none"}}/>
+      </label>
+
+      {isEdit&&(
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:4}}>
+          <input type="checkbox" id="actief" checked={f.actief} onChange={e=>setF(p=>({...p,actief:e.target.checked}))} style={{cursor:"pointer"}}/>
+          <label htmlFor="actief" style={{fontSize:13,cursor:"pointer"}}>Actief (zichtbaar voor klanten)</label>
+        </div>
+      )}
+
+      {uploadStatus==="laden"&&<div style={{fontSize:12,color:T.muted,marginBottom:8}}>Foto's uploaden…</div>}
+      {uploadStatus?.startsWith("fout")&&<div style={{fontSize:12,color:T.red,marginBottom:8}}>⚠ {uploadStatus}</div>}
+      <ModalFooter onClose={onClose} label={uploadStatus==="laden"?"Bezig…":isEdit?"Opslaan":"Toevoegen"} onSave={opslaan} disabled={!f.naam.trim()||uploadStatus==="laden"}/>
+    </Modal>
+  );
+}
+
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
@@ -1362,147 +1458,228 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
   const [proefritMotor,setProefritMotor]=useState(null);
   const [menuMotorId,setMenuMotorId]=useState(null);
   const [proefritConfirm,setProefritConfirm]=useState(null); // { motor, afspraak }
+  const [subTab,setSubTab]=useState("motoren"); // "motoren" | "onderdelen" | "accessoires"
+  const [productModal,setProductModal]=useState(null); // null | { categorie, product? }
+  const [delProduct,setDelProduct]=useState(null);
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-        <button style={s.btn} onClick={()=>setModal("add")}>+ Motor Toevoegen</button>
+      {/* Tab switcher */}
+      <div style={{display:"flex",gap:0,marginBottom:20,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden",alignSelf:"flex-start",width:"fit-content"}}>
+        {[["motoren","Motoren"],["onderdelen","Onderdelen"],["accessoires","Accessoires"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setSubTab(id)}
+            style={{padding:"9px 20px",background:subTab===id?T.accent:"transparent",color:subTab===id?"#fff":T.muted,border:"none",borderRight:id!=="accessoires"?`1px solid ${T.border}`:"none",cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:subTab===id?600:400,fontSize:13,transition:"background 0.15s"}}>
+            {label}
+          </button>
+        ))}
       </div>
-      {showroom.length===0&&<div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>Geen motors in voorraad</div>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-        {showroom.map(m=>{
-          const fotos = Array.isArray(m.fotos) ? m.fotos : [];
-          const vbJaren = bandLeeftijd(m.voorband_datum);
-          const abJaren = bandLeeftijd(m.achterband_datum);
-          const vbStatus = bandStatus(vbJaren);
-          const abStatus = bandStatus(abJaren);
-          return(
-            <div key={m.id} style={s.card}>
-              {/* Foto strip */}
-              {fotos.length>0&&(
-                <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:12,marginLeft:-20,marginRight:-20,paddingLeft:20,paddingRight:20,paddingBottom:2}}>
-                  {fotos.map((url,i)=>(
-                    <img key={i} src={clImg(url,400)} alt="" onClick={()=>setLichtbakFoto(url)}
-                      style={{height:130,width:"auto",objectFit:"cover",borderRadius:4,flexShrink:0,cursor:"pointer",border:`1px solid ${T.border}`}}/>
-                  ))}
-                </div>
-              )}
-              {fotos.length===0&&(
-                <div style={{height:90,background:T.surf2,borderRadius:4,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12}}>Geen foto's</div>
-              )}
 
-              {/* Motor info */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
-                    <span style={{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:12,fontWeight:700,background:`${T.yellow}15`,color:T.text,border:`1px solid ${T.yellow}70`,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{m.kenteken}</span>
-                    {m.chassis_nummer&&(
-                      <span style={{fontSize:11,color:T.muted,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:0.5}}>
-                        {m.chassis_nummer.slice(0,-4)}<span style={{color:T.yellow,fontWeight:700}}>{m.chassis_nummer.slice(-4)}</span>
-                      </span>
-                    )}
-                    {m.status==="gereserveerd"&&<span style={{...s.badge(T.yellow),fontSize:10}}>Gereserveerd</span>}
-                    {m.status==="niet_beschikbaar"&&<span style={{...s.badge(T.muted),fontSize:10}}>Niet beschikbaar</span>}
+      {/* ── Motoren tab ── */}
+      {subTab==="motoren"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+            <button style={s.btn} onClick={()=>setModal("add")}>+ Motor Toevoegen</button>
+          </div>
+          {showroom.length===0&&<div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>Geen motors in voorraad</div>}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+            {showroom.map(m=>{
+              const fotos = Array.isArray(m.fotos) ? m.fotos : [];
+              const vbJaren = bandLeeftijd(m.voorband_datum);
+              const abJaren = bandLeeftijd(m.achterband_datum);
+              const vbStatus = bandStatus(vbJaren);
+              const abStatus = bandStatus(abJaren);
+              return(
+                <div key={m.id} style={s.card}>
+                  {/* Foto strip */}
+                  {fotos.length>0&&(
+                    <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:12,marginLeft:-20,marginRight:-20,paddingLeft:20,paddingRight:20,paddingBottom:2}}>
+                      {fotos.map((url,i)=>(
+                        <img key={i} src={clImg(url,400)} alt="" onClick={()=>setLichtbakFoto(url)}
+                          style={{height:130,width:"auto",objectFit:"cover",borderRadius:4,flexShrink:0,cursor:"pointer",border:`1px solid ${T.border}`}}/>
+                      ))}
+                    </div>
+                  )}
+                  {fotos.length===0&&(
+                    <div style={{height:90,background:T.surf2,borderRadius:4,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12}}>Geen foto's</div>
+                  )}
+
+                  {/* Motor info */}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:18}}>{m.merk} {m.model}</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
+                        <span style={{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:12,fontWeight:700,background:`${T.yellow}15`,color:T.text,border:`1px solid ${T.yellow}70`,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>{m.kenteken}</span>
+                        {m.chassis_nummer&&(
+                          <span style={{fontSize:11,color:T.muted,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:0.5}}>
+                            {m.chassis_nummer.slice(0,-4)}<span style={{color:T.yellow,fontWeight:700}}>{m.chassis_nummer.slice(-4)}</span>
+                          </span>
+                        )}
+                        {m.status==="gereserveerd"&&<span style={{...s.badge(T.yellow),fontSize:10}}>Gereserveerd</span>}
+                        {m.status==="niet_beschikbaar"&&<span style={{...s.badge(T.muted),fontSize:10}}>Niet beschikbaar</span>}
+                      </div>
+                    </div>
+                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent,flexShrink:0}}>€{m.prijs.toLocaleString()}</div>
+                  </div>
+                  <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
+                    {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
+                  </div>
+
+                  {/* Bandendatums */}
+                  {(m.voorband_datum||m.achterband_datum)&&(
+                    <div style={{background:T.surf2,borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12}}>
+                      {m.voorband_datum&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:m.achterband_datum?4:0}}>
+                          <span style={{color:T.muted,minWidth:70}}>Voorband:</span>
+                          <BandTag datum={m.voorband_datum}/>
+                        </div>
+                      )}
+                      {m.achterband_datum&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <span style={{color:T.muted,minWidth:70}}>Achterband:</span>
+                          <BandTag datum={m.achterband_datum}/>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Acties */}
+                  <div style={{display:"flex",gap:8,marginBottom:10}}>
+                    <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}
+                      disabled={m.status==="niet_beschikbaar"}>
+                      Verkopen aan klant →
+                    </button>
+                    <button onClick={()=>{setProefritMotor(m);setMenuMotorId(null);}} title="Proefrit inboeken"
+                      style={{padding:"8px 11px",background:"none",border:`1px solid ${T.green}`,borderRadius:3,color:T.green,cursor:"pointer",fontSize:16,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
+                      🏍
+                    </button>
+                    <div style={{position:"relative",flexShrink:0}}>
+                      <button onClick={()=>setMenuMotorId(v=>v===m.id?null:m.id)}
+                        style={{padding:"8px 11px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"pointer",fontSize:18,fontFamily:"Barlow, sans-serif",height:"100%",lineHeight:1}}>
+                        ⋮
+                      </button>
+                      {menuMotorId===m.id&&(
+                        <>
+                          <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMenuMotorId(null)}/>
+                          <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:200,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
+                            <button onClick={()=>{setEditMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
+                            {m.status!=="gereserveerd"&&(
+                              <button onClick={()=>{onToggleStatus(m.id,"gereserveerd");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.yellow,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Reserveren</button>
+                            )}
+                            {m.status==="gereserveerd"&&(
+                              <button onClick={()=>{
+                                const pr=(afspraken||[]).find(a=>a.type==="proefrit"&&a.voorraad_motor_id===m.id);
+                                if(pr){setProefritConfirm({motor:m,afspraak:pr});}
+                                else{onToggleStatus(m.id,"beschikbaar");}
+                                setMenuMotorId(null);
+                              }} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
+                            )}
+                            {m.status!=="gereserveerd"&&(
+                              <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
+                                {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
+                              </button>
+                            )}
+                            <div style={{height:1,background:T.border}}/>
+                            <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Platform knoppen */}
+                  <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10}}>
+                    <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Publiceren op</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {[{naam:"Motoroccasion.nl",kleur:"#1a6bc4"},{naam:"Autoscout24.nl",kleur:"#f50c30"},{naam:"Marktplaats.nl",kleur:"#ed7d00"}].map(p=>(
+                        <button key={p.naam} title="Binnenkort beschikbaar"
+                          style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:"transparent",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"not-allowed",fontFamily:"Barlow, sans-serif",opacity:0.6}}>
+                          {p.naam} ↗
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent,flexShrink:0}}>€{m.prijs.toLocaleString()}</div>
-              </div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
-                {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
-              </div>
+              );
+            })}
+          </div>
 
-              {/* Bandendatums */}
-              {(m.voorband_datum||m.achterband_datum)&&(
-                <div style={{background:T.surf2,borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12}}>
-                  {m.voorband_datum&&(
-                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:m.achterband_datum?4:0}}>
-                      <span style={{color:T.muted,minWidth:70}}>Voorband:</span>
-                      <BandTag datum={m.voorband_datum}/>
-                    </div>
-                  )}
-                  {m.achterband_datum&&(
-                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                      <span style={{color:T.muted,minWidth:70}}>Achterband:</span>
-                      <BandTag datum={m.achterband_datum}/>
-                    </div>
-                  )}
-                </div>
-              )}
+          {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
+          {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
+          {proefritMotor&&<ProefritModal motor={proefritMotor} klanten={klanten} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
 
-              {/* Acties */}
-              <div style={{display:"flex",gap:8,marginBottom:10}}>
-                <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}
-                  disabled={m.status==="niet_beschikbaar"}>
-                  Verkopen aan klant →
-                </button>
-                <button onClick={()=>{setProefritMotor(m);setMenuMotorId(null);}} title="Proefrit inboeken"
-                  style={{padding:"8px 11px",background:"none",border:`1px solid ${T.green}`,borderRadius:3,color:T.green,cursor:"pointer",fontSize:16,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
-                  🏍
-                </button>
-                <div style={{position:"relative",flexShrink:0}}>
-                  <button onClick={()=>setMenuMotorId(v=>v===m.id?null:m.id)}
-                    style={{padding:"8px 11px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"pointer",fontSize:18,fontFamily:"Barlow, sans-serif",height:"100%",lineHeight:1}}>
-                    ⋮
-                  </button>
-                  {menuMotorId===m.id&&(
-                    <>
-                      <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMenuMotorId(null)}/>
-                      <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:200,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
-                        <button onClick={()=>{setEditMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
-                        {m.status!=="gereserveerd"&&(
-                          <button onClick={()=>{onToggleStatus(m.id,"gereserveerd");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.yellow,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Reserveren</button>
-                        )}
-                        {m.status==="gereserveerd"&&(
-                          <button onClick={()=>{
-                            const pr=(afspraken||[]).find(a=>a.type==="proefrit"&&a.voorraad_motor_id===m.id);
-                            if(pr){setProefritConfirm({motor:m,afspraak:pr});}
-                            else{onToggleStatus(m.id,"beschikbaar");}
-                            setMenuMotorId(null);
-                          }} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
-                        )}
-                        {m.status!=="gereserveerd"&&(
-                          <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
-                            {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
-                          </button>
-                        )}
-                        <div style={{height:1,background:T.border}}/>
-                        <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Platform knoppen */}
-              <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10}}>
-                <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Publiceren op</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {[{naam:"Motoroccasion.nl",kleur:"#1a6bc4"},{naam:"Autoscout24.nl",kleur:"#f50c30"},{naam:"Marktplaats.nl",kleur:"#ed7d00"}].map(p=>(
-                    <button key={p.naam} title="Binnenkort beschikbaar"
-                      style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:"transparent",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"not-allowed",fontFamily:"Barlow, sans-serif",opacity:0.6}}>
-                      {p.naam} ↗
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {/* Lichtbak voor foto's */}
+          {lichtbakFoto&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:20}} onClick={()=>setLichtbakFoto(null)}>
+              <img src={clImg(lichtbakFoto,1600)} alt="" style={{maxWidth:"100%",maxHeight:"90vh",objectFit:"contain",borderRadius:4}}/>
+              <button onClick={()=>setLichtbakFoto(null)} style={{position:"absolute",top:16,right:20,background:"none",border:"none",color:"#fff",fontSize:28,cursor:"pointer"}}>✕</button>
             </div>
-          );
-        })}
-      </div>
-
-      {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
-      {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
-      {proefritMotor&&<ProefritModal motor={proefritMotor} klanten={klanten} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
-
-      {/* Lichtbak voor foto's */}
-      {lichtbakFoto&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:20}} onClick={()=>setLichtbakFoto(null)}>
-          <img src={clImg(lichtbakFoto,1600)} alt="" style={{maxWidth:"100%",maxHeight:"90vh",objectFit:"contain",borderRadius:4}}/>
-          <button onClick={()=>setLichtbakFoto(null)} style={{position:"absolute",top:16,right:20,background:"none",border:"none",color:"#fff",fontSize:28,cursor:"pointer"}}>✕</button>
+          )}
         </div>
       )}
 
+      {/* ── Onderdelen / Accessoires tab ── */}
+      {(subTab==="onderdelen"||subTab==="accessoires")&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+            <button style={s.btn} onClick={()=>setProductModal({categorie:subTab})}>+ {subTab==="onderdelen"?"Onderdeel":"Accessoire"} Toevoegen</button>
+          </div>
+          {producten.filter(p=>p.categorie===subTab).length===0&&(
+            <div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>
+              Geen {subTab} toegevoegd
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
+            {producten.filter(p=>p.categorie===subTab).map(prod=>{
+              const fotos=Array.isArray(prod.fotos)?prod.fotos:[];
+              return(
+                <div key={prod.id} style={{...s.card,padding:0,overflow:"hidden"}}>
+                  {fotos.length>0?(
+                    <img src={clImg(fotos[0],400)} alt={prod.naam} style={{width:"100%",height:160,objectFit:"cover",display:"block",cursor:"pointer"}} onClick={()=>setLichtbakFoto(fotos[0])} />
+                  ):(
+                    <div style={{height:100,background:T.surf2,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:12}}>Geen foto</div>
+                  )}
+                  <div style={{padding:"12px 14px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                      <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,flex:1}}>{prod.naam}</div>
+                      {!prod.actief&&<span style={{...s.badge(T.muted),fontSize:10,flexShrink:0,marginLeft:6}}>Inactief</span>}
+                    </div>
+                    {prod.omschrijving&&<div style={{fontSize:12,color:T.muted,marginBottom:8,lineHeight:1.5}}>{prod.omschrijving}</div>}
+                    <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,color:T.accent,marginBottom:10}}>
+                      {prod.prijs!=null?`€${prod.prijs.toLocaleString()}`:"—"}
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>setProductModal({categorie:subTab,product:prod})} style={{...s.btnOutline,flex:1,fontSize:12}}>Wijzigen</button>
+                      <button onClick={()=>setDelProduct(prod)} style={{padding:"7px 11px",background:"none",border:`1px solid ${T.red}30`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif"}}>Verwijderen</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {productModal&&(
+            <ProductModal
+              categorie={productModal.categorie}
+              product={productModal.product||null}
+              onSave={productModal.product ? (f=>onUpdateProduct(productModal.product.id,f)) : onAddProduct}
+              onClose={()=>setProductModal(null)}
+            />
+          )}
+          {delProduct&&(
+            <Modal title="VERWIJDEREN" onClose={()=>setDelProduct(null)}>
+              <div style={{marginBottom:16,fontSize:14}}>Weet je zeker dat je <strong>{delProduct.naam}</strong> wilt verwijderen?</div>
+              <ModalFooter onClose={()=>setDelProduct(null)} label="Verwijderen" danger onSave={()=>{onDeleteProduct(delProduct);setDelProduct(null);}}/>
+            </Modal>
+          )}
+          {lichtbakFoto&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:20}} onClick={()=>setLichtbakFoto(null)}>
+              <img src={clImg(lichtbakFoto,1600)} alt="" style={{maxWidth:"100%",maxHeight:"90vh",objectFit:"contain",borderRadius:4}}/>
+              <button onClick={()=>setLichtbakFoto(null)} style={{position:"absolute",top:16,right:20,background:"none",border:"none",color:"#fff",fontSize:28,cursor:"pointer"}}>✕</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Confirm dialogs — buiten tab condities zodat ze altijd renderen */}
       {verkoopMotor&&(
         <Modal title="MOTOR VERKOPEN" onClose={()=>setVerkoopMotor(null)}>
           <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
