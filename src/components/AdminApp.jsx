@@ -1218,9 +1218,9 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
         {/* Status badge + adres + contact — volle breedte */}
         <div style={{marginTop:2}}>
           <div style={{marginBottom:6}}>
-            {klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
-            {klant.status==="goedgekeurd"&&<span style={{fontSize:11,background:`${T.green}20`,color:T.green,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✓ Goedgekeurd</span>}
-            {klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
+            {!klant.user_id&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>Nog geen Account</span>}
+            {klant.user_id&&klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
+            {klant.user_id&&klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
           </div>
           <div style={{fontSize:13,color:T.muted,lineHeight:1.8}}>
             {(klant.adres||klant.postcode||klant.woonplaats)&&(
@@ -1339,33 +1339,29 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
-  const [filter,setFilter]=useState("alle");
   const [sel,setSel]=useState(null);
   const [modal,setModal]=useState(null);
   const [uitnodigKlant,setUitnodigKlant]=useState(null);
 
-  const geenAccount=klanten.filter(k=>!k.user_id);
   const inAfwachting=klanten.filter(k=>k.status==="in_afwachting");
 
-  // Alle klant-ingevoerde servicemeldingen, nieuwste eerst
+  // Alleen klant-ingevoerde meldingen die nog niet als gezien zijn gemarkeerd
   const meldingen = klanten.flatMap(k =>
     (k.motoren||[]).flatMap(m =>
-      (m.service||[]).filter(sv => sv.klant_invoer).map(sv => ({
+      (m.service||[]).filter(sv => sv.klant_invoer && !sv.gezien_admin).map(sv => ({
         ...sv, klantId:k.id, klantNaam:k.naam, motorLabel:`${m.merk} ${m.model}`, kenteken:m.kenteken, motorId:m.id,
       }))
     )
   ).sort((a,b) => (b.datum||"").localeCompare(a.datum||""));
 
-  const filtered=klanten.filter(k=>{
-    const matchSearch=k.naam.toLowerCase().includes(search.toLowerCase())||
-      (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()));
-    const matchFilter=filter==="alle"||(filter==="geen_account"&&!k.user_id)||(filter==="in_afwachting"&&k.status==="in_afwachting");
-    return matchSearch&&matchFilter;
-  });
+  const filtered=klanten.filter(k=>
+    k.naam.toLowerCase().includes(search.toLowerCase())||
+    (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
+  );
   const klant=sel?klanten.find(k=>k.id===sel):null;
 
   const tabBar=(
@@ -1387,15 +1383,24 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
         <>
           <div style={{...s.sectionLabel,marginBottom:8}}>Nieuwe aanmeldingen</div>
           {inAfwachting.map(k=>(
-            <div key={k.id} onClick={()=>{setSel(k.id);setPageTab("klanten");}}
-              style={{padding:"12px 14px",background:`${T.yellow}10`,border:`1px solid ${T.yellow}50`,borderRadius:6,marginBottom:6,cursor:"pointer",transition:"border-color 0.15s"}}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.yellow}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=`${T.yellow}50`}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{k.naam}</div>
-                <span style={{fontSize:10,background:`${T.yellow}25`,color:T.yellow,padding:"2px 7px",borderRadius:3,fontWeight:600}}>Wacht op goedkeuring</span>
+            <div key={k.id} style={{padding:"12px 14px",background:`${T.yellow}10`,border:`1px solid ${T.yellow}50`,borderRadius:6,marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>{k.naam||k.email||"Nieuwe gebruiker"}</div>
+                  {k.email&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>{k.email}</div>}
+                </div>
+                <span style={{fontSize:10,background:`${T.yellow}25`,color:T.yellow,padding:"2px 7px",borderRadius:3,fontWeight:600,flexShrink:0,marginLeft:8}}>Wacht op goedkeuring</span>
               </div>
-              {k.email&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>{k.email}</div>}
+              <div style={{display:"flex",gap:8,marginTop:8}}>
+                <button onClick={()=>onKeurGoed(k.id)}
+                  style={{flex:1,padding:"7px 10px",background:T.green,color:"#fff",border:"none",borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                  ✓ Goedkeuren
+                </button>
+                <button onClick={()=>{setSel(k.id);setPageTab("klanten");}}
+                  style={{padding:"7px 12px",background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:5,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                  Bekijk
+                </button>
+              </div>
             </div>
           ))}
           {meldingen.length>0&&<div style={{height:1,background:T.border,margin:"10px 0 14px"}}/>}
@@ -1405,12 +1410,9 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
       {/* Klant-ingevoerde werkzaamheden */}
       {meldingen.length>0&&<div style={{...s.sectionLabel,marginBottom:8}}>Ingevoerde werkzaamheden</div>}
       {meldingen.length===0&&inAfwachting.length===0?(
-        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Nog geen meldingen</div>
+        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Geen openstaande meldingen</div>
       ):meldingen.map((sv,i)=>(
-        <div key={sv.id||i} onClick={()=>{setSel(sv.klantId);setPageTab("klanten");}}
-          style={{padding:"12px 14px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:6,marginBottom:6,cursor:"pointer",transition:"border-color 0.1s"}}
-          onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-          onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+        <div key={sv.id||i} style={{padding:"12px 14px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:6,marginBottom:6}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
             <div style={{fontSize:13,fontWeight:600,color:T.text}}>{sv.klantNaam}</div>
             <div style={{fontSize:11,color:T.muted,whiteSpace:"nowrap",marginLeft:8}}>{sv.datum}</div>
@@ -1418,7 +1420,17 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
           <div style={{fontSize:11,color:T.muted,marginBottom:6}}>{sv.motorLabel} · {sv.kenteken}</div>
           <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{sv.omschrijving}</div>
           {sv.km&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>bij {sv.km.toLocaleString()} km</div>}
-          {sv.interval_gereset&&<div style={{marginTop:6}}><span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span></div>}
+          {sv.interval_gereset&&<div style={{marginTop:4}}><span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 6px",fontWeight:600}}>Interval gereset</span></div>}
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button onClick={()=>onMarkeerGezien(sv.klantId,sv.motorId,sv.id)}
+              style={{flex:1,padding:"7px 10px",background:T.surf2,color:T.muted,border:`1px solid ${T.border}`,borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+              ✓ Gezien
+            </button>
+            <button onClick={()=>{setSel(sv.klantId);setPageTab("klanten");}}
+              style={{padding:"7px 12px",background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:5,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+              Bekijk klant
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -1430,25 +1442,13 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
         <input style={{...s.input,flex:1}} placeholder="Zoek naam of kenteken..." value={search} onChange={e=>setSearch(e.target.value)}/>
         <button style={s.btn} onClick={()=>setModal("addKlant")}>+</button>
       </div>
-      <div style={{display:"flex",gap:6}}>
-        {[
-          ["alle","Alle"],
-          ["in_afwachting",`Wacht${inAfwachting.length>0?` (${inAfwachting.length})`:""}`],
-          ["geen_account",`Geen account${geenAccount.length>0?` (${geenAccount.length})`:""}`]
-        ].map(([id,lbl])=>(
-          <button key={id} onClick={()=>setFilter(id)}
-            style={{flex:1,padding:"7px 6px",borderRadius:4,border:`1px solid ${filter===id?(id==="in_afwachting"?T.yellow:T.accent):T.border}`,background:filter===id?`${id==="in_afwachting"?T.yellow:T.accent}20`:"transparent",color:filter===id?(id==="in_afwachting"?T.yellow:T.accent):T.muted,cursor:"pointer",fontSize:11,fontFamily:"Barlow, sans-serif"}}>
-            {lbl}
-          </button>
-        ))}
-      </div>
       <div style={{display:"flex",flexDirection:"column",gap:4,overflowY:"auto"}}>
         {filtered.map(k=>(
           <div key={k.id} onClick={()=>setSel(k.id)}
             style={{padding:"12px 14px",background:sel===k.id?`${T.accent}15`:T.surf,border:`1px solid ${sel===k.id?T.accent:T.border}`,borderRadius:5,cursor:"pointer",transition:"all 0.1s"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{fontSize:14,fontWeight:500}}>{k.naam}</div>
-              {!k.user_id&&<span style={{fontSize:10,background:`${T.yellow}20`,color:T.yellow,padding:"1px 6px",borderRadius:3,fontWeight:600}}>Geen account</span>}
+              {!k.user_id&&<span style={{fontSize:10,background:`${T.red}15`,color:T.red,padding:"1px 6px",borderRadius:3,fontWeight:600}}>Geen account</span>}
             </div>
             <div style={{fontSize:12,color:T.muted,marginTop:3}}>{(k.motoren||[]).length} motor{(k.motoren||[]).length!==1?"en":""} · {k.woonplaats}</div>
           </div>
@@ -2636,6 +2636,24 @@ export default function AdminApp(){
     setKlanten(p=>p.map(k=>k.id===u.id?u:k));
   };
 
+  const keurGoedKlant = async (klantId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("klanten").update({ status: "goedgekeurd" }).eq("id", klantId);
+    setKlanten(p => p.map(k => k.id === klantId ? { ...k, status: "goedgekeurd" } : k));
+  };
+
+  const markeerGezienService = async (klantId, motorId, svcId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("service_beurten").update({ gezien_admin: true }).eq("id", svcId);
+    setKlanten(p => p.map(k => k.id !== klantId ? k : {
+      ...k,
+      motoren: (k.motoren||[]).map(m => m.id !== motorId ? m : {
+        ...m,
+        service: (m.service||[]).map(sv => sv.id !== svcId ? sv : { ...sv, gezien_admin: true }),
+      }),
+    }));
+  };
+
   const addMotorAanKlant = async (klantId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:motor} = await sb.from("motoren").insert({
@@ -3007,6 +3025,22 @@ export default function AdminApp(){
     return () => { if(sub) sub.unsubscribe(); };
   }, []);
 
+  // Realtime: nieuwe klant-aanmeldingen (via trigger bij auth signup)
+  useEffect(() => {
+    let sub;
+    import("../lib/supabase.js").then(({ supabase: sb }) => {
+      sub = sb.channel("admin-klanten")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "klanten" }, ({ new: n }) => {
+          setKlanten(p => p.some(k => k.id === n.id) ? p : [...p, { ...n, motoren: [] }]);
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "klanten" }, ({ new: n }) => {
+          setKlanten(p => p.map(k => k.id === n.id ? { ...k, ...n } : k));
+        })
+        .subscribe();
+    });
+    return () => { if(sub) sub.unsubscribe(); };
+  }, []);
+
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
     {id:"klanten",icon:"◎",label:"Klanten"},
@@ -3026,7 +3060,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
