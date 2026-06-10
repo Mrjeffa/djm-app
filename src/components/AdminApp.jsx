@@ -1108,7 +1108,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
   const vandaag=gepland.filter(a=>a.datum===TODAY);
   const komend=gepland.filter(a=>a.datum>=TODAY).sort((a,b)=>a.datum.localeCompare(b.datum)||(a.tijd||"").localeCompare(b.tijd||"")).slice(0,6);
   const klantAanmeldingen=klanten.filter(k=>k.status==="in_afwachting").length;
-  const klantMeldingen=klanten.reduce((a,k)=>a+(k.motoren||[]).reduce((b,m)=>b+(m.service||[]).filter(sv=>sv.klant_invoer).length,0),0);
+  const klantMeldingen=klanten.reduce((a,k)=>a+(k.motoren||[]).reduce((b,m)=>b+(m.service||[]).filter(sv=>sv.klant_invoer&&!sv.gezien_admin).length,0),0);
   const [editAfspraakItem,setEditAfspraakItem]=useState(null);
   const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
 
@@ -1243,7 +1243,7 @@ function MotorEditModal({motor, onSave, onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile}){
+function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile}){
   const [modal,setModal]=useState(null);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
@@ -1288,7 +1288,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
                 <div style={{position:"absolute",right:0,top:38,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:170,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
                   <button onClick={()=>{onUitnodig(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Uitnodigen</button>
                   {klant.status!=="afgewezen"&&(
-                    <button onClick={()=>{onUpdateKlant({...klant,status:"afgewezen"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✕ Afwijzen</button>
+                    <button onClick={()=>{onAfwijsKlant(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✕ Afwijzen</button>
                   )}
                   {klant.status==="afgewezen"&&(
                     <button onClick={()=>{onUpdateKlant({...klant,status:"goedgekeurd"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✓ Goedkeuren</button>
@@ -1451,7 +1451,7 @@ function KlantDetail({klant,onUpdateKlant,onAddMotor,onAddService,onUpdateServic
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{}}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{}}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -1509,6 +1509,10 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
                 <button onClick={()=>onKeurGoed(k.id)}
                   style={{padding:"7px 14px",background:T.green,color:"#fff",border:"none",borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
                   ✓ Goedkeuren
+                </button>
+                <button onClick={()=>onAfwijsKlant(k)}
+                  style={{padding:"7px 14px",background:"none",border:`1px solid ${T.red}`,color:T.red,borderRadius:5,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                  ✕ Afwijzen
                 </button>
                 <button onClick={()=>{setSel(k.id);setPageTab("klanten");}}
                   style={{padding:"7px 12px",background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:5,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
@@ -1578,6 +1582,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
           <KlantDetail
             klant={klant}
             onUpdateKlant={onUpdateKlant}
+            onAfwijsKlant={onAfwijsKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
             onUpdateService={onUpdateService}
@@ -1617,6 +1622,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
               <KlantDetail
                 klant={klant}
                 onUpdateKlant={onUpdateKlant}
+                onAfwijsKlant={onAfwijsKlant}
                 onAddMotor={onAddMotor}
                 onAddService={onAddService}
                 onUpdateService={onUpdateService}
@@ -3035,7 +3041,7 @@ export default function AdminApp(){
             motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
               ...m,
               kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
-              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset})),
+              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin})),
             }))
           }));
         }
@@ -3116,6 +3122,15 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("klanten").update({ status: "goedgekeurd" }).eq("id", klantId);
     setKlanten(p => p.map(k => k.id === klantId ? { ...k, status: "goedgekeurd" } : k));
+  };
+
+  const afwijsKlant = async (klant) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    if (klant.user_id) {
+      await sb.rpc("delete_auth_user_by_id", { target_user_id: klant.user_id });
+    }
+    await sb.from("klanten").delete().eq("id", klant.id);
+    setKlanten(p => p.filter(k => k.id !== klant.id));
   };
 
   const markeerGezienService = async (klantId, motorId, svcId) => {
@@ -3626,7 +3641,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
