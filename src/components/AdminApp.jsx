@@ -709,6 +709,7 @@ const DEFAULT_AFSPRAAK_SOORTEN = [
   {label:"Elektrisch & Diagnose",items:[{naam:"Diagnose bij storingen",duur:1},{naam:"Elektrische problemen oplossen",duur:2},{naam:"Accu vervangen",duur:1}]},
   {label:"Schade & Keuring",items:[{naam:"Schade inspectie",duur:1},{naam:"Schade rapport",duur:2},{naam:"Schadeherstel",duur:3},{naam:"Verzekeringsschade opnemen",duur:1},{naam:"Aankoopkeuring",duur:1},{naam:"Rijklaar maken",duur:2},{naam:"Taxatie of technische inspectie",duur:1}]},
   {label:"Overig",items:[{naam:"Accessoires monteren",duur:1},{naam:"Motor afstellen of synchroniseren",duur:2},{naam:"Anders",duur:1}]},
+  {label:"Intern",intern:true,items:[{naam:"Administratie",duur:1},{naam:"Schoonmaken / dweilen",duur:1},{naam:"Vergadering",duur:1},{naam:"Overig intern",duur:1}]},
 ];
 const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
@@ -896,6 +897,7 @@ function AfspraakModal({afspraken,klanten,onSave,onClose,geslotenDagen=[],openin
                   style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:heeftSel?`${T.accent}10`:T.surf2,border:"none",cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:13,fontWeight:heeftSel?600:400,color:heeftSel?T.accent:T.text}}>{g.label}</span>
+                    {g.intern&&<span style={{...s.badge(T.muted),fontSize:9,marginLeft:2}}>Intern</span>}
                     {heeftSel&&<span style={{...s.badge(T.accent),fontSize:10}}>{geselecteerd.length} geselecteerd</span>}
                   </div>
                   <span style={{fontSize:11,color:T.muted,display:"inline-block",transform:open?"rotate(180deg)":"none",transition:"transform 0.15s"}}>{open?"▲":"▼"}</span>
@@ -2111,6 +2113,7 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
                     style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:heeftSel?`${T.accent}10`:T.surf2,border:"none",cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:13,fontWeight:heeftSel?600:400,color:heeftSel?T.accent:T.text}}>{g.label}</span>
+                      {g.intern&&<span style={{...s.badge(T.muted),fontSize:9,marginLeft:2}}>Intern</span>}
                       {heeftSel&&<span style={{...s.badge(T.accent),fontSize:10}}>{geselecteerd.length} geselecteerd</span>}
                     </div>
                     <span style={{fontSize:11,color:T.muted}}>{open?"▲":"▼"}</span>
@@ -2504,6 +2507,15 @@ const DEFAULT_TIJDEN = {
   zo:{open:"",sluit:"",gesloten:true}
 };
 
+function NieuweGroepRij({onAdd}){
+  const [naam,setNaam]=useState("");
+  return(
+    <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8}}>
+      <input style={{...s.input,flex:1,padding:"6px 8px",fontSize:12}} placeholder="Naam nieuwe groep..." value={naam} onChange={e=>setNaam(e.target.value)}/>
+      <button style={{...s.btn,padding:"6px 12px",fontSize:12,flexShrink:0}} disabled={!naam.trim()} onClick={()=>{if(naam.trim()){onAdd(naam.trim());setNaam("");}}}>+ Groep</button>
+    </div>
+  );
+}
 function NieuweItemRij({onAdd}){
   const [naam,setNaam]=useState("");
   const [duur,setDuur]=useState(1);
@@ -2708,22 +2720,63 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
       {/* Afspraak soorten */}
       <div style={{...s.card,marginTop:16}}>
         <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Afspraak soorten</div>
-        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Beheer de soorten afspraken die ingepland kunnen worden. Wijzigingen zijn direct zichtbaar voor klanten en admin.</div>
-        {soorten.map((g,gi)=>(
-          <div key={gi} style={{marginBottom:16}}>
-            <div style={{fontSize:11,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8,fontWeight:600}}>{g.label}</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-              {(g.items||[]).map((item,ii)=>(
-                <div key={ii} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,fontSize:12}}>
-                  <span>{item.naam} · {item.duur}u</span>
-                  <button onClick={()=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:gr.items.filter((_,i)=>i!==ii)}))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
-                </div>
-              ))}
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Beheer de soorten afspraken. Wijzigingen zijn direct zichtbaar in het afspraken formulier.</div>
+
+        {/* Klant & admin groepen */}
+        <div style={{fontSize:11,color:T.muted,letterSpacing:0.5,textTransform:"uppercase",fontWeight:600,marginBottom:10}}>Zichtbaar voor klant & admin</div>
+        {soorten.filter(g=>!g.intern).map((g)=>{
+          const gi=soorten.indexOf(g);
+          return(
+            <div key={gi} style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.text}}>{g.label}</div>
+                <button onClick={()=>setSoorten(p=>p.filter((_,i)=>i!==gi))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:12,padding:0}} title="Groep verwijderen">×</button>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
+                {(g.items||[]).map((item,ii)=>(
+                  <div key={ii} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,fontSize:12}}>
+                    <span>{item.naam} · {item.duur}u</span>
+                    <button onClick={()=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:gr.items.filter((_,i)=>i!==ii)}))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+                  </div>
+                ))}
+              </div>
+              <NieuweItemRij onAdd={(naam,duur)=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:[...(gr.items||[]),{naam,duur}]}))}/>
             </div>
-            <NieuweItemRij onAdd={(naam,duur)=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:[...(gr.items||[]),{naam,duur}]}))}/>
-          </div>
-        ))}
-        <button style={{...s.btn,background:soortenOk?T.green:T.accent,marginTop:8}} onClick={async()=>{await onSaveAfspraakSoorten(soorten);setSoortenOk(true);setTimeout(()=>setSoortenOk(false),2000);}}>
+          );
+        })}
+        <NieuweGroepRij onAdd={(label)=>setSoorten(p=>[...p,{label,intern:false,items:[]}])}/>
+
+        <div style={{borderTop:`1px solid ${T.border}`,margin:"18px 0 14px"}}/>
+
+        {/* Intern only groepen */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <div style={{fontSize:11,color:T.muted,letterSpacing:0.5,textTransform:"uppercase",fontWeight:600}}>Alleen admin (intern)</div>
+          <span style={{...s.badge(T.muted),fontSize:9}}>Niet zichtbaar voor klanten</span>
+        </div>
+        {soorten.filter(g=>g.intern).map((g)=>{
+          const gi=soorten.indexOf(g);
+          return(
+            <div key={gi} style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.text}}>{g.label}</div>
+                <span style={{...s.badge(T.muted),fontSize:9}}>Intern</span>
+                <button onClick={()=>setSoorten(p=>p.filter((_,i)=>i!==gi))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:12,padding:0}} title="Groep verwijderen">×</button>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
+                {(g.items||[]).map((item,ii)=>(
+                  <div key={ii} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,fontSize:12}}>
+                    <span>{item.naam} · {item.duur}u</span>
+                    <button onClick={()=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:gr.items.filter((_,i)=>i!==ii)}))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+                  </div>
+                ))}
+              </div>
+              <NieuweItemRij onAdd={(naam,duur)=>setSoorten(p=>p.map((gr,gri)=>gri!==gi?gr:{...gr,items:[...(gr.items||[]),{naam,duur}]}))}/>
+            </div>
+          );
+        })}
+        <NieuweGroepRij onAdd={(label)=>setSoorten(p=>[...p,{label,intern:true,items:[]}])}/>
+
+        <button style={{...s.btn,background:soortenOk?T.green:T.accent,marginTop:14}} onClick={async()=>{await onSaveAfspraakSoorten(soorten);setSoortenOk(true);setTimeout(()=>setSoortenOk(false),2000);}}>
           {soortenOk?"✓ Opgeslagen":"Opslaan"}
         </button>
       </div>

@@ -447,7 +447,7 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
-  const dynamischeGroepen = afspraakSoorten.length ? afspraakSoorten : K_SOORT_GROEPEN.map(g => ({...g, items: g.items.map(naam => ({naam, duur: K_SOORT_DUUR[naam] || 1}))}));
+  const dynamischeGroepen = (afspraakSoorten.length ? afspraakSoorten : K_SOORT_GROEPEN.map(g => ({...g, items: g.items.map(naam => ({naam, duur: K_SOORT_DUUR[naam] || 1}))}))).filter(g => !g.intern);
   const duurMap = Object.fromEntries(dynamischeGroepen.flatMap(g => (g.items || []).map(i => [i.naam, i.duur || 1])));
   const totaalUur = Math.min([...soorten].reduce((s, o) => s + (duurMap[o] || 1), 0), 8);
 
