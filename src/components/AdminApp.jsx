@@ -1043,7 +1043,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           {vandaag.length===0?<div style={{color:T.muted,fontSize:13}}>Geen afspraken vandaag</div>:vandaag.map(a=>{
             const {label,km}=getMotorInfo(a.motor_id);
             return(
-              <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div key={a.id} onClick={()=>setEditAfspraakItem(a)} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}}>
                 <div style={{background:T.accent,color:"#fff",padding:"3px 8px",borderRadius:3,fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd}</div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
@@ -1062,7 +1062,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           {komend.map(a=>{
             const {label,km}=getMotorInfo(a.motor_id);
             return(
-              <div key={a.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+              <div key={a.id} onClick={()=>setEditAfspraakItem(a)} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
@@ -1079,6 +1079,15 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           })}
         </div>
       </div>
+      {editAfspraakItem&&(
+        <AfspraakEditModal
+          afspraak={editAfspraakItem}
+          klanten={klanten}
+          voorraad={showroom}
+          onSave={a=>{onEditAfspraak(a);setEditAfspraakItem(null);}}
+          onDelete={id=>{onDeleteAfspraak(id);setEditAfspraakItem(null);}}
+          onClose={()=>setEditAfspraakItem(null)}/>
+      )}
     </div>
   );
 }
@@ -2449,7 +2458,7 @@ export default function AdminApp(){
 
   const pageContent = (
     <>
-      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
+      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
