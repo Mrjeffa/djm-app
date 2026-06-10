@@ -1491,7 +1491,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
         onMouseEnter={e => e.currentTarget.style.borderColor = T.accent + "80"}
         onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
         {fotos.length > 0 ? (
-          <div style={{ display:"flex", gap:6, overflowX:"auto", marginBottom:12, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20, paddingBottom:2, scrollbarWidth:"none" }}>
+          <div style={{ display:"flex", gap:6, overflowX:"auto", marginBottom:12, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20, paddingBottom:6 }}>
             {fotos.map((url, i) => (
               <img key={i} src={clImg(url, 400)} alt=""
                 style={{ height:130, width:"auto", objectFit:"cover", borderRadius:4, flexShrink:0, border:`1px solid ${T.border}`, filter: isVerkocht ? "grayscale(25%)" : "none" }} />
@@ -1565,7 +1565,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
             <button onClick={() => setDetailMotor(null)}
               style={{ position:"absolute", top:10, right:10, background:"rgba(0,0,0,0.55)", border:"none", color:"#fff", fontSize:18, cursor:"pointer", zIndex:2, lineHeight:1, width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             {fotos.length > 0 ? (
-              <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 0", scrollbarWidth:"none" }}>
+              <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 6px" }}>
                 {fotos.map((url, i) => (
                   <img key={i} src={clImg(url, 600)} alt=""
                     onClick={e => { e.stopPropagation(); setLichtbakFoto(url); }}
@@ -1711,7 +1711,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           <div style={{ background:T.surf, borderRadius:10, maxWidth:620, width:"100%", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
             <button onClick={() => setDetailProduct(null)} style={{ position:"absolute", top:10, right:10, background:"rgba(0,0,0,0.55)", border:"none", color:"#fff", fontSize:18, cursor:"pointer", zIndex:2, lineHeight:1, width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             {fotos.length > 0 ? (
-              <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 0", scrollbarWidth:"none" }}>
+              <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"16px 16px 6px" }}>
                 {fotos.map((url, i) => (
                   <img key={i} src={clImg(url, 600)} alt=""
                     onClick={e => { e.stopPropagation(); setLichtbakFoto(url); }}
