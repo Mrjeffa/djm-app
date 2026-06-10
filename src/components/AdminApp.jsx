@@ -58,9 +58,27 @@ const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 const CL_CLOUD = "dkfdwnep4";
 const CL_PRESET = "Djm app";
 
+const compressImage = async (file) => {
+  if (file.size <= 1024 * 1024) return file;
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  await new Promise(r => { img.onload = r; img.src = url; });
+  URL.revokeObjectURL(url);
+  const canvas = document.createElement('canvas');
+  const MAX = 1920;
+  let w = img.width, h = img.height;
+  if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+  let q = 0.85, blob;
+  do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob.size > 1024 * 1024 && q > 0.1);
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+};
+
 const uploadFoto = async (file) => {
+  const compressed = await compressImage(file);
   const fd = new FormData();
-  fd.append("file", file);
+  fd.append("file", compressed);
   fd.append("upload_preset", CL_PRESET);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_CLOUD}/image/upload`, {
     method: "POST", body: fd,
@@ -1647,7 +1665,7 @@ function ProductModal({categorie, product=null, onSave, onClose}){
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
@@ -1715,6 +1733,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                         )}
                         {m.status==="gereserveerd"&&<span style={{...s.badge(T.yellow),fontSize:10}}>Gereserveerd</span>}
                         {m.status==="niet_beschikbaar"&&<span style={{...s.badge(T.muted),fontSize:10}}>Niet beschikbaar</span>}
+                        {m.verkocht_op&&<span style={{...s.badge(T.green),fontSize:10}}>Verkocht</span>}
                       </div>
                     </div>
                     <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:T.accent,flexShrink:0}}>€{m.prijs.toLocaleString()}</div>
@@ -1824,13 +1843,13 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
             <button style={s.btn} onClick={()=>setProductModal({categorie:subTab})}>+ {subTab==="onderdelen"?"Onderdeel":"Accessoire"} Toevoegen</button>
           </div>
-          {producten.filter(p=>p.categorie===subTab).length===0&&(
+          {(producten||[]).filter(p=>p.categorie===subTab&&(!p.fotos_bewaren_tot||p.fotos_bewaren_tot>TODAY)).length===0&&(
             <div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60}}>
               Geen {subTab} toegevoegd
             </div>
           )}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
-            {producten.filter(p=>p.categorie===subTab).map(prod=>{
+            {(()=>{const zichtbareProducten=(producten||[]).filter(p=>p.categorie===subTab&&(!p.fotos_bewaren_tot||p.fotos_bewaren_tot>TODAY));return zichtbareProducten;})().map(prod=>{
               const fotos=Array.isArray(prod.fotos)?prod.fotos:[];
               return(
                 <div key={prod.id} style={{...s.card,padding:0,overflow:"hidden"}}>
@@ -1842,13 +1861,17 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                   <div style={{padding:"12px 14px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                       <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,flex:1}}>{prod.naam}</div>
-                      {!prod.actief&&<span style={{...s.badge(T.muted),fontSize:10,flexShrink:0,marginLeft:6}}>Inactief</span>}
+                      <div style={{display:"flex",gap:4,flexShrink:0,marginLeft:6}}>
+                        {prod.verkocht_op&&<span style={{...s.badge(T.red),fontSize:10}}>Verkocht</span>}
+                        {!prod.actief&&!prod.verkocht_op&&<span style={{...s.badge(T.muted),fontSize:10}}>Niet beschikbaar</span>}
+                      </div>
                     </div>
                     {prod.omschrijving&&<div style={{fontSize:12,color:T.muted,marginBottom:8,lineHeight:1.5}}>{prod.omschrijving}</div>}
                     <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,color:T.accent,marginBottom:10}}>
                       {prod.prijs!=null?`€${prod.prijs.toLocaleString()}`:"—"}
                     </div>
                     <div style={{display:"flex",gap:8}}>
+                      {!prod.verkocht_op&&!prod.fotos_bewaren_tot&&<button style={{...s.btn,background:T.green,fontSize:11,padding:"6px 10px"}} onClick={()=>onVerkocht(prod)}>Verkocht</button>}
                       <button onClick={()=>setProductModal({categorie:subTab,product:prod})} style={{...s.btnOutline,flex:1,fontSize:12}}>Wijzigen</button>
                       <button onClick={()=>setDelProduct(prod)} style={{padding:"7px 11px",background:"none",border:`1px solid ${T.red}30`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif"}}>Verwijderen</button>
                     </div>
@@ -2800,15 +2823,23 @@ export default function AdminApp(){
         const sb = (await import("../lib/supabase.js")).supabase;
         const [k, v, a, verlopen, pData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
-          sb.from("voorraad").select("*").is("verkocht_op",null).order("created_at",{ascending:false}),
+          sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
-          sb.from("voorraad").select("id,fotos").lte("fotos_bewaren_tot",TODAY).not("fotos","eq","[]"),
+          sb.from("voorraad").select("id,fotos").lte("fotos_bewaren_tot",TODAY),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
         ]);
-        // Cleanup verlopen foto's (>30 dagen na verkoop)
+        // Cleanup: verwijder records 30 dagen na verkoop/verwijdering
         for(const m of (verlopen.data||[])){
           const urls=(m.fotos||[]).filter(Boolean);
-          if(urls.length){ sb.functions.invoke("cloudinary-delete",{body:{urls}}); await sb.from("voorraad").update({fotos:[]}).eq("id",m.id); }
+          if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
+          await sb.from("voorraad").delete().eq("id",m.id);
+        }
+        // Cleanup producten
+        const verlopenProd = await sb.from("producten").select("id,fotos").lte("fotos_bewaren_tot",TODAY);
+        for(const p of (verlopenProd.data||[])){
+          const urls=(p.fotos||[]).filter(Boolean);
+          if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
+          await sb.from("producten").delete().eq("id",p.id);
         }
 
         const klantIds = (k.data||[]).map(x=>x.id);
@@ -3078,9 +3109,10 @@ export default function AdminApp(){
 
   const deleteVoorraadMotor = async (motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("voorraad").delete().eq("id",motor.id);
+    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
+    const datum = bewaren_tot.toISOString().split("T")[0];
+    await sb.from("voorraad").update({status:"verwijderd",fotos_bewaren_tot:datum}).eq("id",motor.id);
     setShowroom(p=>p.filter(m=>m.id!==motor.id));
-    verwijderCloudinaryFotos(motor.fotos);
   };
 
   const addProduct = async (f) => {
@@ -3103,11 +3135,18 @@ export default function AdminApp(){
 
   const deleteProduct = async (prod) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    if (prod.fotos?.length) {
-      sb.functions.invoke("cloudinary-delete", { body: { urls: prod.fotos } });
-    }
-    await sb.from("producten").delete().eq("id", prod.id);
-    setProducten(p => p.filter(x => x.id !== prod.id));
+    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
+    const datum = bewaren_tot.toISOString().split("T")[0];
+    await sb.from("producten").update({actief:false, fotos_bewaren_tot:datum}).eq("id",prod.id);
+    setProducten(p=>p.map(x=>x.id===prod.id?{...x,actief:false,fotos_bewaren_tot:datum}:x));
+  };
+
+  const verkochProduct = async (prod) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
+    const datum = bewaren_tot.toISOString().split("T")[0];
+    await sb.from("producten").update({verkocht_op:TODAY, fotos_bewaren_tot:datum}).eq("id",prod.id);
+    setProducten(p=>p.map(x=>x.id===prod.id?{...x,verkocht_op:TODAY,fotos_bewaren_tot:datum}:x));
   };
 
   const toggleVoorraadStatus = async (motorId, nieuweStatus) => {
@@ -3343,7 +3382,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
     </>
