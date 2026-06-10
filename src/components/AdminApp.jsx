@@ -115,8 +115,8 @@ const getProefritSlots = (afspraken, datum) => {
   const oBezet = pr.some(a => timeToMin(a.tijd) < MIDI_MIN);
   const mBezet = pr.some(a => timeToMin(a.tijd) >= MIDI_MIN);
   const slots = [];
-  if(!oBezet) for(let t=WSTART; t<MIDI_MIN-60; t+=30) slots.push(minToTime(t));
-  if(!mBezet) for(let t=MIDI_MIN; t+60<=WEND; t+=30) slots.push(minToTime(t));
+  if(!oBezet) for(let t=WSTART; t<660; t+=30) slots.push(minToTime(t));       // 09:00–10:30
+  if(!mBezet) for(let t=MIDI_MIN; t+60<=WEND-60; t+=30) slots.push(minToTime(t)); // 13:00–15:00
   return slots;
 };
 
@@ -536,7 +536,7 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
-      <Field label="Chassisnummer (optioneel)"><input style={s.input} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456" style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}/></Field>
+      <Field label="Chassisnummer (optioneel)"><input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/></Field>
 
       {/* Stap 3: bandendatums */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
@@ -670,104 +670,99 @@ function VoorraadEditModal({motor, onSave, onClose}){
   );
 }
 
-function AfspraakModal({afspraken,klanten,voorraad,onSave,onClose}){
-  const [type,setType]=useState("service");
-  const [f,setF]=useState({klant:"",motor:"",naam:"",voorraad_motor_id:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
+function AfspraakModal({afspraken,klanten,onSave,onClose}){
+  const [f,setF]=useState({klant:"",motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
   const selectedKlant=klanten.find(k=>k.naam===f.klant);
-  const beschikbaar=(voorraad||[]).filter(m=>m.status==="beschikbaar");
   const serviceSlots=f.datum&&f.duur?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
-  const proefritSlots=f.datum?getProefritSlots(afspraken,f.datum):[];
-  const slots=type==="proefrit"?proefritSlots:serviceSlots;
-  const kanOpslaan=type==="proefrit"?(f.naam&&f.voorraad_motor_id&&f.tijd):(f.klant&&f.tijd);
+  const kanOpslaan=f.klant&&f.tijd;
 
   return(
     <Modal title="AFSPRAAK INPLANNEN" onClose={onClose}>
-      {/* Type toggle */}
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {[["service","🔧 Service"],["proefrit","🏍 Proefrit"]].map(([t,lbl])=>(
-          <button key={t} onClick={()=>{setType(t);setF(p=>({...p,tijd:""}));}}
-            style={{flex:1,padding:"8px",borderRadius:3,border:`1px solid ${type===t?(t==="proefrit"?T.green:T.accent):T.border}`,background:type===t?(t==="proefrit"?`${T.green}20`:`${T.accent}20`):"transparent",color:type===t?(t==="proefrit"?T.green:T.accent):T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:600,fontSize:13}}>
-            {lbl}
-          </button>
-        ))}
-      </div>
-
-      {type==="service"?(
-        <>
-          <Field label="Klant">
-            <select style={s.input} value={f.klant} onChange={e=>setF(p=>({...p,klant:e.target.value,motor:"",tijd:""}))}>
-              <option value="">— Selecteer klant —</option>
-              {klanten.map(k=><option key={k.id}>{k.naam}</option>)}
-              <option value="Walk-in">Walk-in / Onbekend</option>
-            </select>
-          </Field>
-          {selectedKlant&&(
-            <Field label="Motor">
-              <select style={s.input} value={f.motor} onChange={set("motor")}>
-                <option value="">— Selecteer motor —</option>
-                {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
-              </select>
-            </Field>
-          )}
-          <Grid2>
-            <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
-            <Field label="Duur (uur)">
-              <select style={s.input} value={f.duur} onChange={e=>setF(p=>({...p,duur:e.target.value,tijd:""}))}>
-                {[1,2,3,4,5,6,7,8].map(h=><option key={h}>{h}</option>)}
-              </select>
-            </Field>
-          </Grid2>
-        </>
-      ):(
-        <>
-          <Field label="Naam proefrijder *">
-            <input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Voornaam Achternaam"/>
-          </Field>
-          <Field label="Motor *">
-            <select style={s.input} value={f.voorraad_motor_id} onChange={e=>setF(p=>({...p,voorraad_motor_id:e.target.value,tijd:""}))}>
-              <option value="">— Selecteer motor —</option>
-              {beschikbaar.map(m=><option key={m.id} value={m.id}>{m.merk} {m.model} — {m.kenteken}</option>)}
-            </select>
-          </Field>
-          {beschikbaar.length===0&&<div style={{fontSize:12,color:T.yellow,marginBottom:10}}>⚠ Geen beschikbare motors in voorraad</div>}
-          <Grid2>
-            <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
-            <Field label="Duur (uur)">
-              <select style={s.input} value={f.duur} onChange={e=>setF(p=>({...p,duur:e.target.value,tijd:""}))}>
-                {[1,2].map(h=><option key={h}>{h}</option>)}
-              </select>
-            </Field>
-          </Grid2>
-        </>
+      <Field label="Klant">
+        <select style={s.input} value={f.klant} onChange={e=>setF(p=>({...p,klant:e.target.value,motor:"",tijd:""}))}>
+          <option value="">— Selecteer klant —</option>
+          {klanten.map(k=><option key={k.id}>{k.naam}</option>)}
+          <option value="Walk-in">Walk-in / Onbekend</option>
+        </select>
+      </Field>
+      {selectedKlant&&(
+        <Field label="Motor">
+          <select style={s.input} value={f.motor} onChange={set("motor")}>
+            <option value="">— Selecteer motor —</option>
+            {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
+          </select>
+        </Field>
       )}
-
+      <Grid2>
+        <Field label="Datum"><input style={s.input} type="date" value={f.datum} onChange={set("datum")}/></Field>
+        <Field label="Duur (uur)">
+          <select style={s.input} value={f.duur} onChange={e=>setF(p=>({...p,duur:e.target.value,tijd:""}))}>
+            {[1,2,3,4,5,6,7,8].map(h=><option key={h}>{h}</option>)}
+          </select>
+        </Field>
+      </Grid2>
       {f.datum&&(
-        <Field label={type==="proefrit"?`Beschikbare tijden — ${fmtDate(f.datum)} (ochtend t/m 12:00 · middag vanaf 13:00)`:`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
-          {slots.length===0?(
+        <Field label={`Beschikbare tijden — ${fmtDate(f.datum)} — ${f.duur}u blok`}>
+          {serviceSlots.length===0?(
             <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>
-              {type==="proefrit"?"⚠ Beide dagdelen zijn al volgeboekt op deze dag":"⚠ Geen vrij blok beschikbaar op deze dag"}
+              ⚠ Geen vrij blok beschikbaar op deze dag
             </div>
           ):(
             <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
-              {slots.map(t=>{
-                const isMiddag=timeToMin(t)>=MIDI_MIN;
-                const kleur=type==="proefrit"?T.green:T.accent;
-                return(
-                  <button key={t} onClick={()=>setF(p=>({...p,tijd:t}))}
-                    style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?kleur:T.border}`,background:f.tijd===t?`${kleur}25`:"transparent",color:f.tijd===t?kleur:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
-                    {t}{type==="proefrit"&&<span style={{fontSize:10,opacity:0.7,marginLeft:3}}>{isMiddag?"mid":"och"}</span>}
-                  </button>
-                );
-              })}
+              {serviceSlots.map(t=>(
+                <button key={t} onClick={()=>setF(p=>({...p,tijd:t}))}
+                  style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?T.accent:T.border}`,background:f.tijd===t?`${T.accent}25`:"transparent",color:f.tijd===t?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
+                  {t}
+                </button>
+              ))}
             </div>
           )}
         </Field>
       )}
       <Field label="Opmerkingen">
-        <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder={type==="proefrit"?"Eventuele opmerkingen":"Wat moet er gedaan worden?"}/>
+        <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Wat moet er gedaan worden?"/>
       </Field>
-      <ModalFooter onClose={onClose} label="Inplannen" onClick={()=>{if(kanOpslaan){onSave({...f,type,duur:parseInt(f.duur)});onClose();}}}/>
+      <ModalFooter onClose={onClose} label="Inplannen" onClick={()=>{if(kanOpslaan){onSave({...f,type:"service",duur:parseInt(f.duur)});onClose();}}}/>
+    </Modal>
+  );
+}
+
+function ProefritModal({motor, afspraken, onSave, onClose}){
+  const [f,setF]=useState({naam:"",datum:TODAY,tijd:"",omschrijving:""});
+  const slots=f.datum?getProefritSlots(afspraken,f.datum):[];
+  return(
+    <Modal title="PROEFRIT INBOEKEN" onClose={onClose}>
+      <div style={{background:`${T.green}15`,border:`1px solid ${T.green}40`,borderRadius:5,padding:"8px 12px",marginBottom:14,fontSize:13,color:T.green}}>
+        🏍 {motor.merk} {motor.model} — {motor.kenteken}
+      </div>
+      <Field label="Naam proefrijder *">
+        <input style={s.input} value={f.naam} onChange={e=>setF(p=>({...p,naam:e.target.value}))} placeholder="Voornaam Achternaam"/>
+      </Field>
+      <Field label="Datum">
+        <input style={s.input} type="date" value={f.datum} onChange={e=>setF(p=>({...p,datum:e.target.value,tijd:""}))}/>
+      </Field>
+      {f.datum&&(
+        <Field label={`Beschikbare tijden — ${fmtDate(f.datum)}`}>
+          {slots.length===0?(
+            <div style={{padding:"10px 12px",background:T.surf2,borderRadius:4,color:T.red,fontSize:13}}>⚠ Beide dagdelen zijn al volgeboekt op deze dag</div>
+          ):(
+            <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+              {slots.map(t=>(
+                <button key={t} onClick={()=>setF(p=>({...p,tijd:t}))}
+                  style={{padding:"7px 13px",borderRadius:4,border:`1px solid ${f.tijd===t?T.green:T.border}`,background:f.tijd===t?`${T.green}25`:"transparent",color:f.tijd===t?T.green:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif"}}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+        </Field>
+      )}
+      <Field label="Opmerkingen">
+        <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Eventuele opmerkingen"/>
+      </Field>
+      <ModalFooter onClose={onClose} label="Inplannen"
+        onClick={()=>{if(f.naam&&f.tijd){onSave({type:"proefrit",naam:f.naam,datum:f.datum,tijd:f.tijd,omschrijving:f.omschrijving,duur:1,voorraad_motor_id:motor.id});onClose();}}}/>
     </Modal>
   );
 }
@@ -1107,13 +1102,15 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAddMotor,onAddService,o
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,afspraken,onAddAfspraak}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
   const [lichtbakFoto,setLichtbakFoto]=useState(null);
   const [delMotor,setDelMotor]=useState(null);
   const [editMotor,setEditMotor]=useState(null);
+  const [proefritMotor,setProefritMotor]=useState(null);
+  const [menuMotorId,setMenuMotorId]=useState(null);
 
   return(
     <div>
@@ -1188,15 +1185,36 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                   disabled={m.status==="niet_beschikbaar"}>
                   Verkopen aan klant →
                 </button>
-                <button onClick={()=>setEditMotor(m)} title="Wijzigen" style={{padding:"8px 12px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.accent,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>✏</button>
-                <button onClick={()=>setDelMotor(m)} title="Verwijderen" style={{padding:"8px 12px",background:"none",border:`1px solid ${T.red}`,borderRadius:3,color:T.red,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",flexShrink:0}}>🗑</button>
-              </div>
-              {m.status!=="gereserveerd"&&(
-                <button onClick={()=>onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar")}
-                  style={{width:"100%",padding:"6px",fontSize:11,background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",marginBottom:6}}>
-                  {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
+                <button onClick={()=>{setProefritMotor(m);setMenuMotorId(null);}} title="Proefrit inboeken"
+                  style={{padding:"8px 11px",background:"none",border:`1px solid ${T.green}`,borderRadius:3,color:T.green,cursor:"pointer",fontSize:16,fontFamily:"Barlow, sans-serif",flexShrink:0}}>
+                  🏍
                 </button>
-              )}
+                <div style={{position:"relative",flexShrink:0}}>
+                  <button onClick={()=>setMenuMotorId(v=>v===m.id?null:m.id)}
+                    style={{padding:"8px 11px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"pointer",fontSize:18,fontFamily:"Barlow, sans-serif",height:"100%",lineHeight:1}}>
+                    ⋮
+                  </button>
+                  {menuMotorId===m.id&&(
+                    <>
+                      <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMenuMotorId(null)}/>
+                      <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:200,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
+                        <button onClick={()=>{setEditMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
+                        {m.status!=="gereserveerd"&&(
+                          <button onClick={()=>{onToggleStatus(m.id,"gereserveerd");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.yellow,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Reserveren</button>
+                        )}
+                        {m.status==="gereserveerd"&&(
+                          <button onClick={()=>{onToggleStatus(m.id,"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Terug beschikbaar</button>
+                        )}
+                        <button onClick={()=>{onToggleStatus(m.id,m.status==="beschikbaar"?"niet_beschikbaar":"beschikbaar");setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>
+                          {m.status==="beschikbaar"?"Uit verkoop halen":"Terug in verkoop"}
+                        </button>
+                        <div style={{height:1,background:T.border}}/>
+                        <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
 
               {/* Platform knoppen */}
               <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10}}>
@@ -1217,6 +1235,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
 
       {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
       {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
+      {proefritMotor&&<ProefritModal motor={proefritMotor} afspraken={afspraken||[]} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
 
       {/* Lichtbak voor foto's */}
       {lichtbakFoto&&(
@@ -1436,7 +1455,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
-        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
             onSave={a=>{onEditAfspraak(a);setEditAfspraak(null);}}
@@ -1582,7 +1601,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       )}
 
-      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
@@ -2118,7 +2137,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} voorraad={showroom}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} afspraken={afspraken} onAddAfspraak={addAfspraak}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp}/>}
     </>
