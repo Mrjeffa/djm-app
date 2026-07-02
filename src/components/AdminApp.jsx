@@ -737,7 +737,7 @@ const DEFAULT_AFSPRAAK_SOORTEN = [
 ];
 const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
-function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],initialModus="bestaand",initialInternMotorId=""}){
+function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],initialModus="bestaand",initialInternMotorId="",initialDatum=TODAY}){
   const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
     if(!datum) return false;
@@ -773,7 +773,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       return next;
     });
   };
-  const [f,setF]=useState({motor:"",datum:TODAY,duur:"1",omschrijving:"",tijd:""});
+  const [f,setF]=useState({motor:"",datum:initialDatum,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
 
   const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
@@ -2232,9 +2232,69 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
   );
 }
 
+function AfspraakDetailModal({afspraak, voorraad, onClose, onEdit, onDelete, onAfwerken}){
+  const isProefrit=afspraak.type==="proefrit";
+  const isIntern=afspraak.type==="intern";
+  const kleur=isProefrit?T.green:isIntern?"#6366F1":T.accent;
+  const typLabel=isProefrit?"Proefrit":isIntern?"Intern":"Service";
+  const motorInfo=afspraak.voorraad_motor_id?(voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id):null;
+  const displayNaam=isProefrit?(afspraak.naam||"Proefrit"):isIntern?(afspraak.naam||afspraak.opmerking||"Intern"):afspraak.klant||"Onbekend";
+  return(
+    <Modal title="AFSPRAAK DETAILS" onClose={onClose}>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <span style={{...s.badge(kleur),fontSize:11,fontWeight:700,padding:"4px 10px"}}>{typLabel}</span>
+        {afspraak.status==="afgewerkt"&&<span style={{...s.badge(T.green),fontSize:11,padding:"4px 10px"}}>✓ Afgewerkt</span>}
+        {afspraak.status==="gepland"&&<span style={{...s.badge(T.muted),fontSize:11,padding:"4px 10px"}}>Gepland</span>}
+      </div>
+      <div style={{fontSize:17,fontWeight:700,marginBottom:8}}>{displayNaam}</div>
+      {motorInfo&&(
+        <div style={{fontSize:13,color:T.muted,marginBottom:14,display:"flex",gap:6,alignItems:"center"}}>
+          <span>🏍</span>
+          <span style={{color:T.text}}>{[motorInfo.merk,motorInfo.model].filter(Boolean).join(" ")}</span>
+          {motorInfo.kenteken&&<span style={{fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>— {motorInfo.kenteken}</span>}
+        </div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+        <div><div style={s.label}>Datum</div><div style={{fontSize:13}}>{afspraak.datum||"—"}</div></div>
+        <div><div style={s.label}>Tijd</div><div style={{fontSize:13}}>{afspraak.tijd||"—"}</div></div>
+        <div><div style={s.label}>Duur</div><div style={{fontSize:13}}>{afspraak.duur||1}u</div></div>
+      </div>
+      {afspraak.soort&&(
+        <div style={{marginBottom:14}}>
+          <div style={s.label}>Soort</div>
+          <div style={{fontSize:13}}>{afspraak.soort}</div>
+        </div>
+      )}
+      {(afspraak.opmerking||afspraak.omschrijving)&&(
+        <div style={{marginBottom:14}}>
+          <div style={s.label}>Opmerking</div>
+          <div style={{fontSize:13,color:T.text}}>{afspraak.opmerking||afspraak.omschrijving}</div>
+        </div>
+      )}
+      {afspraak.interne_opmerking&&(
+        <div style={{padding:"8px 12px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4,marginBottom:14,fontSize:12}}>
+          <span style={{fontWeight:600,color:T.text}}>Interne opmerking: </span>
+          <span style={{color:T.muted}}>{afspraak.interne_opmerking}</span>
+        </div>
+      )}
+      <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+        <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {!isProefrit&&afspraak.status!=="afgewerkt"&&onAfwerken&&(
+            <button style={{...s.btn,background:T.green}} onClick={onAfwerken}>✓ Afwerken</button>
+          )}
+          <button style={s.btnGhost} onClick={onClose}>Sluiten</button>
+          <button style={s.btn} onClick={onEdit}>Wijzigen</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClose, onAfwerken, afspraakSoorten=[]}){
   const isAanvraag=afspraak.status==="aangevraagd";
   const isProefrit=afspraak.type==="proefrit";
+  const isIntern=afspraak.type==="intern";
   const [f,setF]=useState({
     klant: afspraak.klant||"",
     naam: afspraak.naam||"",
@@ -2259,6 +2319,11 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
           🏍 Proefrit{motorInfo?` · ${motorInfo.merk} ${motorInfo.model} (${motorInfo.kenteken})`:""}
         </div>
       )}
+      {isIntern&&(
+        <div style={{background:"#6366F115",border:"1px solid #6366F140",borderRadius:5,padding:"8px 12px",marginBottom:14,fontSize:13,color:"#6366F1",display:"flex",alignItems:"center",gap:6}}>
+          🔒 Interne afspraak{(()=>{const m=afspraak.voorraad_motor_id?(voorraad||[]).find(v=>v.id===afspraak.voorraad_motor_id):null;return m?` · ${m.merk} ${m.model}`:""})()}
+        </div>
+      )}
       {isAanvraag&&!isProefrit&&(
         <div style={{background:`${T.yellow}15`,border:`1px solid ${T.yellow}40`,borderRadius:5,padding:"10px 14px",marginBottom:16,fontSize:13,color:T.yellow}}>
           📋 Aanvraag van klant — stel tijd en duur in om te bevestigen.
@@ -2271,6 +2336,18 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
         <Field label="Naam proefrijder">
           <input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Naam"/>
         </Field>
+      ):isIntern?(
+        <>
+          <Field label="Beschrijving">
+            <input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Wat moet er gedaan worden?"/>
+          </Field>
+          <Field label="Motor (optioneel)">
+            <select style={s.input} value={f.voorraad_motor_id} onChange={set("voorraad_motor_id")}>
+              <option value="">— Geen motor gekoppeld —</option>
+              {(voorraad||[]).map(m=><option key={m.id} value={m.id}>{m.merk} {m.model} ({m.kenteken})</option>)}
+            </select>
+          </Field>
+        </>
       ):(
         <Field label="Klant">
           <select style={s.input} value={f.klant} onChange={set("klant")}>
@@ -2369,6 +2446,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
   const [editAfspraak,setEditAfspraak]=useState(null);
+  const [detailAfspraak,setDetailAfspraak]=useState(null);
   const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
   const [dragId,setDragId]=useState(null);
   const [selDay,setSelDay]=useState(TODAY);
@@ -2451,15 +2529,18 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {dayApts.map(a=>{
               const kleur=a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
-              const naam=a.type==="proefrit"?(a.naam||a.klant):a.klant;
-              const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):null;
+              const naam=a.type==="proefrit"?(a.naam||a.klant):a.type==="intern"?(a.naam||a.klant||"Intern"):a.klant;
+              const internMotor=a.type==="intern"&&a.voorraad_motor_id?(voorraad||[]).find(m=>m.id===a.voorraad_motor_id):null;
+              const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):a.type==="intern"&&internMotor?`${internMotor.merk} ${internMotor.model}`.trim():null;
+              const typLabel=a.type==="intern"?"Intern":a.type==="proefrit"?"Proefrit":"Service";
               return(
-                <div key={a.id} onClick={()=>setEditAfspraak(a)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
+                <div key={a.id} onClick={()=>setDetailAfspraak(a)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
                   <div style={{background:kleur,color:"#fff",padding:"4px 8px",borderRadius:3,fontSize:13,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd||"—"}</div>
                   <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:10,fontWeight:700,color:kleur,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>{typLabel}</div>
                     <div style={{fontSize:14,fontWeight:600}}>{naam}</div>
                     {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.soort}</div>}
-                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{motorSub?` · ${motorSub}`:(a.omschrijving?` · ${a.omschrijving}`:"")}</div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{motorSub?` · ${motorSub}`:(a.opmerking||a.omschrijving)?` · ${a.opmerking||a.omschrijving}`:""}</div>
                   </div>
                 </div>
               );
@@ -2501,7 +2582,16 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
-        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} initialDatum={selDay} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+        {detailAfspraak&&(
+          <AfspraakDetailModal
+            afspraak={detailAfspraak}
+            voorraad={voorraad}
+            onClose={()=>setDetailAfspraak(null)}
+            onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraak(null);}}
+            onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraak(null);}}
+            onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraak(null);}}/>
+        )}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
             afspraakSoorten={afspraakSoorten}
@@ -2599,7 +2689,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                       draggable
                       onDragStart={()=>setDragId(a.id)}
                       onDragEnd={()=>setDragId(null)}
-                      onClick={()=>setEditAfspraak(a)}
+                      onClick={()=>setDetailAfspraak(a)}
                       style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,
                         background:dragId===a.id?`${kleur}15`:`${kleur}28`,
                         border:`1px solid ${kleur}80`,borderRadius:4,padding:"4px 6px",
@@ -2619,7 +2709,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       </div>
 
-      <div style={{fontSize:11,color:T.muted,marginTop:8}}>💡 Klik een afspraak om te wijzigen · Sleep naar een andere dag</div>
+      <div style={{fontSize:11,color:T.muted,marginTop:8}}>💡 Klik een afspraak voor details · Sleep naar een andere dag</div>
 
       {/* Aanvragen van klanten */}
       {aanvragen.length>0&&(
@@ -2670,6 +2760,15 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
       )}
 
       {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
+      {detailAfspraak&&(
+        <AfspraakDetailModal
+          afspraak={detailAfspraak}
+          voorraad={voorraad}
+          onClose={()=>setDetailAfspraak(null)}
+          onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraak(null);}}
+          onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraak(null);}}
+          onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraak(null);}}/>
+      )}
       {editAfspraak&&(
         <AfspraakEditModal
           afspraak={editAfspraak}
@@ -3455,7 +3554,8 @@ export default function AdminApp(){
     const nieuweStatus = f.tijd ? "gepland" : (f.status || "aangevraagd");
     await sb.from("afspraken").update({
       datum:f.datum, tijd:f.tijd||null, duur:parseInt(f.duur)||1,
-      opmerking:f.omschrijving||f.opmerking||"", status:nieuweStatus
+      opmerking:f.omschrijving||f.opmerking||"", status:nieuweStatus,
+      soort:f.soort||null, naam:f.naam||null, voorraad_motor_id:f.voorraad_motor_id||null,
     }).eq("id",f.id);
     setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,status:nieuweStatus}:a));
   };
