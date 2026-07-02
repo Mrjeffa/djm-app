@@ -2342,7 +2342,7 @@ function AfspraakDetailModal({afspraak, voorraad, onClose, onEdit, onDelete, onA
       <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
         <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          {!isProefrit&&afspraak.status!=="afgewerkt"&&onAfwerken&&(
+          {!isProefrit&&afspraak.status==="gepland"&&onAfwerken&&(
             <button style={{...s.btn,background:T.green}} onClick={onAfwerken}>✓ Afwerken</button>
           )}
           <button style={s.btnGhost} onClick={onClose}>Sluiten</button>
@@ -2474,7 +2474,7 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"none"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))}/>
       </Field>
-      {afspraak.type !== "proefrit" && afspraak.status !== "afgewerkt" && onAfwerken && (
+      {afspraak.type !== "proefrit" && afspraak.status === "gepland" && onAfwerken && (
         <div style={{marginBottom:12,marginTop:16}}>
           <button onClick={onAfwerken}
             style={{width:"100%",padding:"11px",background:T.green,color:"#fff",border:"none",borderRadius:4,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
@@ -2496,7 +2496,7 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
         <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
         <div style={{display:"flex",gap:10}}>
           <button style={s.btnGhost} onClick={onClose}>Annuleer</button>
-          <button style={s.btn} onClick={()=>onSave({...afspraak,...f,soort:[...soorten].join(", ")||afspraak.soort||"",duur:parseInt(f.duur)})}>Opslaan</button>
+          <button style={s.btn} onClick={()=>onSave({...afspraak,...f,soort:[...soorten].join(", ")||afspraak.soort||"",duur:parseInt(f.duur)})}>{isAanvraag?"Afspraak inplannen":"Opslaan"}</button>
         </div>
       </div>
     </Modal>
@@ -2508,7 +2508,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
   const [editAfspraak,setEditAfspraak]=useState(null);
-  const [detailAfspraak,setDetailAfspraak]=useState(null);
+  const [detailAfspraakId,setDetailAfspraakId]=useState(null);
+  const detailAfspraak = detailAfspraakId ? (afspraken||[]).find(a=>a.id===detailAfspraakId)||null : null;
   const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
   const [dragId,setDragId]=useState(null);
   const [selDay,setSelDay]=useState(TODAY);
@@ -2596,7 +2597,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
               const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):a.type==="intern"&&internMotor?`${internMotor.merk} ${internMotor.model}`.trim():null;
               const typLabel=a.type==="intern"?"Intern":a.type==="proefrit"?"Proefrit":"Service";
               return(
-                <div key={a.id} onClick={()=>setDetailAfspraak(a)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
+                <div key={a.id} onClick={()=>setDetailAfspraakId(a.id)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
                   <div style={{background:kleur,color:"#fff",padding:"4px 8px",borderRadius:3,fontSize:13,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd||"—"}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:10,fontWeight:700,color:kleur,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>{typLabel}</div>
@@ -2649,10 +2650,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           <AfspraakDetailModal
             afspraak={detailAfspraak}
             voorraad={voorraad}
-            onClose={()=>setDetailAfspraak(null)}
-            onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraak(null);}}
-            onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraak(null);}}
-            onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraak(null);}}/>
+            onClose={()=>setDetailAfspraakId(null)}
+            onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
+            onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraakId(null);}}
+            onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraakId(null);}}/>
         )}
         {editAfspraak&&(
           <AfspraakEditModal afspraak={editAfspraak} klanten={klanten} voorraad={voorraad}
@@ -2751,7 +2752,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                       draggable
                       onDragStart={()=>setDragId(a.id)}
                       onDragEnd={()=>setDragId(null)}
-                      onClick={()=>setDetailAfspraak(a)}
+                      onClick={()=>setDetailAfspraakId(a.id)}
                       style={{position:"absolute",top:`${top}%`,height:`${height}%`,left:3,right:3,
                         background:dragId===a.id?`${kleur}15`:`${kleur}28`,
                         border:`1px solid ${kleur}80`,borderRadius:4,padding:"4px 6px",

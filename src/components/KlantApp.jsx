@@ -1401,8 +1401,22 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
 }
 
 // ── Scherm: Service & Afspraken ────────────────────────────────────────────
-function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService, afspraakSoorten = [] }) {
+function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService, afspraakSoorten = [], eigenAfspraken = [] }) {
   const [afspraakOpen, setAfspraakOpen] = useState(false);
+
+  const komende = eigenAfspraken.filter(a => a.status !== "afgewerkt").sort((a,b) => (a.datum||"").localeCompare(b.datum||""));
+  const afgewerkt = eigenAfspraken.filter(a => a.status === "afgewerkt").sort((a,b) => (b.datum||"").localeCompare(a.datum||"")).slice(0,3);
+
+  const statusBadge = (status) => {
+    if (status === "gepland") return { label:"Bevestigd ✓", bg:`${T.green}20`, color:T.green, border:`1px solid ${T.green}50` };
+    if (status === "afgewerkt") return { label:"Afgewerkt ✓", bg:`${T.green}15`, color:T.green, border:`1px solid ${T.green}40` };
+    return { label:"In behandeling", bg:"#f59e0b20", color:"#b45309", border:"1px solid #f59e0b50" };
+  };
+
+  const fmtAfspraakLabel = (a) => {
+    const parts = [a.soort, a.type==="proefrit"?"Proefrit":null].filter(Boolean);
+    return parts.length ? parts.join(" · ") : (a.type==="intern"?"Interne afspraak":"Afspraak");
+  };
 
   if (afspraakOpen) {
     return (
@@ -1423,16 +1437,53 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
 
   return (
     <div>
+      {/* Aankomende & recente afspraken */}
+      {(komende.length > 0 || afgewerkt.length > 0) && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:15, letterSpacing:1, color:T.text, marginBottom:10 }}>MIJN AFSPRAKEN</div>
+          {komende.map(a => {
+            const sb = statusBadge(a.status);
+            const datumStr = a.datum ? new Date(a.datum+"T00:00:00").toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"short"}) : "—";
+            return (
+              <div key={a.id} style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:"12px 14px", marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:3 }}>{fmtAfspraakLabel(a)}</div>
+                  <div style={{ fontSize:12, color:T.muted }}>{datumStr}{a.tijd ? ` · ${a.tijd}` : ""}</div>
+                </div>
+                <span style={{ fontSize:11, fontWeight:600, padding:"3px 8px", borderRadius:10, background:sb.bg, color:sb.color, border:sb.border, whiteSpace:"nowrap", flexShrink:0 }}>{sb.label}</span>
+              </div>
+            );
+          })}
+          {afgewerkt.map(a => {
+            const sb = statusBadge(a.status);
+            const datumStr = a.datum ? new Date(a.datum+"T00:00:00").toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"short"}) : "—";
+            return (
+              <div key={a.id} style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:"12px 14px", marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, opacity:0.7 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:3 }}>{fmtAfspraakLabel(a)}</div>
+                  <div style={{ fontSize:12, color:T.muted }}>{datumStr}</div>
+                </div>
+                <span style={{ fontSize:11, fontWeight:600, padding:"3px 8px", borderRadius:10, background:sb.bg, color:sb.color, border:sb.border, whiteSpace:"nowrap", flexShrink:0 }}>{sb.label}</span>
+              </div>
+            );
+          })}
+          <button onClick={() => setAfspraakOpen(true)}
+            style={{ width:"100%", padding:"10px", background:T.accent, color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", marginTop:4 }}>
+            + Nieuwe afspraak aanvragen
+          </button>
+        </div>
+      )}
+
       <Servicegeschiedenis
         motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor}
         onWijzigService={onWijzigService}
-        actieKnop={
+        actieKnop={komende.length === 0 && afgewerkt.length === 0 ? (
           <button
             style={{ padding: "9px 14px", background: T.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow, sans-serif", whiteSpace: "nowrap", flexShrink: 0 }}
             onClick={() => setAfspraakOpen(true)}>
             + Nieuwe afspraak maken
           </button>
-        }
+        ) : null}
       />
     </div>
   );
@@ -1818,6 +1869,8 @@ export default function KlantApp({ userId }) {
   const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [voorraad, setVooraad] = useState([]);
   const [producten, setProducten] = useState([]);
+  const [eigenAfspraken, setEigenAfspraken] = useState([]);
+  const [bevestigingMelding, setBevestigingMelding] = useState(null);
   const [laden, setLaden] = useState(true);
 
   const [autoOpenMotorForm, setAutoOpenMotorForm] = useState(false);
@@ -1860,6 +1913,14 @@ export default function KlantApp({ userId }) {
 
         if (!klantData) { setLaden(false); clearTimeout(timer); return; }
         setKlant(klantData);
+
+        // Eigen afspraken ophalen (voor status-weergave in de app)
+        const { data: eigenAfsData } = await supabase
+          .from("afspraken")
+          .select("id,datum,status,soort,type,tijd,duur,naam,voorraad_motor_id")
+          .eq("klant_id", klantData.id)
+          .order("datum");
+        setEigenAfspraken(eigenAfsData || []);
 
         // Instellingen direct verwerken
         const inst = instRes.data;
@@ -1916,6 +1977,25 @@ export default function KlantApp({ userId }) {
     laadData();
     return () => clearTimeout(timer);
   }, [userId]);
+
+  // Realtime: eigen afspraken — status-updates (admin bevestigt / werkt af)
+  useEffect(() => {
+    if (!klant?.id) return;
+    const sub = supabase.channel("klant-eigen-afspraken")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
+        setEigenAfspraken(prev => prev.map(a => a.id === n.id ? { ...a, ...n } : a));
+        if (n.status === "gepland") {
+          const datumStr = n.datum ? new Date(n.datum + "T00:00:00").toLocaleDateString("nl-NL", { weekday:"long", day:"numeric", month:"long" }) : n.datum;
+          setBevestigingMelding(`Uw afspraak op ${datumStr} is bevestigd!`);
+          setTimeout(() => setBevestigingMelding(null), 7000);
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
+        setEigenAfspraken(prev => [...prev, n].sort((a, b) => (a.datum||"").localeCompare(b.datum||"")));
+      })
+      .subscribe();
+    return () => { sub.unsubscribe(); };
+  }, [klant?.id]);
 
   const slaKmOp = async (motorId, km) => {
     const { error } = await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
@@ -2150,6 +2230,11 @@ export default function KlantApp({ userId }) {
   if (!isMobile) {
     return (
       <div style={{ display:"flex", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" }}>
+        {bevestigingMelding && (
+          <div style={{ position:"fixed", top:20, left:"50%", transform:"translateX(-50%)", background:T.green, color:"#fff", padding:"12px 24px", borderRadius:10, zIndex:9999, fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(0,0,0,0.25)", whiteSpace:"nowrap", fontFamily:"Barlow, sans-serif" }}>
+            ✓ {bevestigingMelding}
+          </div>
+        )}
         {/* Zijbalk */}
         <div style={{ width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 }}>
           {/* Logo */}
@@ -2197,7 +2282,7 @@ export default function KlantApp({ userId }) {
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
-            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
+            {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten} eigenAfspraken={eigenAfspraken}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
             {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
@@ -2226,6 +2311,11 @@ export default function KlantApp({ userId }) {
   // Mobiele layout (ongewijzigd)
   return (
     <div style={css.app}>
+      {bevestigingMelding && (
+        <div style={{ position:"fixed", top:16, left:"50%", transform:"translateX(-50%)", background:T.green, color:"#fff", padding:"12px 20px", borderRadius:10, zIndex:9999, fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(0,0,0,0.25)", maxWidth:320, width:"calc(100% - 40px)", textAlign:"center", fontFamily:"Barlow, sans-serif" }}>
+          ✓ {bevestigingMelding}
+        </div>
+      )}
       <div style={css.topBar}>
         <div style={css.logoWrap}>
           <div style={css.logoTop}>DE JONGE MOTOREN</div>
@@ -2252,7 +2342,7 @@ export default function KlantApp({ userId }) {
 
       <div style={css.scroll}>
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
-        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten}/>}
+        {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten} eigenAfspraken={eigenAfspraken}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
         {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
