@@ -976,7 +976,8 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       <Field label="Opmerkingen">
         <textarea style={{...s.input,height:70,resize:"vertical"}} value={f.omschrijving} onChange={e=>setF(p=>({...p,omschrijving:e.target.value}))} placeholder="Aanvullende opmerkingen..."/>
       </Field>
-      <ModalFooter onClose={onClose} label="Inplannen" onClick={slaOp}/>
+      {!f.tijd&&<div style={{fontSize:12,color:T.muted,textAlign:"center",marginTop:4}}>Selecteer eerst een tijdstip hierboven</div>}
+      <ModalFooter onClose={onClose} label="Inplannen" onClick={slaOp} disabled={!kanOpslaan}/>
     </Modal>
   );
 }
@@ -3057,7 +3058,7 @@ export default function AdminApp(){
           const isProefrit=x.type==="proefrit";
           const proefritMotor=isProefrit&&x.voorraad_motor_id?(v.data||[]).find(m=>m.id===x.voorraad_motor_id):null;
           return{...x,
-            klant:isProefrit?(x.naam||"Proefrit"):x.klanten?.naam||"Onbekend",
+            klant:isProefrit?(x.naam||"Proefrit"):x.type==="intern"?(x.naam||"Intern"):x.klanten?.naam||"Onbekend",
             naam:x.naam||"",
             motorLabel:isProefrit&&proefritMotor?`${proefritMotor.merk} ${proefritMotor.model}`:(x.motoren?[x.motoren.merk,x.motoren.model].filter(Boolean).join(" ")||null:null),
           };
@@ -3421,20 +3422,21 @@ export default function AdminApp(){
       klantId = k?.id||null;
     }
 
-    const {data:afs} = await sb.from("afspraken").insert({
+    const {data:afs, error:afsErr} = await sb.from("afspraken").insert({
       klant_id: klantId,
       datum: f.datum,
       tijd: f.tijd,
       duur: parseInt(f.duur)||1,
-      opmerking: f.omschrijving||"",
+      opmerking: f.type==="intern" ? (f.klant||"") : (f.omschrijving||""),
       status: "gepland",
       type: f.type||"service",
-      naam: f.type==="proefrit"?(f.naam||""):null,
+      naam: f.type==="proefrit"?(f.naam||""):f.type==="intern"?(f.klant||"Intern"):null,
       telefoon: f.telefoon||null,
       email: f.email||null,
       soort: f.soort||null,
       voorraad_motor_id: f.type==="proefrit"?(f.voorraad_motor_id||null):(f.type==="intern"?(f.motor||null):null),
     }).select().single();
+    if(afsErr){ console.error("Afspraak opslaan mislukt:", afsErr); alert("Kon afspraak niet opslaan: " + afsErr.message); return; }
     if(afs){
       const motor = f.type==="proefrit"&&f.voorraad_motor_id ? showroom.find(m=>m.id===f.voorraad_motor_id) : null;
       const motorLabel = motor ? `${motor.merk} ${motor.model}` : null;
@@ -3587,8 +3589,9 @@ export default function AdminApp(){
               setAfspraken(p => {
                 if(p.some(a => a.id === data.id)) return p; // al toegevoegd door addAfspraak direct
                 const isProefrit=data.type==="proefrit";
+                const isIntern=data.type==="intern";
                 return [...p, { ...data,
-                  klant: isProefrit?(data.naam||"Proefrit"):data.klanten?.naam||"Onbekend",
+                  klant: isProefrit?(data.naam||"Proefrit"):isIntern?(data.naam||"Intern"):data.klanten?.naam||"Onbekend",
                   naam: data.naam||"",
                   motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null,
                 }];
@@ -3598,7 +3601,7 @@ export default function AdminApp(){
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken" }, ({ new: n }) => {
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
             .then(({ data }) => {
-              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.klanten?.naam || "Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null } : a));
+              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.type==="proefrit"?(data.naam||"Proefrit"):data.type==="intern"?(data.naam||"Intern"):data.klanten?.naam||"Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null } : a));
             });
         })
         .on("postgres_changes", { event: "DELETE", schema: "public", table: "afspraken" }, ({ old: o }) => {
