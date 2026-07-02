@@ -3166,12 +3166,24 @@ export default function AdminApp(){
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
-          sb.from("voorraad").select("id,fotos").lte("fotos_bewaren_tot",TODAY),
+          sb.from("voorraad").select("id,fotos,verkocht_aan").lte("fotos_bewaren_tot",TODAY),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
           sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
         ]);
         // Cleanup: verwijder records 30 dagen na verkoop/verwijdering
         for(const m of (verlopen.data||[])){
+          // Migreer voorraad_service naar service_beurten vóór delete, zodat service bij klant motor blijft
+          if(m.verkocht_aan){
+            const {data:klantMotor} = await sb.from("motoren").select("id").eq("source_voorraad_id",m.id).maybeSingle();
+            if(klantMotor){
+              const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",m.id);
+              if(vs?.length){
+                const {data:existing} = await sb.from("service_beurten").select("datum,omschrijving,km").eq("motor_id",klantMotor.id);
+                const toMigrate=vs.filter(s=>!(existing||[]).some(e=>e.datum===s.datum&&e.omschrijving===s.omschrijving&&String(e.km||"")===String(s.km||"")));
+                if(toMigrate.length) await sb.from("service_beurten").insert(toMigrate.map(s=>({motor_id:klantMotor.id,datum:s.datum,omschrijving:s.omschrijving,km:s.km,voorband_datum:s.voorband_datum||null,achterband_datum:s.achterband_datum||null})));
+              }
+            }
+          }
           const urls=(m.fotos||[]).filter(Boolean);
           if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
           await sb.from("voorraad").delete().eq("id",m.id);
