@@ -26,6 +26,44 @@ let T = {...T_LIGHT};
 
 // ── Utils ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
+
+const agendaDateStr = (datum, tijd, duur) => {
+  if (!datum) return { start: "", end: "" };
+  const [y, m, d] = datum.split("-");
+  const [h, mi] = (tijd || "09:00").split(":");
+  const duurUur = parseInt(duur) || 1;
+  const endH = String(parseInt(h) + duurUur).padStart(2, "0");
+  return { start: `${y}${m}${d}T${h}${mi}00`, end: `${y}${m}${d}T${endH}${mi}00` };
+};
+
+const addToGoogleCalendar = (a) => {
+  const { start, end } = agendaDateStr(a.datum, a.tijd, a.duur);
+  const titel = encodeURIComponent(`Afspraak De Jonge Motoren${a.soort ? ` — ${a.soort}` : ""}`);
+  window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titel}&dates=${start}/${end}&location=De%20Jonge%20Motoren`, "_blank");
+};
+
+const downloadICS = (a) => {
+  const { start, end } = agendaDateStr(a.datum, a.tijd, a.duur);
+  const titel = `Afspraak De Jonge Motoren${a.soort ? ` — ${a.soort}` : ""}`;
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//De Jonge Motoren//NL",
+    "BEGIN:VEVENT",
+    `DTSTART:${start}`, `DTEND:${end}`,
+    `SUMMARY:${titel}`,
+    "LOCATION:De Jonge Motoren",
+    `UID:djm-${a.id}@dejongmotoren.nl`,
+    "END:VEVENT", "END:VCALENDAR",
+  ].join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `afspraak_${a.datum || "djm"}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 const DAGEN_NL = ["zo","ma","di","wo","do","vr","za"];
 const MAANDEN_NL = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
 
@@ -1400,9 +1438,64 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   );
 }
 
+// ── Bevestigingsmeldingen banner ────────────────────────────────────────────
+function BevestigingsBanner({ meldingen, agendaKeuzeId, onAgendaKeuze, onMarkeerGezien }) {
+  if (!meldingen.length) return null;
+  return (
+    <div style={{ background:"#166534", color:"#fff", fontFamily:"Barlow, sans-serif" }}>
+      {meldingen.map(a => {
+        const datumStr = a.datum ? new Date(a.datum+"T00:00:00").toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long"}) : "";
+        const toonKeuze = agendaKeuzeId === a.id;
+        return (
+          <div key={a.id} style={{ padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.15)" }}>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:10 }}>
+              <span style={{ fontSize:20, lineHeight:1, flexShrink:0 }}>✓</span>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, lineHeight:1.3 }}>Afspraak bevestigd!</div>
+                <div style={{ fontSize:12, marginTop:3, opacity:0.85 }}>
+                  {datumStr}{a.tijd ? ` om ${a.tijd}` : ""}
+                  {a.soort ? ` — ${a.soort}` : ""}
+                </div>
+              </div>
+            </div>
+            {toonKeuze ? (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                <button onClick={() => { addToGoogleCalendar(a); onMarkeerGezien(a.id); }}
+                  style={{ padding:"8px 14px", background:"rgba(255,255,255,0.2)", color:"#fff", border:"1px solid rgba(255,255,255,0.4)", borderRadius:6, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                  Google Calendar
+                </button>
+                <button onClick={() => { downloadICS(a); onMarkeerGezien(a.id); }}
+                  style={{ padding:"8px 14px", background:"rgba(255,255,255,0.2)", color:"#fff", border:"1px solid rgba(255,255,255,0.4)", borderRadius:6, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                  Apple Kalender (.ics)
+                </button>
+                <button onClick={() => onAgendaKeuze(null)}
+                  style={{ padding:"8px 12px", background:"transparent", color:"rgba(255,255,255,0.7)", border:"1px solid rgba(255,255,255,0.3)", borderRadius:6, fontSize:12, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                  Annuleer
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                <button onClick={() => onAgendaKeuze(a.id)}
+                  style={{ padding:"8px 14px", background:"rgba(255,255,255,0.2)", color:"#fff", border:"1px solid rgba(255,255,255,0.4)", borderRadius:6, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                  📅 Toevoegen aan agenda
+                </button>
+                <button onClick={() => onMarkeerGezien(a.id)}
+                  style={{ padding:"8px 14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.85)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:6, fontSize:12, fontWeight:500, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                  Begrepen ✓
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Scherm: Service & Afspraken ────────────────────────────────────────────
 function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDagen, openingstijden, onSlaAfspraakOp, onWijzigService, afspraakSoorten = [], eigenAfspraken = [] }) {
   const [afspraakOpen, setAfspraakOpen] = useState(false);
+  const [agendaKaartId, setAgendaKaartId] = useState(null);
 
   const komende = eigenAfspraken.filter(a => a.status !== "afgewerkt").sort((a,b) => (a.datum||"").localeCompare(b.datum||""));
   const afgewerkt = eigenAfspraken.filter(a => a.status === "afgewerkt").sort((a,b) => (b.datum||"").localeCompare(a.datum||"")).slice(0,3);
@@ -1444,13 +1537,41 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
           {komende.map(a => {
             const sb = statusBadge(a.status);
             const datumStr = a.datum ? new Date(a.datum+"T00:00:00").toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"short"}) : "—";
+            const agendaOpen = agendaKaartId === a.id;
             return (
-              <div key={a.id} style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:"12px 14px", marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:3 }}>{fmtAfspraakLabel(a)}</div>
-                  <div style={{ fontSize:12, color:T.muted }}>{datumStr}{a.tijd ? ` · ${a.tijd}` : ""}</div>
+              <div key={a.id} style={{ background:T.surf, border:`1px solid ${T.border}`, borderRadius:8, padding:"12px 14px", marginBottom:8 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:3 }}>{fmtAfspraakLabel(a)}</div>
+                    <div style={{ fontSize:12, color:T.muted }}>{datumStr}{a.tijd ? ` · ${a.tijd}` : ""}</div>
+                  </div>
+                  <span style={{ fontSize:11, fontWeight:600, padding:"3px 8px", borderRadius:10, background:sb.bg, color:sb.color, border:sb.border, whiteSpace:"nowrap", flexShrink:0 }}>{sb.label}</span>
                 </div>
-                <span style={{ fontSize:11, fontWeight:600, padding:"3px 8px", borderRadius:10, background:sb.bg, color:sb.color, border:sb.border, whiteSpace:"nowrap", flexShrink:0 }}>{sb.label}</span>
+                {a.status === "gepland" && (
+                  <div style={{ marginTop:8 }}>
+                    {agendaOpen ? (
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                        <button onClick={() => { addToGoogleCalendar(a); setAgendaKaartId(null); }}
+                          style={{ padding:"6px 12px", background:T.surf2, color:T.text, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                          Google Calendar
+                        </button>
+                        <button onClick={() => { downloadICS(a); setAgendaKaartId(null); }}
+                          style={{ padding:"6px 12px", background:T.surf2, color:T.text, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                          Apple Kalender (.ics)
+                        </button>
+                        <button onClick={() => setAgendaKaartId(null)}
+                          style={{ padding:"6px 10px", background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                          Annuleer
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setAgendaKaartId(a.id)}
+                        style={{ padding:"6px 12px", background:"transparent", color:T.accent, border:`1px solid ${T.accent}40`, borderRadius:6, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                        📅 Toevoegen aan agenda
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1870,7 +1991,7 @@ export default function KlantApp({ userId }) {
   const [voorraad, setVooraad] = useState([]);
   const [producten, setProducten] = useState([]);
   const [eigenAfspraken, setEigenAfspraken] = useState([]);
-  const [bevestigingMelding, setBevestigingMelding] = useState(null);
+  const [agendaKeuzeId, setAgendaKeuzeId] = useState(null);
   const [laden, setLaden] = useState(true);
 
   const [autoOpenMotorForm, setAutoOpenMotorForm] = useState(false);
@@ -1914,10 +2035,10 @@ export default function KlantApp({ userId }) {
         if (!klantData) { setLaden(false); clearTimeout(timer); return; }
         setKlant(klantData);
 
-        // Eigen afspraken ophalen (voor status-weergave in de app)
+        // Eigen afspraken ophalen (voor status-weergave en meldingen)
         const { data: eigenAfsData } = await supabase
           .from("afspraken")
-          .select("id,datum,status,soort,type,tijd,duur,naam,voorraad_motor_id")
+          .select("id,datum,status,soort,type,tijd,duur,naam,voorraad_motor_id,melding_gezien")
           .eq("klant_id", klantData.id)
           .order("datum");
         setEigenAfspraken(eigenAfsData || []);
@@ -1984,11 +2105,6 @@ export default function KlantApp({ userId }) {
     const sub = supabase.channel("klant-eigen-afspraken")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
         setEigenAfspraken(prev => prev.map(a => a.id === n.id ? { ...a, ...n } : a));
-        if (n.status === "gepland") {
-          const datumStr = n.datum ? new Date(n.datum + "T00:00:00").toLocaleDateString("nl-NL", { weekday:"long", day:"numeric", month:"long" }) : n.datum;
-          setBevestigingMelding(`Uw afspraak op ${datumStr} is bevestigd!`);
-          setTimeout(() => setBevestigingMelding(null), 7000);
-        }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
         setEigenAfspraken(prev => [...prev, n].sort((a, b) => (a.datum||"").localeCompare(b.datum||"")));
@@ -2156,6 +2272,14 @@ export default function KlantApp({ userId }) {
     return null;
   };
 
+  const markeerGezien = async (id) => {
+    await supabase.from("afspraken").update({ melding_gezien: true }).eq("id", id);
+    setEigenAfspraken(prev => prev.map(a => a.id === id ? { ...a, melding_gezien: true } : a));
+    setAgendaKeuzeId(null);
+  };
+
+  const ongelezenMeldingen = eigenAfspraken.filter(a => a.status === "gepland" && a.melding_gezien === false);
+
   const nav = [
     { id: "motor",    icon: "◧", label: "Motor"    },
     { id: "service",  icon: "◉", label: "Service"  },
@@ -2230,11 +2354,6 @@ export default function KlantApp({ userId }) {
   if (!isMobile) {
     return (
       <div style={{ display:"flex", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", color:T.text, overflow:"hidden" }}>
-        {bevestigingMelding && (
-          <div style={{ position:"fixed", top:20, left:"50%", transform:"translateX(-50%)", background:T.green, color:"#fff", padding:"12px 24px", borderRadius:10, zIndex:9999, fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(0,0,0,0.25)", whiteSpace:"nowrap", fontFamily:"Barlow, sans-serif" }}>
-            ✓ {bevestigingMelding}
-          </div>
-        )}
         {/* Zijbalk */}
         <div style={{ width:220, background:T.surf, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0 }}>
           {/* Logo */}
@@ -2279,6 +2398,12 @@ export default function KlantApp({ userId }) {
               {titles[tab] || titles.motor}
             </div>
           </div>
+          <BevestigingsBanner
+            meldingen={ongelezenMeldingen}
+            agendaKeuzeId={agendaKeuzeId}
+            onAgendaKeuze={setAgendaKeuzeId}
+            onMarkeerGezien={markeerGezien}
+          />
           {/* Scrollbaar content */}
           <div style={{ flex:1, overflowY:"auto", padding:"24px 32px 32px" }}>
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
@@ -2311,11 +2436,6 @@ export default function KlantApp({ userId }) {
   // Mobiele layout (ongewijzigd)
   return (
     <div style={css.app}>
-      {bevestigingMelding && (
-        <div style={{ position:"fixed", top:16, left:"50%", transform:"translateX(-50%)", background:T.green, color:"#fff", padding:"12px 20px", borderRadius:10, zIndex:9999, fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(0,0,0,0.25)", maxWidth:320, width:"calc(100% - 40px)", textAlign:"center", fontFamily:"Barlow, sans-serif" }}>
-          ✓ {bevestigingMelding}
-        </div>
-      )}
       <div style={css.topBar}>
         <div style={css.logoWrap}>
           <div style={css.logoTop}>DE JONGE MOTOREN</div>
@@ -2333,6 +2453,13 @@ export default function KlantApp({ userId }) {
           </button>
         </div>
       </div>
+
+      <BevestigingsBanner
+        meldingen={ongelezenMeldingen}
+        agendaKeuzeId={agendaKeuzeId}
+        onAgendaKeuze={setAgendaKeuzeId}
+        onMarkeerGezien={markeerGezien}
+      />
 
       <div style={{ padding: "14px 20px 0" }}>
         <div style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 26, letterSpacing: 0.5 }}>

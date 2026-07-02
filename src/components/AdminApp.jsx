@@ -3720,12 +3720,13 @@ export default function AdminApp(){
 
   const editAfspraak = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    // Als er een tijd is ingesteld, markeer als gepland (ook bij aanvragen)
     const nieuweStatus = f.tijd ? "gepland" : (f.status || "aangevraagd");
+    const wordtBevestigd = f.status === "aangevraagd" && nieuweStatus === "gepland";
     await sb.from("afspraken").update({
       datum:f.datum, tijd:f.tijd||null, duur:parseInt(f.duur)||1,
       opmerking:f.omschrijving||f.opmerking||"", status:nieuweStatus,
       soort:f.soort||null, naam:f.naam||null, voorraad_motor_id:f.voorraad_motor_id||null,
+      ...(wordtBevestigd ? { melding_gezien: false } : {}),
     }).eq("id",f.id);
     setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,status:nieuweStatus}:a));
   };
