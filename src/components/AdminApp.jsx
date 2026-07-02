@@ -1443,6 +1443,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
                     <div style={{fontSize:12,color:T.accent,whiteSpace:"nowrap",paddingTop:1,minWidth:80}}>{sv.datum}</div>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
+                        {sv.van_voorraad&&<span style={{fontSize:10,background:`${T.accent}15`,color:T.accent,borderRadius:3,padding:"1px 5px",fontWeight:600}}>Showroom</span>}
                         {sv.klant_invoer&&<span style={{fontSize:10,background:`${T.muted}20`,color:T.muted,borderRadius:3,padding:"1px 5px",fontWeight:600}}>Klant</span>}
                         {sv.interval_gereset&&<span style={{fontSize:10,background:`${T.green}18`,color:T.green,borderRadius:3,padding:"1px 5px",fontWeight:600}}>Interval gereset</span>}
                       </div>
@@ -1453,10 +1454,12 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
                         {sv.achterband_datum&&<span style={{fontSize:10,color:T.muted}}>A: <BandTag datum={sv.achterband_datum}/></span>}
                       </div>}
                     </div>
-                    <div style={{display:"flex",gap:4,flexShrink:0}}>
-                      <button onClick={()=>setEditSvc({...sv,motorId:motor.id})} style={{background:"none",border:"none",color:T.accent,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>✏</button>
-                      <button onClick={()=>setDelSvcId(sv.id)} style={{background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>🗑</button>
-                    </div>
+                    {!sv.van_voorraad&&(
+                      <div style={{display:"flex",gap:4,flexShrink:0}}>
+                        <button onClick={()=>setEditSvc({...sv,motorId:motor.id})} style={{background:"none",border:"none",color:T.accent,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>✏</button>
+                        <button onClick={()=>setDelSvcId(sv.id)} style={{background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",padding:"2px 4px",fontFamily:"Barlow, sans-serif"}}>🗑</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3195,11 +3198,18 @@ export default function AdminApp(){
           const svcBeurten = svc.data||[];
           verrijkt = (k.data||[]).map(klant=>({
             ...klant,
-            motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>({
-              ...m,
-              kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
-              service: svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin})),
-            }))
+            motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>{
+              const klantSvc = svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin}));
+              // Merge voorraad service history via source link, skip records already copied on sale
+              const vrdSvc = m.source_voorraad_id
+                ? (vsData.data||[]).filter(x=>x.voorraad_motor_id===m.source_voorraad_id&&!klantSvc.some(ks=>ks.datum===x.datum&&ks.omschrijving===x.omschrijving&&String(ks.km)===String(x.km))).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true}))
+                : [];
+              return {
+                ...m,
+                kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
+                service: [...klantSvc,...vrdSvc].sort((a,b)=>(b.datum||"").localeCompare(a.datum||"")),
+              };
+            })
           }));
         }
 
@@ -3252,6 +3262,7 @@ export default function AdminApp(){
         klant_id:klant.id, kenteken:src.kenteken||"", merk:src.merk||"",
         model:src.model||"", bouwjaar:parseInt(src.bouwjaar)||0,
         aankoopdatum:src.aankoopdatum||TODAY,
+        source_voorraad_id:f.verwijderUitVoorraad||null,
       }).select().single();
       if(motor){
         if(src.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(src.km),datum:TODAY}); }
@@ -3454,6 +3465,7 @@ export default function AdminApp(){
     const {data:nieuwMotor} = await sb.from("motoren").insert({
       klant_id:klantId,kenteken:motor.kenteken,merk:motor.merk,
       model:motor.model||"",bouwjaar:motor.bouwjaar||0,aankoopdatum:TODAY,
+      source_voorraad_id:motor.id,
     }).select().single();
     if(nieuwMotor){
       // Kopieer voorraad servicehistorie naar klant motor
@@ -3673,6 +3685,9 @@ export default function AdminApp(){
       const { data: svc } = await sb.from("voorraad_service").insert(svcData).select().single();
       if(svc){
         setShowroom(p=>p.map(m=>m.id===f.voorraadMotorId?{...m,service:[...(m.service||[]),svc]}:m));
+        // Als de voorraad motor is verkocht, ook zichtbaar maken bij de gekoppelde klant motor
+        const svcEntry={id:svc.id,datum:svc.datum,omschrijving:svc.omschrijving,km:svc.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true};
+        setKlanten(prev=>prev.map(k=>({...k,motoren:(k.motoren||[]).map(m=>m.source_voorraad_id===f.voorraadMotorId?{...m,service:[svcEntry,...(m.service||[])]}:m)})));
         if(f.voorband_datum||f.achterband_datum){
           const upd = {};
           if(f.voorband_datum) upd.voorband_datum = f.voorband_datum;
