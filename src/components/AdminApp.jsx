@@ -482,7 +482,7 @@ function ServiceModal({onSave,onClose,initial}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoFiles,setFotoFiles]=useState([]);
   const [fotoPreviews,setFotoPreviews]=useState([]);
@@ -568,6 +568,11 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
       <Field label="Chassisnummer (optioneel)"><input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/></Field>
+      <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",cursor:"pointer",userSelect:"none"}}>
+        <input type="checkbox" checked={f.op_website} onChange={e=>setF(p=>({...p,op_website:e.target.checked}))} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+        <span style={{fontSize:13,fontWeight:500}}>Ook op website plaatsen</span>
+        {!f.op_website&&<span style={{fontSize:11,background:"#f59e0b20",color:"#b45309",border:"1px solid #f59e0b40",padding:"2px 8px",borderRadius:10}}>Verborgen voor klanten</span>}
+      </label>
 
       {/* Stap 3: bandendatums */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
@@ -2881,7 +2886,7 @@ function NieuweItemRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -2897,6 +2902,51 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   useEffect(()=>setSoorten(afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN),[afspraakSoorten]);
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
+  const [importStatus,setImportStatus]=useState(null);
+
+  const exporteerKlanten = async () => {
+    const {utils,writeFile} = await import("xlsx");
+    const klantenRijen = (klanten||[]).map(k=>({id:k.id,naam:k.naam,email:k.email||"",telefoon:k.telefoon||"",adres:k.adres||"",postcode:k.postcode||"",woonplaats:k.woonplaats||"",status:k.status,aangemeld:(k.created_at||"").split("T")[0]}));
+    const motorenRijen = (klanten||[]).flatMap(k=>(k.motoren||[]).map(m=>({id:m.id,klant_id:k.id,klant_naam:k.naam,kenteken:m.kenteken||"",merk:m.merk||"",model:m.model||"",bouwjaar:m.bouwjaar||"",aankoopdatum:m.aankoopdatum||""})));
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb,utils.json_to_sheet(klantenRijen.length?klantenRijen:[{opmerking:"Geen klanten"}]),"Klanten");
+    utils.book_append_sheet(wb,utils.json_to_sheet(motorenRijen.length?motorenRijen:[{opmerking:"Geen motoren"}]),"Motoren");
+    writeFile(wb,`djm_klanten_${TODAY}.xlsx`);
+  };
+
+  const exporteerVooraad = async () => {
+    const {utils,writeFile} = await import("xlsx");
+    const rijen = (voorraad||[]).map(m=>({id:m.id,kenteken:m.kenteken,merk:m.merk,model:m.model||"",bouwjaar:m.bouwjaar||"",km:m.km||"",prijs:m.prijs||"",status:m.status,datum_in:m.datum_in||"",chassis_nummer:m.chassis_nummer||"",verkocht_op:m.verkocht_op||""}));
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb,utils.json_to_sheet(rijen.length?rijen:[{opmerking:"Geen voorraad"}]),"Voorraad");
+    writeFile(wb,`djm_voorraad_${TODAY}.xlsx`);
+  };
+
+  const importeerKlanten = async (e) => {
+    const file = e.target.files?.[0]; if(!file) return; e.target.value="";
+    setImportStatus("Bezig…");
+    try {
+      const {read,utils} = await import("xlsx");
+      const wb = read(await file.arrayBuffer());
+      const kl = wb.Sheets["Klanten"] ? utils.sheet_to_json(wb.Sheets["Klanten"]) : [];
+      const mo = wb.Sheets["Motoren"] ? utils.sheet_to_json(wb.Sheets["Motoren"]) : [];
+      await onImportKlanten(kl,mo);
+      setImportStatus(`✓ ${kl.length} klanten + ${mo.length} motoren verwerkt (duplicaten overgeslagen)`);
+    } catch(err){ setImportStatus("⚠ Fout: "+err.message); }
+  };
+
+  const importeerVooraad = async (e) => {
+    const file = e.target.files?.[0]; if(!file) return; e.target.value="";
+    setImportStatus("Bezig…");
+    try {
+      const {read,utils} = await import("xlsx");
+      const wb = read(await file.arrayBuffer());
+      if(!wb.Sheets["Voorraad"]){ setImportStatus("⚠ Tab 'Voorraad' niet gevonden in bestand."); return; }
+      const rijen = utils.sheet_to_json(wb.Sheets["Voorraad"]);
+      await onImportVooraad(rijen);
+      setImportStatus(`✓ ${rijen.length} motors verwerkt (duplicaten overgeslagen)`);
+    } catch(err){ setImportStatus("⚠ Fout: "+err.message); }
+  };
 
   useEffect(()=>{ if(openingstijden) setTijden(openingstijden); },[openingstijden]);
 
@@ -3132,6 +3182,40 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
         <button style={{...s.btn,background:soortenOk?T.green:T.accent,marginTop:14}} onClick={async()=>{await onSaveAfspraakSoorten(soorten);setSoortenOk(true);setTimeout(()=>setSoortenOk(false),2000);}}>
           {soortenOk?"✓ Opgeslagen":"Opslaan"}
         </button>
+      </div>
+
+      {/* Gegevens exporteren / importeren */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={s.sectionLabel}>Gegevens exporteren / importeren</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:20}}>Exporteer naar Excel of importeer vanuit een eerder geëxporteerd bestand. Bij import worden bestaande regels (zelfde ID) automatisch overgeslagen.</div>
+
+        <div style={{marginBottom:18,paddingBottom:18,borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:T.text}}>Klanten &amp; Motoren</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button style={{...s.btn,width:"auto",padding:"9px 18px",background:T.accent}} onClick={exporteerKlanten}>↓ Exporteren</button>
+            <label style={{display:"inline-flex",alignItems:"center",padding:"9px 18px",border:`1px solid ${T.border}`,borderRadius:4,fontSize:13,fontWeight:500,cursor:"pointer",color:T.text,fontFamily:"Barlow, sans-serif",background:"transparent"}}>
+              ↑ Importeren
+              <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importeerKlanten}/>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:T.text}}>Voorraad motoren</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button style={{...s.btn,width:"auto",padding:"9px 18px",background:T.accent}} onClick={exporteerVooraad}>↓ Exporteren</button>
+            <label style={{display:"inline-flex",alignItems:"center",padding:"9px 18px",border:`1px solid ${T.border}`,borderRadius:4,fontSize:13,fontWeight:500,cursor:"pointer",color:T.text,fontFamily:"Barlow, sans-serif",background:"transparent"}}>
+              ↑ Importeren
+              <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importeerVooraad}/>
+            </label>
+          </div>
+        </div>
+
+        {importStatus&&(
+          <div style={{marginTop:14,fontSize:12,padding:"8px 12px",borderRadius:4,background:importStatus.startsWith("✓")?`${T.green}15`:`${T.red}15`,color:importStatus.startsWith("✓")?T.green:T.red,border:`1px solid ${importStatus.startsWith("✓")?T.green:T.red}40`}}>
+            {importStatus}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3438,6 +3522,7 @@ export default function AdminApp(){
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       chassis_nummer:f.chassis_nummer||null,
+      status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
     if(v) setShowroom(p=>[v,...p]);
   };
@@ -3764,6 +3849,42 @@ export default function AdminApp(){
     setAfspraakSoorten(soorten);
   };
 
+  const importKlantenData = async (klantenRijen, motorenRijen) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const geldigeKlanten = klantenRijen.filter(r=>r.id);
+    if(geldigeKlanten.length){
+      await sb.from("klanten").upsert(
+        geldigeKlanten.map(r=>({id:String(r.id),naam:r.naam||"",email:r.email||null,telefoon:r.telefoon||null,adres:r.adres||null,postcode:r.postcode||null,woonplaats:r.woonplaats||null,status:r.status||"goedgekeurd"})),
+        {onConflict:"id",ignoreDuplicates:true}
+      );
+    }
+    const geldigeMotoren = motorenRijen.filter(r=>r.id&&r.klant_id);
+    if(geldigeMotoren.length){
+      await sb.from("motoren").upsert(
+        geldigeMotoren.map(r=>({id:String(r.id),klant_id:String(r.klant_id),kenteken:r.kenteken||null,merk:r.merk||null,model:r.model||null,bouwjaar:r.bouwjaar||null,aankoopdatum:r.aankoopdatum||null})),
+        {onConflict:"id",ignoreDuplicates:true}
+      );
+    }
+    const {data} = await sb.from("klanten").select("*");
+    if(data) setKlanten(prev=>{
+      const map = new Map(prev.map(k=>[k.id,k]));
+      return data.map(d=>({...(map.get(d.id)||{motoren:[]}), ...d}));
+    });
+  };
+
+  const importVooraadData = async (rijen) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const geldig = rijen.filter(r=>r.id);
+    if(geldig.length){
+      await sb.from("voorraad").upsert(
+        geldig.map(r=>({id:String(r.id),kenteken:r.kenteken||null,merk:r.merk||null,model:r.model||null,bouwjaar:r.bouwjaar||null,km:r.km||null,prijs:r.prijs||null,status:r.status||"beschikbaar",datum_in:r.datum_in||null,chassis_nummer:r.chassis_nummer||null})),
+        {onConflict:"id",ignoreDuplicates:true}
+      );
+    }
+    const {data} = await sb.from("voorraad").select("*").order("datum_in",{ascending:false});
+    if(data) setShowroom(data);
+  };
+
   // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten
   useEffect(() => {
     let sub;
@@ -3837,7 +3958,7 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
     </>
   );
 
