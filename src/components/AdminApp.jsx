@@ -1244,8 +1244,27 @@ function MotorEditModal({motor, onSave, onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile}){
+function KlantEditModal({klant,onSave,onClose}){
+  const [f,setF]=useState({naam:klant.naam||"",email:klant.email||"",telefoon:klant.telefoon||"",adres:klant.adres||"",postcode:klant.postcode||"",woonplaats:klant.woonplaats||""});
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  return(
+    <Modal title="KLANT BEWERKEN" onClose={onClose}>
+      <Field label="Naam *"><input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Volledige naam"/></Field>
+      <Field label="E-mail"><input style={s.input} type="email" value={f.email} onChange={set("email")} placeholder="naam@email.com"/></Field>
+      <Field label="Telefoon"><input style={s.input} type="tel" value={f.telefoon} onChange={set("telefoon")} placeholder="+31 6 12345678"/></Field>
+      <Field label="Adres"><input style={s.input} value={f.adres} onChange={set("adres")} placeholder="Straat en huisnummer"/></Field>
+      <Grid2>
+        <Field label="Postcode"><input style={s.input} value={f.postcode} onChange={set("postcode")} placeholder="1234 AB"/></Field>
+        <Field label="Woonplaats"><input style={s.input} value={f.woonplaats} onChange={set("woonplaats")} placeholder="Amsterdam"/></Field>
+      </Grid2>
+      <ModalFooter onClose={onClose} label="Opslaan" disabled={!f.naam.trim()} onClick={()=>{if(f.naam.trim()){onSave({...klant,...f});onClose();}}}/>
+    </Modal>
+  );
+}
+
+function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile}){
   const [modal,setModal]=useState(null);
+  const [editKlantOpen,setEditKlantOpen]=useState(false);
   const [selMotorId,setSelMotorId]=useState(null);
   const [editIntervalId,setEditIntervalId]=useState(null);
   const [intervalVal,setIntervalVal]=useState("");
@@ -1288,11 +1307,11 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddS
               {toonMenu&&(
                 <div style={{position:"absolute",right:0,top:38,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:170,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
                   <button onClick={()=>{onUitnodig(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Uitnodigen</button>
-                  {klant.status!=="afgewezen"&&(
-                    <button onClick={()=>{onAfwijsKlant(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✕ Afwijzen</button>
-                  )}
-                  {klant.status==="afgewezen"&&(
-                    <button onClick={()=>{onUpdateKlant({...klant,status:"goedgekeurd"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✓ Goedkeuren</button>
+                  <button onClick={()=>{setEditKlantOpen(true);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✏ Bewerken</button>
+                  {klant.status!=="gearchiveerd"?(
+                    <button onClick={()=>{onArchiveerKlant(klant);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.muted,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Archiveren</button>
+                  ):(
+                    <button onClick={()=>{onUpdateKlant({...klant,status:"goedgekeurd"});setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.green,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>✓ Reactiveren</button>
                   )}
                   <div style={{height:1,background:T.border}}/>
                   <button onClick={()=>{setDelKlant(true);setToonMenu(false);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijder klant</button>
@@ -1303,10 +1322,11 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddS
         </div>
         {/* Status badge + adres + contact — volle breedte */}
         <div style={{marginTop:2}}>
-          <div style={{marginBottom:6}}>
+          <div style={{marginBottom:6,display:"flex",gap:6,flexWrap:"wrap"}}>
             {!klant.user_id&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>Nog geen Account</span>}
             {klant.user_id&&klant.status==="in_afwachting"&&<span style={{fontSize:11,background:`${T.yellow}20`,color:T.yellow,padding:"2px 8px",borderRadius:3,fontWeight:600}}>⏳ Wacht op goedkeuring</span>}
             {klant.user_id&&klant.status==="afgewezen"&&<span style={{fontSize:11,background:`${T.red}20`,color:T.red,padding:"2px 8px",borderRadius:3,fontWeight:600}}>✕ Afgewezen</span>}
+            {klant.status==="gearchiveerd"&&<span style={{fontSize:11,background:`${T.muted}20`,color:T.muted,padding:"2px 8px",borderRadius:3,fontWeight:600}}>Gearchiveerd</span>}
           </div>
           <div style={{fontSize:13,color:T.muted,lineHeight:1.8}}>
             {(klant.adres||klant.postcode||klant.woonplaats)&&(
@@ -1448,11 +1468,12 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddS
       {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
       {editSvc&&<ServiceModal initial={editSvc} onSave={f=>{ onUpdateService(klant.id,editSvc.motorId,editSvc.id,f); setEditSvc(null); }} onClose={()=>setEditSvc(null)}/>}
       {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)}/>}
+      {editKlantOpen&&<KlantEditModal klant={klant} onSave={onUpdateKlant} onClose={()=>setEditKlantOpen(false)}/>}
     </div>
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{}}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{}}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -1461,6 +1482,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
   const [uitnodigKlant,setUitnodigKlant]=useState(null);
 
   const inAfwachting=klanten.filter(k=>k.status==="in_afwachting");
+  const gearchiveerd=klanten.filter(k=>k.status==="gearchiveerd");
 
   // Alleen klant-ingevoerde meldingen die nog niet als gezien zijn gemarkeerd
   const meldingen = klanten.flatMap(k =>
@@ -1472,7 +1494,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
   ).sort((a,b) => (b.datum||"").localeCompare(a.datum||""));
 
   const filtered=klanten.filter(k=>
-    k.status!=="in_afwachting"&&(
+    k.status!=="in_afwachting"&&k.status!=="gearchiveerd"&&(
       k.naam.toLowerCase().includes(search.toLowerCase())||
       (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
     )
@@ -1481,7 +1503,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
 
   const tabBar=(
     <div style={{display:"flex",gap:0,marginBottom:12,background:T.surf2,borderRadius:6,padding:2,border:`1px solid ${T.border}`}}>
-      {(()=>{const totaal=meldingen.length+inAfwachting.length;return[["klanten","Klanten"],["meldingen",`Meldingen${totaal>0?` (${totaal})`:""}`]]})().map(([id,lbl])=>(
+      {(()=>{const totaal=meldingen.length+inAfwachting.length;return[["klanten","Klanten"],["meldingen",`Meldingen${totaal>0?` (${totaal})`:""}`],["archief",`Archief${gearchiveerd.length>0?` (${gearchiveerd.length})`:""}`]]})().map(([id,lbl])=>(
         <button key={id} onClick={()=>setPageTab(id)}
           style={{flex:1,padding:"7px 10px",borderRadius:4,border:"none",background:pageTab===id?T.surf:"transparent",color:pageTab===id?T.text:T.muted,fontSize:12,fontWeight:pageTab===id?600:400,cursor:"pointer",fontFamily:"Barlow, sans-serif",boxShadow:pageTab===id?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
           {lbl}
@@ -1555,6 +1577,34 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
     </div>
   );
 
+  const archiefPanel=(
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {gearchiveerd.length===0?(
+        <div style={{color:T.muted,fontSize:13,padding:"40px 0",textAlign:"center"}}>Geen gearchiveerde klanten</div>
+      ):gearchiveerd.map(k=>(
+        <div key={k.id} style={{padding:"12px 14px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:T.text}}>{k.naam}</div>
+              <div style={{fontSize:12,color:T.muted,marginTop:2}}>{(k.motoren||[]).length} motor{(k.motoren||[]).length!==1?"en":""}{k.woonplaats?` · ${k.woonplaats}`:""}</div>
+              {k.email&&<div style={{fontSize:11,color:T.muted,marginTop:1}}>{k.email}</div>}
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>onUpdateKlant({...k,status:"goedgekeurd"})}
+                style={{padding:"6px 12px",background:T.green,color:"#fff",border:"none",borderRadius:4,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Barlow, sans-serif",whiteSpace:"nowrap"}}>
+                ✓ Reactiveren
+              </button>
+              <button onClick={()=>{setSel(k.id);setPageTab("klanten");}}
+                style={{padding:"6px 10px",background:"none",border:`1px solid ${T.border}`,color:T.muted,borderRadius:4,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                Bekijk
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   const listPanel=(
     <div style={{display:"flex",flexDirection:"column",gap:8,height:"100%"}}>
       <div style={{display:"flex",gap:8}}>
@@ -1584,6 +1634,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
             klant={klant}
             onUpdateKlant={onUpdateKlant}
             onAfwijsKlant={onAfwijsKlant}
+            onArchiveerKlant={onArchiveerKlant}
             onAddMotor={onAddMotor}
             onAddService={onAddService}
             onUpdateService={onUpdateService}
@@ -1599,7 +1650,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
         ):(
           <div>
             {tabBar}
-            {pageTab==="klanten" ? listPanel : meldingenPanel}
+            {pageTab==="klanten" ? listPanel : pageTab==="archief" ? archiefPanel : meldingenPanel}
           </div>
         )}
         {modal==="addKlant"&&<KlantModal onSave={onAddKlant} onClose={()=>setModal(null)} voorraad={voorraad}/>}
@@ -1613,6 +1664,8 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
       <div style={{flexShrink:0,marginBottom:4}}>{tabBar}</div>
       {pageTab==="meldingen"?(
         <div style={{flex:1,overflowY:"auto"}}>{meldingenPanel}</div>
+      ):pageTab==="archief"?(
+        <div style={{flex:1,overflowY:"auto"}}>{archiefPanel}</div>
       ):(
         <div style={{display:"flex",gap:18,flex:1,overflow:"hidden"}}>
           <div style={{width:300,flexShrink:0,overflowY:"auto"}}>{listPanel}</div>
@@ -1624,6 +1677,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAd
                 klant={klant}
                 onUpdateKlant={onUpdateKlant}
                 onAfwijsKlant={onAfwijsKlant}
+                onArchiveerKlant={onArchiveerKlant}
                 onAddMotor={onAddMotor}
                 onAddService={onAddService}
                 onUpdateService={onUpdateService}
@@ -3236,6 +3290,12 @@ export default function AdminApp(){
     setKlanten(p => p.filter(k => k.id !== klant.id));
   };
 
+  const archiveerKlant = async (klant) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("klanten").update({ status: "gearchiveerd" }).eq("id", klant.id);
+    setKlanten(p => p.map(k => k.id === klant.id ? { ...k, status: "gearchiveerd" } : k));
+  };
+
   const markeerGezienService = async (klantId, motorId, svcId) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("service_beurten").update({ gezien_admin: true }).eq("id", svcId);
@@ -3747,7 +3807,7 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp}/>}
