@@ -2503,6 +2503,43 @@ function AfspraakEditModal({afspraak, klanten, voorraad, onSave, onDelete, onClo
   );
 }
 
+function TakenPanel({taken,nieuweTask,setNieuweTask,voegTaakToe,verwijderTaak}){
+  return(
+    <div>
+      <div style={{display:"flex",gap:6,padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}>
+        <input
+          value={nieuweTask}
+          onChange={e=>setNieuweTask(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&voegTaakToe()}
+          placeholder="Nieuwe taak toevoegen..."
+          style={{flex:1,padding:"7px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:T.surf2,color:T.text,fontSize:12,fontFamily:"Barlow, sans-serif",outline:"none"}}
+        />
+        <button onClick={voegTaakToe} style={{...s.btn,padding:"7px 12px",fontSize:18,fontWeight:700,lineHeight:1,flexShrink:0}}>+</button>
+      </div>
+      {taken.length===0?(
+        <div style={{padding:"18px 12px",color:T.muted,fontSize:12,textAlign:"center"}}>Geen taken</div>
+      ):(
+        taken.map(t=>{
+          const dt=new Date(t.aangemaakt_op);
+          const dtStr=dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})+" "+dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"});
+          return(
+            <div key={t.id} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"9px 12px",borderBottom:`1px solid ${T.border}20`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,color:T.text,lineHeight:1.4,wordBreak:"break-word"}}>{t.tekst}</div>
+                <div style={{fontSize:10,color:T.muted,marginTop:3}}>{dtStr}</div>
+              </div>
+              <button onClick={()=>verwijderTaak(t.id)}
+                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:15,padding:"2px 4px",flexShrink:0,lineHeight:1,borderRadius:4}}
+                onMouseOver={e=>e.currentTarget.style.color=T.red}
+                onMouseOut={e=>e.currentTarget.style.color=T.muted}>✕</button>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden,afspraakSoorten=[]}){
   const isMobile=useIsMobile();
   const [weekBase,setWeekBase]=useState(TODAY);
@@ -2539,42 +2576,6 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
     await supabase.from("taken").delete().eq("id",id);
     setTaken(p=>p.filter(t=>t.id!==id));
   };
-
-  // Taken panel — gedeeld door mobile + desktop
-  const TakenPanel=()=>(
-    <div>
-      <div style={{display:"flex",gap:6,padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}>
-        <input
-          value={nieuweTask}
-          onChange={e=>setNieuweTask(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&voegTaakToe()}
-          placeholder="Nieuwe taak toevoegen..."
-          style={{flex:1,padding:"7px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:T.surf2,color:T.text,fontSize:12,fontFamily:"Barlow, sans-serif",outline:"none"}}
-        />
-        <button onClick={voegTaakToe} style={{...s.btn,padding:"7px 12px",fontSize:18,fontWeight:700,lineHeight:1,flexShrink:0}}>+</button>
-      </div>
-      {taken.length===0?(
-        <div style={{padding:"18px 12px",color:T.muted,fontSize:12,textAlign:"center"}}>Geen taken</div>
-      ):(
-        taken.map(t=>{
-          const dt=new Date(t.aangemaakt_op);
-          const dtStr=dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})+" "+dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"});
-          return(
-            <div key={t.id} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"9px 12px",borderBottom:`1px solid ${T.border}20`}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,color:T.text,lineHeight:1.4,wordBreak:"break-word"}}>{t.tekst}</div>
-                <div style={{fontSize:10,color:T.muted,marginTop:3}}>{dtStr}</div>
-              </div>
-              <button onClick={()=>verwijderTaak(t.id)}
-                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:15,padding:"2px 4px",flexShrink:0,lineHeight:1,borderRadius:4}}
-                onMouseOver={e=>e.currentTarget.style.color=T.red}
-                onMouseOut={e=>e.currentTarget.style.color=T.muted}>✕</button>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
 
   // Splits geplande vs aangevraagde afspraken
   const geplandAfspraken=afspraken.filter(a=>a.status!=="aangevraagd");
@@ -2713,7 +2714,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:14,letterSpacing:1,textTransform:"uppercase",color:T.text,marginBottom:8}}>
             TAKEN{taken.length>0&&<span style={{fontWeight:400,color:T.muted,fontSize:12}}> ({taken.length})</span>}
           </div>
-          <div style={{...s.card,padding:0,overflow:"hidden"}}><TakenPanel/></div>
+          <div style={{...s.card,padding:0,overflow:"hidden"}}><TakenPanel taken={taken} nieuweTask={nieuweTask} setNieuweTask={setNieuweTask} voegTaakToe={voegTaakToe} verwijderTaak={verwijderTaak}/></div>
         </div>
         {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} initialDatum={selDay} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {detailAfspraak&&(
@@ -2912,7 +2913,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
               {takenOpen?"›":"‹"}
             </button>
           </div>
-          {takenOpen&&<TakenPanel/>}
+          {takenOpen&&<TakenPanel taken={taken} nieuweTask={nieuweTask} setNieuweTask={setNieuweTask} voegTaakToe={voegTaakToe} verwijderTaak={verwijderTaak}/>}
         </div>
       </div>
 
