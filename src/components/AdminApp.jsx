@@ -484,8 +484,8 @@ function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
   const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true});
   const [rdwStatus,setRdwStatus]=useState(null);
-  const [fotoFiles,setFotoFiles]=useState([]);
-  const [fotoPreviews,setFotoPreviews]=useState([]);
+  const [fotoItems,setFotoItems]=useState([]); // [{preview,file}]
+  const [dragFotoIdx,setDragFotoIdx]=useState(null);
   const [uploadStatus,setUploadStatus]=useState(null);
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
 
@@ -512,15 +512,19 @@ function VoorraadModal({onSave,onClose}){
   const voegFotosToe = (e) => {
     const files = Array.from(e.target.files||[]);
     if(!files.length) return;
-    setFotoFiles(p=>[...p,...files]);
-    setFotoPreviews(p=>[...p,...files.map(f=>URL.createObjectURL(f))]);
+    setFotoItems(p=>[...p,...files.map(file=>({preview:URL.createObjectURL(file),file}))]);
     e.target.value = "";
   };
 
   const verwijderFoto = (i) => {
-    URL.revokeObjectURL(fotoPreviews[i]);
-    setFotoFiles(p=>p.filter((_,j)=>j!==i));
-    setFotoPreviews(p=>p.filter((_,j)=>j!==i));
+    URL.revokeObjectURL(fotoItems[i].preview);
+    setFotoItems(p=>p.filter((_,j)=>j!==i));
+  };
+
+  const dropFoto = (toIdx) => {
+    if(dragFotoIdx===null||dragFotoIdx===toIdx) return;
+    setFotoItems(p=>{const a=[...p];const [it]=a.splice(dragFotoIdx,1);a.splice(toIdx,0,it);return a;});
+    setDragFotoIdx(null);
   };
 
   const opslaan = async () => {
@@ -528,8 +532,8 @@ function VoorraadModal({onSave,onClose}){
     if(!ken||!f.merk) return;
     setUploadStatus("laden");
     try {
-      const urls = fotoFiles.length > 0
-        ? await Promise.all(fotoFiles.map(file=>uploadFoto(file)))
+      const urls = fotoItems.length > 0
+        ? await Promise.all(fotoItems.map(it=>uploadFoto(it.file)))
         : [];
       onSave({...f, kenteken:ken, fotos:urls});
       onClose();
@@ -598,11 +602,16 @@ function VoorraadModal({onSave,onClose}){
         </div>
         <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={voegFotosToe}/>
       </label>
-      {fotoPreviews.length>0&&(
+      {fotoItems.length>0&&(
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-          {fotoPreviews.map((url,i)=>(
-            <div key={i} style={{position:"relative",flexShrink:0}}>
-              <img src={url} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
+          {fotoItems.map((it,i)=>(
+            <div key={i} draggable
+              onDragStart={()=>setDragFotoIdx(i)}
+              onDragOver={e=>e.preventDefault()}
+              onDrop={()=>dropFoto(i)}
+              onDragEnd={()=>setDragFotoIdx(null)}
+              style={{position:"relative",flexShrink:0,opacity:dragFotoIdx===i?0.4:1,cursor:"grab"}}>
+              <img src={it.preview} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px solid ${dragFotoIdx===i?T.accent:T.border}`}}/>
               <button onClick={()=>verwijderFoto(i)} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
             </div>
           ))}
@@ -626,32 +635,38 @@ function VoorraadEditModal({motor, onSave, onClose}){
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
-  const [behoudeFotos,setBehoudeFotos]=useState(Array.isArray(motor.fotos)?motor.fotos:[]);
-  const [nieuweFotoFiles,setNieuweFotoFiles]=useState([]);
-  const [nieuweFotoPreviews,setNieuweFotoPreviews]=useState([]);
+  // Unified foto list: {type:"bestaand",url} | {type:"nieuw",preview,file}
+  const [allFotos,setAllFotos]=useState(
+    (Array.isArray(motor.fotos)?motor.fotos:[]).map(url=>({type:"bestaand",url}))
+  );
+  const [dragFotoIdx,setDragFotoIdx]=useState(null);
   const [uploadStatus,setUploadStatus]=useState(null);
 
   const voegFotosToe=(e)=>{
     const files=Array.from(e.target.files||[]);
     if(!files.length) return;
-    setNieuweFotoFiles(p=>[...p,...files]);
-    setNieuweFotoPreviews(p=>[...p,...files.map(fi=>URL.createObjectURL(fi))]);
+    setAllFotos(p=>[...p,...files.map(fi=>({type:"nieuw",preview:URL.createObjectURL(fi),file:fi}))]);
     e.target.value="";
   };
-  const verwijderNieuw=(i)=>{
-    URL.revokeObjectURL(nieuweFotoPreviews[i]);
-    setNieuweFotoFiles(p=>p.filter((_,j)=>j!==i));
-    setNieuweFotoPreviews(p=>p.filter((_,j)=>j!==i));
+  const verwijderFoto=(i)=>{
+    const it=allFotos[i];
+    if(it.type==="nieuw") URL.revokeObjectURL(it.preview);
+    setAllFotos(p=>p.filter((_,j)=>j!==i));
+  };
+  const dropFoto=(toIdx)=>{
+    if(dragFotoIdx===null||dragFotoIdx===toIdx) return;
+    setAllFotos(p=>{const a=[...p];const [it]=a.splice(dragFotoIdx,1);a.splice(toIdx,0,it);return a;});
+    setDragFotoIdx(null);
   };
   const opslaan=async()=>{
     if(!f.merk) return;
     setUploadStatus("laden");
     try{
-      const nieuweUrls=nieuweFotoFiles.length>0
-        ? await Promise.all(nieuweFotoFiles.map(fi=>uploadFoto(fi)))
-        : [];
-      const verwijderdeUrls=(motor.fotos||[]).filter(u=>!behoudeFotos.includes(u));
-      onSave(motor.id, f, behoudeFotos, nieuweUrls, verwijderdeUrls);
+      const uploadedUrls=await Promise.all(
+        allFotos.map(it=>it.type==="bestaand"?Promise.resolve(it.url):uploadFoto(it.file))
+      );
+      const verwijderdeUrls=(motor.fotos||[]).filter(u=>!allFotos.some(it=>it.type==="bestaand"&&it.url===u));
+      onSave(motor.id, f, uploadedUrls, [], verwijderdeUrls);
       onClose();
     }catch(e){ setUploadStatus("fout: "+e.message); }
   };
@@ -681,28 +696,26 @@ function VoorraadEditModal({motor, onSave, onClose}){
       </Grid2>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Foto's</div>
-      {behoudeFotos.length>0&&(
+      {allFotos.length>0&&(
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-          {behoudeFotos.map((url,i)=>(
-            <div key={i} style={{position:"relative",flexShrink:0}}>
-              <img src={clImg(url,200)} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px solid ${T.border}`}}/>
-              <button onClick={()=>setBehoudeFotos(p=>p.filter((_,j)=>j!==i))}
-                style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
-            </div>
-          ))}
+          {allFotos.map((it,i)=>{
+            const src=it.type==="bestaand"?clImg(it.url,200):it.preview;
+            return(
+              <div key={i} draggable
+                onDragStart={()=>setDragFotoIdx(i)}
+                onDragOver={e=>e.preventDefault()}
+                onDrop={()=>dropFoto(i)}
+                onDragEnd={()=>setDragFotoIdx(null)}
+                style={{position:"relative",flexShrink:0,opacity:dragFotoIdx===i?0.4:1,cursor:"grab"}}>
+                <img src={src} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px ${it.type==="nieuw"?"dashed":"solid"} ${dragFotoIdx===i?T.accent:it.type==="nieuw"?T.accent:T.border}`}}/>
+                <button onClick={()=>verwijderFoto(i)}
+                  style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
+              </div>
+            );
+          })}
         </div>
       )}
-      {nieuweFotoPreviews.length>0&&(
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-          {nieuweFotoPreviews.map((url,i)=>(
-            <div key={i} style={{position:"relative",flexShrink:0}}>
-              <img src={url} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:4,border:`1px dashed ${T.accent}`}}/>
-              <button onClick={()=>verwijderNieuw(i)}
-                style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.red,color:"#fff",border:"none",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>✕</button>
-            </div>
-          ))}
-        </div>
-      )}
+      {allFotos.length>0&&<div style={{fontSize:11,color:T.muted,marginBottom:8}}>Sleep foto's om de volgorde te wijzigen</div>}
       <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:`1px dashed ${T.border}`,borderRadius:4,cursor:"pointer",marginBottom:12}}>
         <span style={{fontSize:20}}>📷</span>
         <div style={{fontSize:13,color:T.muted}}>Foto's toevoegen</div>
@@ -774,7 +787,11 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       const next=new Set(prev);
       if(next.has(opt))next.delete(opt);else next.add(opt);
       const totaal=Math.min(Math.max([...next].reduce((s,o)=>s+(duurMap[o]||1),0),1),8);
-      setF(p=>({...p,duur:String(totaal),tijd:""}));
+      setF(p=>{
+        if(modus==="intern") return {...p,duur:String(totaal)};
+        const nieuweSlots=getSlots(afspraken.filter(a=>a.type!=="proefrit"),p.datum,totaal);
+        return {...p,duur:String(totaal),tijd:nieuweSlots.includes(p.tijd)?p.tijd:""};
+      });
       return next;
     });
   };
