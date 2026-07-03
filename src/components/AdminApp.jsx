@@ -2513,6 +2513,69 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
   const [afwerkAfspraakItem,setAfwerkAfspraakItem]=useState(null);
   const [dragId,setDragId]=useState(null);
   const [selDay,setSelDay]=useState(TODAY);
+  const [taken,setTaken]=useState([]);
+  const [nieuweTask,setNieuweTask]=useState("");
+  const [takenOpen,setTakenOpen]=useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      const {supabase}=await import("../lib/supabase.js");
+      const {data}=await supabase.from("taken").select("*").order("aangemaakt_op");
+      setTaken(data||[]);
+    })();
+  },[]);
+
+  const voegTaakToe=async()=>{
+    if(!nieuweTask.trim()) return;
+    const {supabase}=await import("../lib/supabase.js");
+    const {data:{user}}=await supabase.auth.getUser();
+    const {data}=await supabase.from("taken").insert({tekst:nieuweTask.trim(),user_id:user.id}).select().single();
+    if(data) setTaken(p=>[...p,data]);
+    setNieuweTask("");
+  };
+
+  const verwijderTaak=async(id)=>{
+    const {supabase}=await import("../lib/supabase.js");
+    await supabase.from("taken").delete().eq("id",id);
+    setTaken(p=>p.filter(t=>t.id!==id));
+  };
+
+  // Taken panel — gedeeld door mobile + desktop
+  const TakenPanel=()=>(
+    <div>
+      <div style={{display:"flex",gap:6,padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}>
+        <input
+          value={nieuweTask}
+          onChange={e=>setNieuweTask(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&voegTaakToe()}
+          placeholder="Nieuwe taak toevoegen..."
+          style={{flex:1,padding:"7px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:T.surf2,color:T.text,fontSize:12,fontFamily:"Barlow, sans-serif",outline:"none"}}
+        />
+        <button onClick={voegTaakToe} style={{...s.btn,padding:"7px 12px",fontSize:18,fontWeight:700,lineHeight:1,flexShrink:0}}>+</button>
+      </div>
+      {taken.length===0?(
+        <div style={{padding:"18px 12px",color:T.muted,fontSize:12,textAlign:"center"}}>Geen taken</div>
+      ):(
+        taken.map(t=>{
+          const dt=new Date(t.aangemaakt_op);
+          const dtStr=dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})+" "+dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"});
+          return(
+            <div key={t.id} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"9px 12px",borderBottom:`1px solid ${T.border}20`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,color:T.text,lineHeight:1.4,wordBreak:"break-word"}}>{t.tekst}</div>
+                <div style={{fontSize:10,color:T.muted,marginTop:3}}>{dtStr}</div>
+              </div>
+              <button onClick={()=>verwijderTaak(t.id)}
+                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:15,padding:"2px 4px",flexShrink:0,lineHeight:1,borderRadius:4}}
+                onMouseOver={e=>e.currentTarget.style.color=T.red}
+                onMouseOut={e=>e.currentTarget.style.color=T.muted}>✕</button>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
   // Splits geplande vs aangevraagde afspraken
   const geplandAfspraken=afspraken.filter(a=>a.status!=="aangevraagd");
   const aanvragen=afspraken.filter(a=>a.status==="aangevraagd").sort((a,b)=>a.datum.localeCompare(b.datum));
@@ -2645,6 +2708,13 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             </div>
           </div>
         )}
+        {/* Taken (mobiel) */}
+        <div style={{marginTop:24}}>
+          <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:14,letterSpacing:1,textTransform:"uppercase",color:T.text,marginBottom:8}}>
+            TAKEN{taken.length>0&&<span style={{fontWeight:400,color:T.muted,fontSize:12}}> ({taken.length})</span>}
+          </div>
+          <div style={{...s.card,padding:0,overflow:"hidden"}}><TakenPanel/></div>
+        </div>
         {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} initialDatum={selDay} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
         {detailAfspraak&&(
           <AfspraakDetailModal
@@ -2685,6 +2755,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
         <button style={s.btn} onClick={()=>setModal(true)}>+ Afspraak</button>
       </div>
+
+      <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+      {/* Hoofdinhoud */}
+      <div style={{flex:1,minWidth:0}}>
 
       <div style={{...s.card,padding:0,overflow:"hidden"}}>
         {/* Dag headers */}
@@ -2822,15 +2896,37 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         </div>
       )}
 
+      </div>{/* einde hoofdinhoud */}
+
+      {/* Taken sidebar */}
+      <div style={{width:takenOpen?250:36,flexShrink:0,transition:"width 0.15s"}}>
+        <div style={{...s.card,padding:0,overflow:"hidden"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",borderBottom:`1px solid ${T.border}`,minHeight:40}}>
+            {takenOpen&&(
+              <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:13,letterSpacing:1,color:T.text,display:"flex",alignItems:"center",gap:6}}>
+                TAKEN{taken.length>0&&<span style={{fontSize:11,fontWeight:400,color:T.muted}}> ({taken.length})</span>}
+              </div>
+            )}
+            <button onClick={()=>setTakenOpen(p=>!p)}
+              style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:16,padding:"0 2px",lineHeight:1,marginLeft:"auto"}}>
+              {takenOpen?"›":"‹"}
+            </button>
+          </div>
+          {takenOpen&&<TakenPanel/>}
+        </div>
+      </div>
+
+      </div>{/* einde flex row */}
+
       {modal&&<AfspraakModal afspraken={geplandAfspraken} klanten={klanten} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} voorraad={voorraad} onSave={a=>{onAddAfspraak(a);setModal(false);}} onClose={()=>setModal(false)}/>}
       {detailAfspraak&&(
         <AfspraakDetailModal
           afspraak={detailAfspraak}
           voorraad={voorraad}
-          onClose={()=>setDetailAfspraak(null)}
-          onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraak(null);}}
-          onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraak(null);}}
-          onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraak(null);}}/>
+          onClose={()=>setDetailAfspraakId(null)}
+          onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
+          onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraakId(null);}}
+          onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraakId(null);}}/>
       )}
       {editAfspraak&&(
         <AfspraakEditModal
