@@ -103,6 +103,15 @@ const onderdelenZoekLink = (merk, model) => {
   return `https://www.google.com/search?q=${q}+site%3Amike2.larsson.nl`;
 };
 
+// ── Afspraak-kleur: categorie wint, anders het standaard type-kleurenschema ──
+const getAfspraakKleur = (a, categorieen) => {
+  if(a.categorie){
+    const c = (categorieen||[]).find(c=>c.naam===a.categorie);
+    if(c) return c.kleur;
+  }
+  return a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
+};
+
 function OnderdelenBestellenKnop({merk, model, link, style}){
   const href = link || onderdelenZoekLink(merk, model);
   return(
@@ -2687,10 +2696,10 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
   );
 }
 
-function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, onClose, onEdit, onDelete, onAfwerken}){
+function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, afspraakCategorieen=[], onClose, onEdit, onDelete, onDeleteReeks, onAfwerken}){
   const isProefrit=afspraak.type==="proefrit";
   const isIntern=afspraak.type==="intern";
-  const kleur=isProefrit?T.green:isIntern?"#6366F1":T.accent;
+  const kleur=getAfspraakKleur(afspraak, afspraakCategorieen);
   const typLabel=isProefrit?"Proefrit":isIntern?"Intern":"Service";
   const motorInfo=afspraak.voorraad_motor_id
     ?(voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id)
@@ -2705,8 +2714,13 @@ function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, onClose, onE
         <span style={{...s.badge(kleur),fontSize:11,fontWeight:700,padding:"4px 10px"}}>{typLabel}</span>
         {afspraak.status==="afgewerkt"&&<span style={{...s.badge(T.green),fontSize:11,padding:"4px 10px"}}>✓ Afgewerkt</span>}
         {afspraak.status==="gepland"&&<span style={{...s.badge(T.muted),fontSize:11,padding:"4px 10px"}}>Gepland</span>}
+        {afspraak.categorie&&<span style={{...s.badge(kleur),fontSize:11,padding:"4px 10px"}}>{afspraak.categorie}</span>}
+        {afspraak.herhaal_groep_id&&<span style={{...s.badge(T.muted),fontSize:11,padding:"4px 10px"}}>🔁 Herhalend</span>}
       </div>
       <div style={{fontSize:17,fontWeight:700,marginBottom:8}}>{displayNaam}</div>
+      {(afspraak.medewerker_namen||[]).length>0&&(
+        <div style={{fontSize:13,color:T.muted,marginBottom:10}}>👤 {afspraak.medewerker_namen.join(", ")}</div>
+      )}
       {klus&&(
         <div style={{fontSize:12,color:T.accent,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
           <span>🛠</span><span>Sessie van klus: {klus.titel}</span>
@@ -2745,8 +2759,13 @@ function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, onClose, onE
       {motorInfo&&(
         <OnderdelenBestellenKnop merk={motorInfo.merk} model={motorInfo.model} link={motorInfo.onderdelen_link} style={{width:"100%",padding:"9px 14px"}}/>
       )}
-      <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
-        <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
+      <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
+          {afspraak.herhaal_groep_id&&onDeleteReeks&&(
+            <button style={{...s.btnGhost,color:T.red,border:`1px solid ${T.red}`,flex:"0 0 auto"}} onClick={()=>onDeleteReeks(afspraak)}>Verwijder + toekomstige</button>
+          )}
+        </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           {!isProefrit&&afspraak.status==="gepland"&&onAfwerken&&(
             <button style={{...s.btn,background:T.green}} onClick={onAfwerken}>✓ Afwerken</button>
@@ -2984,7 +3003,7 @@ function TakenPanel({taken,nieuweTask,setNieuweTask,voegTaakToe,verwijderTaak}){
   );
 }
 
-function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[]}){
+function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onDeleteAfspraak,onDeleteAfspraakReeks=()=>{},onAfwerkAfspraak,geslotenDagen=[],onToggleGesloten,openingstijden,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[]}){
   const isMobile=useIsMobile();
   const [weekBase,setWeekBase]=useState(TODAY);
   const [modal,setModal]=useState(false);
@@ -3099,7 +3118,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {dayApts.map(a=>{
-              const kleur=a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
+              const kleur=getAfspraakKleur(a, afspraakCategorieen);
               const naam=a.type==="proefrit"?(a.naam||a.klant):a.type==="intern"?(a.naam||a.klant||"Intern"):a.klant;
               const internMotor=a.type==="intern"&&a.voorraad_motor_id?(voorraad||[]).find(m=>m.id===a.voorraad_motor_id):null;
               const motorSub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):a.type==="intern"&&internMotor?`${internMotor.merk} ${internMotor.model}`.trim():null;
@@ -3108,10 +3127,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                 <div key={a.id} onClick={()=>setDetailAfspraakId(a.id)} style={{...s.card,display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",cursor:"pointer",border:`1px solid ${kleur}40`}}>
                   <div style={{background:kleur,color:"#fff",padding:"4px 8px",borderRadius:3,fontSize:13,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{a.tijd||"—"}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:10,fontWeight:700,color:kleur,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>{typLabel}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:kleur,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>{a.categorie||typLabel}</div>
                     <div style={{fontSize:14,fontWeight:600}}>{naam}</div>
                     {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.soort}</div>}
-                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{motorSub?` · ${motorSub}`:(a.opmerking||a.omschrijving)?` · ${a.opmerking||a.omschrijving}`:""}</div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{motorSub?` · ${motorSub}`:(a.opmerking||a.omschrijving)?` · ${a.opmerking||a.omschrijving}`:""}{(a.medewerker_namen||[]).length>0?` · 👤 ${a.medewerker_namen.join(", ")}`:""}</div>
                   </div>
                 </div>
               );
@@ -3167,9 +3186,11 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
             klanten={klanten}
             voorraad={voorraad}
             klussen={klussen}
+            afspraakCategorieen={afspraakCategorieen}
             onClose={()=>setDetailAfspraakId(null)}
             onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
             onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraakId(null);}}
+            onDeleteReeks={a=>{onDeleteAfspraakReeks(a);setDetailAfspraakId(null);}}
             onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraakId(null);}}/>
         )}
         {editAfspraak&&(
@@ -3265,7 +3286,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                   const startMin=timeToMin(a.tijd||"09:00")-GRID_START;
                   const top=Math.max(0,startMin/TOTAL_MIN_EFF*100);
                   const height=Math.min((a.duur||1)*60/TOTAL_MIN_EFF*100,100-top);
-                  const kleur=a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
+                  const kleur=getAfspraakKleur(a, afspraakCategorieen);
                   const displayNaam=a.type==="proefrit"?(a.naam||a.klant):a.klant;
                   const displaySub=a.type==="proefrit"?(a.motorLabel||"🏍 proefrit"):(a.omschrijving||a.opmerking||"");
                   return(
@@ -3283,7 +3304,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
                       <div style={{fontSize:11,fontWeight:700,color:kleur}}>{a.tijd}</div>
                       <div style={{fontSize:10,color:T.text,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayNaam}</div>
                       {height>8&&a.soort&&<div style={{fontSize:10,color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.soort}</div>}
-                      {height>8&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u{!a.soort&&displaySub?` · ${displaySub}`:""}</div>}
+                      {height>8&&<div style={{fontSize:10,color:T.muted}}>{a.duur}u{!a.soort&&displaySub?` · ${displaySub}`:""}{(a.medewerker_namen||[]).length>0?` · ${a.medewerker_namen.join(", ")}`:""}</div>}
                     </div>
                   );
                 })}
@@ -3372,9 +3393,11 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           klanten={klanten}
           voorraad={voorraad}
           klussen={klussen}
+          afspraakCategorieen={afspraakCategorieen}
           onClose={()=>setDetailAfspraakId(null)}
           onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
           onDelete={id=>{onDeleteAfspraak(id);setDetailAfspraakId(null);}}
+          onDeleteReeks={a=>{onDeleteAfspraakReeks(a);setDetailAfspraakId(null);}}
           onAfwerken={()=>{setAfwerkAfspraakItem(detailAfspraak);setDetailAfspraakId(null);}}/>
       )}
       {editAfspraak&&(
@@ -4530,6 +4553,12 @@ export default function AdminApp(){
     }
   };
 
+  const deleteAfspraakReeks = async (afspraak) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("afspraken").delete().eq("herhaal_groep_id",afspraak.herhaal_groep_id).gte("datum",afspraak.datum);
+    setAfspraken(p=>p.filter(a=>!(a.herhaal_groep_id===afspraak.herhaal_groep_id&&a.datum>=afspraak.datum)));
+  };
+
   const toggleGeslotenDag = async (datum, blokkeer) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const { data: inst } = await sb.from("instellingen").select("gesloten_dagen").single();
@@ -4691,7 +4720,7 @@ export default function AdminApp(){
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
-      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
+      {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
     </>
   );
