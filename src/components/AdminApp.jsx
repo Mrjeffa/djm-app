@@ -96,6 +96,23 @@ const uploadFoto = async (file) => {
 
 const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
+// ── Onderdelen-bestellen link ────────────────────────────────────────────────
+// Larsson heeft geen API; zonder opgeslagen directe link vallen we terug op een site-zoekopdracht.
+const onderdelenZoekLink = (merk, model) => {
+  const q = encodeURIComponent([merk, model].filter(Boolean).join(" ").trim());
+  return `https://www.google.com/search?q=${q}+site%3Amike2.larsson.nl`;
+};
+
+function OnderdelenBestellenKnop({merk, model, link, style}){
+  const href = link || onderdelenZoekLink(merk, model);
+  return(
+    <a href={href} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+      style={{...s.btnOutline,textDecoration:"none",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,...style}}>
+      🔧 Onderdelen bestellen
+    </a>
+  );
+}
+
 // ── Band-utils ──────────────────────────────────────────────────────────────
 const getWeekNr = (d) => {
   const start = new Date(d.getFullYear(), 0, 1);
@@ -482,7 +499,7 @@ function ServiceModal({onSave,onClose,initial}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:""});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoItems,setFotoItems]=useState([]); // [{preview,file}]
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
@@ -590,6 +607,9 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Maat voorband"><input style={s.input} value={f.voorband_maat} onChange={set("voorband_maat")} placeholder="120/70 ZR17"/></Field>
         <Field label="Maat achterband"><input style={s.input} value={f.achterband_maat} onChange={set("achterband_maat")} placeholder="180/55 ZR17"/></Field>
       </Grid2>
+      <Field label="Onderdelen bestellen — directe link (optioneel)">
+        <input style={s.input} value={f.onderdelen_link} onChange={set("onderdelen_link")} placeholder={f.merk?onderdelenZoekLink(f.merk,f.model):"https://mike2.larsson.nl/..."}/>
+      </Field>
 
       {/* Stap 4: foto's */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
@@ -633,6 +653,7 @@ function VoorraadEditModal({motor, onSave, onClose}){
     chassis_nummer:motor.chassis_nummer||"",
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
+    onderdelen_link:motor.onderdelen_link||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   // Unified foto list: {type:"bestaand",url} | {type:"nieuw",preview,file}
@@ -694,6 +715,12 @@ function VoorraadEditModal({motor, onSave, onClose}){
         <Field label="Maat voorband"><input style={s.input} value={f.voorband_maat} onChange={set("voorband_maat")} placeholder="120/70 ZR17"/></Field>
         <Field label="Maat achterband"><input style={s.input} value={f.achterband_maat} onChange={set("achterband_maat")} placeholder="180/55 ZR17"/></Field>
       </Grid2>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <div style={s.sectionLabel}>Onderdelen bestellen</div>
+      <Field label="Directe link naar leverancier (optioneel)">
+        <input style={s.input} value={f.onderdelen_link} onChange={set("onderdelen_link")} placeholder={onderdelenZoekLink(f.merk,f.model)}/>
+      </Field>
+      <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:12}}>Zonder link wordt automatisch gezocht op merk en model.</div>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Foto's</div>
       {allFotos.length>0&&(
@@ -1237,7 +1264,7 @@ function MotorEditModal({motor, onSave, onClose}){
     bouwjaar:motor.bouwjaar||"", aankoopdatum:motor.aankoopdatum||"",
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
-    bijzonderheden:motor.bijzonderheden||"",
+    bijzonderheden:motor.bijzonderheden||"", onderdelen_link:motor.onderdelen_link||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   return(
@@ -1261,6 +1288,12 @@ function MotorEditModal({motor, onSave, onClose}){
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Bijzonderheden</div>
       <textarea style={{...s.input,height:80,resize:"none"}} value={f.bijzonderheden} onChange={set("bijzonderheden")} placeholder="Bijv. originele onderdelen, bekende problemen, modificaties..."/>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Onderdelen bestellen</div>
+      <Field label="Directe link naar leverancier (optioneel)">
+        <input style={s.input} value={f.onderdelen_link} onChange={set("onderdelen_link")} placeholder={onderdelenZoekLink(f.merk,f.model)}/>
+      </Field>
+      <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:12}}>Zonder link wordt automatisch gezocht op merk en model.</div>
       <ModalFooter onClose={onClose} label="Opslaan" onClick={()=>{onSave(motor.id,f);onClose();}}/>
     </Modal>
   );
@@ -1403,6 +1436,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
                 {motorMenuId===motor.id&&(
                   <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:160,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
                     <button onClick={()=>{setEditMotorItem(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
+                    <a href={motor.onderdelen_link||onderdelenZoekLink(motor.merk,motor.model)} target="_blank" rel="noopener noreferrer" onClick={()=>setMotorMenuId(null)} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left",textDecoration:"none"}}>🔧 Onderdelen bestellen</a>
                     <button onClick={()=>{setInruilConfirmId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Inruilen →</button>
                     <div style={{height:1,background:T.border}}/>
                     <button onClick={()=>{setDelMotorId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
@@ -1964,6 +1998,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                             )}
                             <button onClick={()=>{setHistorieMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Historie</button>
                             {!m.verkocht_op&&<button onClick={()=>{setInternAfspraakMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Interne afspraak</button>}
+                            <a href={m.onderdelen_link||onderdelenZoekLink(m.merk,m.model)} target="_blank" rel="noopener noreferrer" onClick={()=>setMenuMotorId(null)} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left",textDecoration:"none"}}>🔧 Onderdelen bestellen</a>
                             <div style={{height:1,background:T.border}}/>
                             <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
                           </div>
@@ -2311,12 +2346,16 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
   );
 }
 
-function AfspraakDetailModal({afspraak, voorraad, onClose, onEdit, onDelete, onAfwerken}){
+function AfspraakDetailModal({afspraak, klanten, voorraad, onClose, onEdit, onDelete, onAfwerken}){
   const isProefrit=afspraak.type==="proefrit";
   const isIntern=afspraak.type==="intern";
   const kleur=isProefrit?T.green:isIntern?"#6366F1":T.accent;
   const typLabel=isProefrit?"Proefrit":isIntern?"Intern":"Service";
-  const motorInfo=afspraak.voorraad_motor_id?(voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id):null;
+  const motorInfo=afspraak.voorraad_motor_id
+    ?(voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id)
+    :afspraak.motor_id
+    ?(klanten||[]).flatMap(k=>k.motoren||[]).find(m=>m.id===afspraak.motor_id)
+    :null;
   const displayNaam=isProefrit?(afspraak.naam||"Proefrit"):isIntern?(afspraak.naam||afspraak.opmerking||"Intern"):afspraak.klant||"Onbekend";
   return(
     <Modal title="AFSPRAAK DETAILS" onClose={onClose}>
@@ -2355,6 +2394,9 @@ function AfspraakDetailModal({afspraak, voorraad, onClose, onEdit, onDelete, onA
           <span style={{fontWeight:600,color:T.text}}>Interne opmerking: </span>
           <span style={{color:T.muted}}>{afspraak.interne_opmerking}</span>
         </div>
+      )}
+      {motorInfo&&(
+        <OnderdelenBestellenKnop merk={motorInfo.merk} model={motorInfo.model} link={motorInfo.onderdelen_link} style={{width:"100%",padding:"9px 14px"}}/>
       )}
       <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
         <button style={{...s.btn,background:T.red,flex:"0 0 auto"}} onClick={()=>onDelete(afspraak.id)}>Verwijderen</button>
@@ -2737,6 +2779,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         {detailAfspraak&&(
           <AfspraakDetailModal
             afspraak={detailAfspraak}
+            klanten={klanten}
             voorraad={voorraad}
             onClose={()=>setDetailAfspraakId(null)}
             onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
@@ -2940,6 +2983,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
       {detailAfspraak&&(
         <AfspraakDetailModal
           afspraak={detailAfspraak}
+          klanten={klanten}
           voorraad={voorraad}
           onClose={()=>setDetailAfspraakId(null)}
           onEdit={()=>{setEditAfspraak(detailAfspraak);setDetailAfspraakId(null);}}
@@ -3575,7 +3619,7 @@ export default function AdminApp(){
       bouwjaar:parseInt(f.bouwjaar)||0, aankoopdatum:f.aankoopdatum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
-      bijzonderheden:f.bijzonderheden||null,
+      bijzonderheden:f.bijzonderheden||null, onderdelen_link:f.onderdelen_link||null,
     }).eq("id", motorId);
     setKlanten(prev => prev.map(k => ({
       ...k,
@@ -3636,7 +3680,7 @@ export default function AdminApp(){
       prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
-      chassis_nummer:f.chassis_nummer||null,
+      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
       status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
     if(v) setShowroom(p=>[v,...p]);
@@ -3648,7 +3692,7 @@ export default function AdminApp(){
     await sb.from("voorraad").update({
       merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
-      chassis_nummer:f.chassis_nummer||null,
+      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       fotos:alleFotos,
@@ -3656,7 +3700,7 @@ export default function AdminApp(){
     setShowroom(p=>p.map(m=>m.id===id?{
       ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
-      chassis_nummer:f.chassis_nummer||null,
+      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       fotos:alleFotos,
