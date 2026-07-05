@@ -791,7 +791,7 @@ const DEFAULT_AFSPRAAK_SOORTEN = [
 ];
 const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
-function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[],onAddKlus=async()=>null,initialModus="bestaand",initialInternMotorId="",initialInternMotorType="voorraad",initialInternKlantId="",initialInternKlantNaam="",initialDatum=TODAY,initialKlusId="",initialFaseNaam="",initialOmschrijving="",initialMeerdaagse=false}){
+function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[],onAddKlus=async()=>null,initialModus="bestaand",initialInternMotorId="",initialInternMotorType="voorraad",initialInternKlantId="",initialInternKlantNaam="",initialSelKlantId="",initialMotorId="",initialDatum=TODAY,initialKlusId="",initialFaseNaam="",initialOmschrijving="",initialMeerdaagse=false}){
   const DAGMAP_AM=["zo","ma","di","wo","do","vr","za"];
   const isDatumGesloten=(datum)=>{
     if(!datum) return false;
@@ -802,8 +802,8 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
 
   const [modus,setModus]=useState(initialModus); // "bestaand" | "nieuw" | "intern"
   // Bestaande klant
-  const [zoek,setZoek]=useState("");
-  const [selKlantId,setSelKlantId]=useState(null);
+  const [zoek,setZoek]=useState(()=>(initialSelKlantId&&(klanten||[]).find(k=>k.id===initialSelKlantId)?.naam)||"");
+  const [selKlantId,setSelKlantId]=useState(initialSelKlantId||null);
   // Interne afspraak
   const [internBeschrijving,setInternBeschrijving]=useState(initialOmschrijving);
   const [internKlusId]=useState(initialKlusId);
@@ -813,14 +813,12 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
   const [internKlantId]=useState(initialInternKlantId);
   const [internKlantNaam]=useState(initialInternKlantNaam);
   const [gekozenFaseKey,setGekozenFaseKey]=useState("");
-  const openFasesVoorMotor=!internKlusId&&internMotorId
-    ? (klussen||[]).filter(k=>k.status==="open"&&(internMotorType==="voorraad"?k.voorraad_motor_id===internMotorId:k.motor_id===internMotorId)).flatMap(k=>(k.fases||[]).filter(f=>f.status==="bezig").map(f=>({klus:k,fase:f})))
-    : [];
   // Meerdaagse afspraak (nieuwe klus starten vanuit dit formulier)
   const [meerdaagse,setMeerdaagse]=useState(initialMeerdaagse);
   const [klusTitel,setKlusTitel]=useState("");
   const [klusGeschatteUren,setKlusGeschatteUren]=useState("");
   const [klusFases,setKlusFases]=useState([""]);
+  const [klusFaseData,setKlusFaseData]=useState({}); // {faseIndex: {datum,duur,tijd}}
   const [klusBezig,setKlusBezig]=useState(false);
   const allDaySlots=Array.from({length:35},(_,i)=>minToTime(360+i*30)); // 06:00–23:00
   // Medewerkers, categorie, herhalen
@@ -852,7 +850,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       return next;
     });
   };
-  const [f,setF]=useState({motor:"",datum:initialDatum,duur:"1",omschrijving:"",tijd:""});
+  const [f,setF]=useState({motor:initialMotorId||"",datum:initialDatum,duur:"1",omschrijving:"",tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
 
   const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
@@ -860,18 +858,29 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
   const serviceSlots=f.datum&&f.duur&&!datumGesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
   const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
 
-  const meerdaagseActief=modus==="intern"&&meerdaagse&&!internKlusId&&openFasesVoorMotor.length===0&&internMotorId;
-  const kanOpslaan=f.tijd&&(modus==="intern"||!datumGesloten)&&(modus==="intern"?(!meerdaagseActief||(klusTitel.trim()&&klusFases.some(fa=>fa.trim()))):modus==="bestaand"?!!selKlantId:!!(nw.naam&&nw.telefoon));
+  // Actieve motor: intern-modus gebruikt internMotorId/Type, bestaand-modus de geselecteerde klantmotor
+  const actieveMotorId=modus==="intern"?internMotorId:modus==="bestaand"?(f.motor||null):null;
+  const actieveMotorType=modus==="intern"?internMotorType:"klant";
+  const openFasesVoorMotor=!internKlusId&&actieveMotorId
+    ? (klussen||[]).filter(k=>k.status==="open"&&(actieveMotorType==="voorraad"?k.voorraad_motor_id===actieveMotorId:k.motor_id===actieveMotorId)).flatMap(k=>(k.fases||[]).filter(f=>f.status==="bezig").map(f=>({klus:k,fase:f})))
+    : [];
+  const meerdaagseActief=(modus==="intern"||modus==="bestaand")&&meerdaagse&&!internKlusId&&openFasesVoorMotor.length===0&&!!actieveMotorId;
+  const klusVeldenOk=!meerdaagseActief||(klusTitel.trim()&&klusFases.some(fa=>fa.trim()));
+  const modusOk=modus==="intern"?klusVeldenOk:modus==="bestaand"?(!!selKlantId&&klusVeldenOk):!!(nw.naam&&nw.telefoon);
+  const kanOpslaan=f.tijd&&(modus==="intern"||!datumGesloten)&&modusOk;
 
   const slaOp=async()=>{
     if(!kanOpslaan||klusBezig) return;
     const [gekozenKlusId,gekozenFase]=gekozenFaseKey?gekozenFaseKey.split("|"):[null,null];
     let effKlusId=internKlusId||gekozenKlusId||null;
     let effFaseNaam=internFaseNaam||gekozenFase||null;
+    let nieuweKlus=null;
     if(meerdaagseActief){
       setKlusBezig(true);
-      const motorRef=internMotorType==="voorraad"?{voorraad_motor_id:internMotorId}:{motor_id:internMotorId};
-      const nieuweKlus=await onAddKlus(motorRef,klusTitel.trim(),klusGeschatteUren,klusFases);
+      const motorRef=modus==="intern"
+        ?(internMotorType==="voorraad"?{voorraad_motor_id:internMotorId}:{motor_id:internMotorId})
+        :{motor_id:actieveMotorId};
+      nieuweKlus=await onAddKlus(motorRef,klusTitel.trim(),klusGeschatteUren,klusFases);
       setKlusBezig(false);
       if(nieuweKlus){
         effKlusId=nieuweKlus.id;
@@ -887,10 +896,24 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
     if(modus==="intern"){
       onSave({...extra,type:"intern",klant:internKlantNaam||internBeschrijving||"Intern",naam:internBeschrijving||"Intern",datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", ")||null,omschrijving:f.omschrijving,motor:internMotorType==="voorraad"?(internMotorId||""):"",motor_id:internMotorType==="klant"?(internMotorId||null):null,klant_id:internMotorType==="klant"?(internKlantId||null):null,klus_id:effKlusId,fase_naam:effFaseNaam});
     } else if(modus==="bestaand"){
-      onSave({...extra,type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving});
+      onSave({...extra,type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving,klus_id:effKlusId,fase_naam:effFaseNaam});
     } else {
       const nieuweKlantData=toevoegenAanBestand?{naam:nw.naam,email:nw.email,telefoon:nw.telefoon,...adres}:null;
       onSave({...extra,type:"service",klant:nw.naam,telefoon:nw.telefoon,email:nw.email,datum:f.datum,duur:parseInt(f.duur),tijd:f.tijd,soort:[...soorten].join(", "),omschrijving:f.omschrijving,nieuweKlant:nieuweKlantData});
+    }
+    // Vervolgfases waar meteen al een datum voor gekozen is
+    if(nieuweKlus){
+      (nieuweKlus.fases||[]).forEach((fase,i)=>{
+        if(i===0) return;
+        const data=klusFaseData[i];
+        if(!data?.datum||!data?.tijd) return;
+        const basis={medewerker_namen:[...gekozenMedewerkers],categorie:gekozenCategorie||null,klus_id:nieuweKlus.id,fase_naam:fase.naam,datum:data.datum,duur:parseInt(data.duur)||1,tijd:data.tijd};
+        if(modus==="intern"){
+          onSave({...basis,type:"intern",klant:internKlantNaam||internBeschrijving||"Intern",naam:internBeschrijving||"Intern",motor:internMotorType==="voorraad"?(internMotorId||""):"",motor_id:internMotorType==="klant"?(internMotorId||null):null,klant_id:internMotorType==="klant"?(internKlantId||null):null});
+        } else {
+          onSave({...basis,type:"service",klant:selectedKlant.naam,klant_id:selKlantId,motor:f.motor});
+        }
+      });
     }
     onClose();
   };
@@ -937,9 +960,9 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
           )}
           {selectedKlant&&selectedKlant.motoren.length>0&&(
             <Field label="Motor">
-              <select style={s.input} value={f.motor} onChange={set("motor")}>
+              <select style={s.input} value={f.motor} onChange={e=>{setF(p=>({...p,motor:e.target.value}));setGekozenFaseKey("");setMeerdaagse(false);}}>
                 <option value="">— Selecteer motor —</option>
-                {selectedKlant.motoren.map(m=><option key={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
+                {selectedKlant.motoren.map(m=><option key={m.id} value={m.id}>{m.kenteken} — {m.merk} {m.model}</option>)}
               </select>
             </Field>
           )}
@@ -1004,45 +1027,52 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
               </select>
             </Field>
           )}
-          {!internKlusId&&openFasesVoorMotor.length>0&&(
-            <Field label="Koppelen aan klus-fase (optioneel)">
-              <select style={s.input} value={gekozenFaseKey} onChange={e=>setGekozenFaseKey(e.target.value)}>
-                <option value="">— Geen klus —</option>
-                {openFasesVoorMotor.map(({klus,fase})=>(
-                  <option key={`${klus.id}|${fase.naam}`} value={`${klus.id}|${fase.naam}`}>{klus.titel} — {fase.naam}</option>
-                ))}
-              </select>
-            </Field>
-          )}
-          {!internKlusId&&openFasesVoorMotor.length===0&&internMotorId&&(
-            <div style={{marginBottom:14}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
-                <input type="checkbox" checked={meerdaagse} onChange={e=>setMeerdaagse(e.target.checked)} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
-                <span style={{fontSize:13,fontWeight:500}}>🛠 Meerdaagse klus (in fases, met klant-akkoord per fase)</span>
-              </label>
-              {meerdaagse&&(
-                <div style={{marginTop:12,padding:"12px 14px",border:`1px solid ${T.border}`,borderRadius:6}}>
-                  <div style={{fontSize:12,color:T.muted,marginBottom:12}}>
-                    Werk dat in fases wordt uitgevoerd. Hieronder plan je meteen de eerste sessie in.
+        </>
+      )}
+
+      {(modus==="intern"||modus==="bestaand")&&!internKlusId&&openFasesVoorMotor.length>0&&(
+        <Field label="Koppelen aan klus-fase (optioneel)">
+          <select style={s.input} value={gekozenFaseKey} onChange={e=>setGekozenFaseKey(e.target.value)}>
+            <option value="">— Geen klus —</option>
+            {openFasesVoorMotor.map(({klus,fase})=>(
+              <option key={`${klus.id}|${fase.naam}`} value={`${klus.id}|${fase.naam}`}>{klus.titel} — {fase.naam}</option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {(modus==="intern"||modus==="bestaand")&&!internKlusId&&openFasesVoorMotor.length===0&&actieveMotorId&&(
+        <div style={{marginBottom:14}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={meerdaagse} onChange={e=>setMeerdaagse(e.target.checked)} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+            <span style={{fontSize:13,fontWeight:500}}>🛠 Meerdaagse klus (in fases, met klant-akkoord per fase)</span>
+          </label>
+          {meerdaagse&&(
+            <div style={{marginTop:12,padding:"12px 14px",border:`1px solid ${T.border}`,borderRadius:6}}>
+              <div style={{fontSize:12,color:T.muted,marginBottom:12}}>
+                Werk dat in fases wordt uitgevoerd. Hieronder plan je meteen de eerste sessie in, en optioneel ook alvast de volgende.
+              </div>
+              <Field label="Titel van de klus"><input style={s.input} value={klusTitel} onChange={e=>setKlusTitel(e.target.value)} placeholder="bijv. Reviseren na lange stilstand"/></Field>
+              <Field label="Geschatte totale uren (optioneel)"><input style={s.input} type="number" value={klusGeschatteUren} onChange={e=>setKlusGeschatteUren(e.target.value)} placeholder="8"/></Field>
+              <div style={s.label}>Fases</div>
+              {klusFases.map((fa,i)=>(
+                <div key={i} style={{marginBottom:10}}>
+                  <div style={{display:"flex",gap:6}}>
+                    <input style={{...s.input,flex:1}} value={fa} placeholder={i===0?"Fase 1 — datum/tijd hieronder in het formulier":`bijv. Fase ${i+1}`}
+                      onChange={e=>setKlusFases(p=>p.map((x,j)=>j===i?e.target.value:x))}/>
+                    {klusFases.length>1&&(
+                      <button onClick={()=>{setKlusFases(p=>p.filter((_,j)=>j!==i));setKlusFaseData(p=>{const n={...p};delete n[i];return n;});}} style={{background:"none",border:"none",color:T.red,fontSize:16,cursor:"pointer",padding:"0 8px"}}>✕</button>
+                    )}
                   </div>
-                  <Field label="Titel van de klus"><input style={s.input} value={klusTitel} onChange={e=>setKlusTitel(e.target.value)} placeholder="bijv. Reviseren na lange stilstand"/></Field>
-                  <Field label="Geschatte totale uren (optioneel)"><input style={s.input} type="number" value={klusGeschatteUren} onChange={e=>setKlusGeschatteUren(e.target.value)} placeholder="8"/></Field>
-                  <div style={s.label}>Fases</div>
-                  {klusFases.map((fa,i)=>(
-                    <div key={i} style={{display:"flex",gap:6,marginBottom:8}}>
-                      <input style={{...s.input,flex:1}} value={fa} placeholder={`bijv. Fase ${i+1}`}
-                        onChange={e=>setKlusFases(p=>p.map((x,j)=>j===i?e.target.value:x))}/>
-                      {klusFases.length>1&&(
-                        <button onClick={()=>setKlusFases(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:T.red,fontSize:16,cursor:"pointer",padding:"0 8px"}}>✕</button>
-                      )}
-                    </div>
-                  ))}
-                  <button onClick={()=>setKlusFases(p=>[...p,""])} style={{background:"none",border:"none",color:T.accent,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",padding:0}}>+ Fase toevoegen</button>
+                  {i>0&&fa.trim()&&(
+                    <FaseDatumMiniPicker waarde={klusFaseData[i]} onChange={v=>setKlusFaseData(p=>({...p,[i]:v}))}
+                      geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraken={afspraken}/>
+                  )}
                 </div>
-              )}
+              ))}
+              <button onClick={()=>setKlusFases(p=>[...p,""])} style={{background:"none",border:"none",color:T.accent,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",padding:0}}>+ Fase toevoegen</button>
             </div>
           )}
-        </>
+        </div>
       )}
 
       <Grid2>
@@ -1172,6 +1202,53 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       {!f.tijd&&<div style={{fontSize:12,color:T.muted,textAlign:"center",marginTop:4}}>Selecteer eerst een tijdstip hierboven</div>}
       <ModalFooter onClose={onClose} label={klusBezig?"Bezig…":"Inplannen"} onClick={slaOp} disabled={!kanOpslaan||klusBezig}/>
     </Modal>
+  );
+}
+
+function FaseDatumMiniPicker({waarde, onChange, geslotenDagen=[], openingstijden=null, afspraken=[]}){
+  const [open,setOpen]=useState(!!waarde);
+  const DAGMAP_FM=["zo","ma","di","wo","do","vr","za"];
+  const isGesloten=(d)=>{
+    if(!d) return false;
+    if(geslotenDagen.includes(d)) return true;
+    if(openingstijden){const dow=new Date(d).getDay();return openingstijden[DAGMAP_FM[dow]]?.gesloten===true;}
+    return false;
+  };
+  const datum=waarde?.datum||"";
+  const duur=waarde?.duur||"1";
+  const gesloten=isGesloten(datum);
+  const slots=datum&&!gesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),datum,parseInt(duur)):[];
+
+  if(!open){
+    return <button onClick={()=>setOpen(true)} style={{background:"none",border:"none",color:T.accent,fontSize:11,cursor:"pointer",fontFamily:"Barlow, sans-serif",padding:0,marginTop:4}}>+ Datum vast inplannen (optioneel)</button>;
+  }
+  return(
+    <div style={{marginTop:6,padding:"8px 10px",background:T.surf2,borderRadius:4}}>
+      <div style={{display:"flex",gap:6,marginBottom:6}}>
+        <input type="date" style={{...s.input,flex:1,padding:"5px 8px",fontSize:12}} value={datum}
+          onChange={e=>onChange({datum:e.target.value,duur,tijd:""})}/>
+        <select style={{...s.input,width:56,padding:"5px 6px",fontSize:12}} value={duur} onChange={e=>onChange({datum,duur:e.target.value,tijd:""})}>
+          {[1,2,3,4,5,6,7,8].map(h=><option key={h}>{h}</option>)}
+        </select>
+        <button onClick={()=>{onChange(null);setOpen(false);}} style={{background:"none",border:"none",color:T.red,fontSize:14,cursor:"pointer",padding:"0 6px"}}>✕</button>
+      </div>
+      {datum&&gesloten&&(
+        <div style={{fontSize:11,color:T.red}}>⚠ Gesloten op deze dag — kies een andere datum</div>
+      )}
+      {datum&&!gesloten&&slots.length===0&&(
+        <div style={{fontSize:11,color:T.red}}>⚠ Geen vrij blok beschikbaar op deze dag</div>
+      )}
+      {datum&&!gesloten&&slots.length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {slots.map(t=>(
+            <button key={t} onClick={()=>onChange({datum,duur,tijd:t})}
+              style={{padding:"4px 9px",borderRadius:4,border:`1px solid ${waarde?.tijd===t?T.accent:T.border}`,background:waarde?.tijd===t?`${T.accent}25`:"transparent",color:waarde?.tijd===t?T.accent:T.muted,cursor:"pointer",fontSize:11,fontFamily:"Barlow, sans-serif"}}>
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1801,8 +1878,8 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
       {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)}/>}
       {editKlantOpen&&<KlantEditModal klant={klant} onSave={onUpdateKlant} onClose={()=>setEditKlantOpen(false)}/>}
       {meerdaagseMotor&&(
-        <AfspraakModal afspraken={afspraken||[]} klanten={[]} voorraad={[]}
-          initialModus="intern" initialInternMotorId={meerdaagseMotor.id} initialInternMotorType="klant" initialInternKlantId={klant.id} initialInternKlantNaam={klant.naam} initialMeerdaagse={true}
+        <AfspraakModal afspraken={afspraken||[]} klanten={[klant]} voorraad={[]}
+          initialModus="bestaand" initialSelKlantId={klant.id} initialMotorId={meerdaagseMotor.id} initialMeerdaagse={true}
           geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={onAddKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}
           onSave={f=>{onAddAfspraak(f);setMeerdaagseMotor(null);}} onClose={()=>setMeerdaagseMotor(null)}/>
       )}
@@ -3164,9 +3241,10 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
         )}
         {klusSessie&&(
           <AfspraakModal afspraken={afspraken||[]} klanten={klanten} voorraad={voorraad}
-            initialModus="intern" initialInternMotorId={klusSessie.voorraad_motor_id||klusSessie.motor_id} initialInternMotorType={klusSessie.voorraad_motor_id?"voorraad":"klant"}
-            initialInternKlantId={klusSessie.motor_id?(klanten||[]).find(k=>(k.motoren||[]).some(m=>m.id===klusSessie.motor_id))?.id||"":""}
-            initialInternKlantNaam={klusSessie.motor_id?(klanten||[]).find(k=>(k.motoren||[]).some(m=>m.id===klusSessie.motor_id))?.naam||"":""}
+            initialModus={klusSessie.voorraad_motor_id?"intern":"bestaand"}
+            initialInternMotorId={klusSessie.voorraad_motor_id||""} initialInternMotorType="voorraad"
+            initialSelKlantId={klusSessie.motor_id?(klanten||[]).find(k=>(k.motoren||[]).some(m=>m.id===klusSessie.motor_id))?.id||"":""}
+            initialMotorId={klusSessie.motor_id||""}
             initialKlusId={klusSessie.id} initialFaseNaam={klusSessie.faseNaam} initialOmschrijving={klusSessie.titel}
             geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}
             onSave={f=>{onAddAfspraak(f);setKlusSessie(null);}} onClose={()=>setKlusSessie(null)}/>
@@ -4346,9 +4424,9 @@ export default function AdminApp(){
         email: f.email||null,
         soort: f.soort||null,
         voorraad_motor_id: f.type==="proefrit"?(f.voorraad_motor_id||null):(f.type==="intern"?(f.motor||null):null),
-        motor_id: f.type==="intern" ? (f.motor_id||null) : null,
-        klus_id: f.type==="intern" ? (f.klus_id||null) : null,
-        fase_naam: f.type==="intern" ? (f.fase_naam||null) : null,
+        motor_id: f.type==="intern" ? (f.motor_id||null) : (f.type==="service" ? (f.motor||null) : null),
+        klus_id: f.klus_id||null,
+        fase_naam: f.fase_naam||null,
         categorie: f.categorie||null,
         medewerker_namen: f.medewerker_namen||[],
         herhaal_groep_id: herhaalGroepId,
