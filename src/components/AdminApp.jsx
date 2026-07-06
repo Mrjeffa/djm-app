@@ -1626,6 +1626,7 @@ function MotorEditModal({motor, onSave, onClose}){
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
     bijzonderheden:motor.bijzonderheden||"", onderdelen_link:motor.onderdelen_link||"",
+    chassis_nummer:motor.chassis_nummer||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   return(
@@ -1638,6 +1639,7 @@ function MotorEditModal({motor, onSave, onClose}){
         <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
       </Grid2>
       <Field label="Aankoopdatum"><input style={s.input} type="date" value={f.aankoopdatum} onChange={set("aankoopdatum")}/></Field>
+      <Field label="Chassisnummer (optioneel)"><input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/></Field>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Banden</div>
       <Grid2>
@@ -3973,7 +3975,7 @@ export default function AdminApp(){
     const laadAlles = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
-        const [k, v, a, verlopen, pData, vsData, klusData] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
@@ -3981,7 +3983,9 @@ export default function AdminApp(){
           sb.from("producten").select("*").order("created_at",{ascending:false}),
           sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
           sb.from("klussen").select("*").order("created_at",{ascending:false}),
+          sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"), // aparte tabel: alleen admin leesbaar
         ]);
+        const chassisMap = Object.fromEntries((chassisData.data||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
         // Cleanup: verwijder records 30 dagen na verkoop/verwijdering
         for(const m of (verlopen.data||[])){
           // Migreer voorraad_service naar service_beurten vóór delete, zodat service bij klant motor blijft
@@ -4040,7 +4044,7 @@ export default function AdminApp(){
         setKlanten(verrijkt);
         setKlussen(klusData.data||[]);
         const voorraadSvc = vsData.data||[];
-        setShowroom((v.data||[]).map(m=>({...m, service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
+        setShowroom((v.data||[]).map(m=>({...m, chassis_nummer: chassisMap[m.id]||null, service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
         setProducten(pData.data||[]);
         setAfspraken((a.data||[]).map(x=>{
           const isProefrit=x.type==="proefrit";
@@ -4089,6 +4093,7 @@ export default function AdminApp(){
         klant_id:klant.id, kenteken:src.kenteken||"", merk:src.merk||"",
         model:src.model||"", bouwjaar:parseInt(src.bouwjaar)||0,
         aankoopdatum:src.aankoopdatum||TODAY,
+        chassis_nummer:src.chassis_nummer||null,
         source_voorraad_id:f.verwijderUitVoorraad||null,
       }).select().single();
       if(motor){
@@ -4152,6 +4157,8 @@ export default function AdminApp(){
       klant_id:klantId, kenteken:f.kenteken||"", merk:f.merk||"",
       model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       aankoopdatum:f.aankoopdatum||TODAY,
+      chassis_nummer:f.chassis_nummer||null,
+      source_voorraad_id:f.source_voorraad_id||null,
     }).select().single();
     if(!motor) return;
     if(f.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(f.km),datum:TODAY}); }
@@ -4196,6 +4203,7 @@ export default function AdminApp(){
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       bijzonderheden:f.bijzonderheden||null, onderdelen_link:f.onderdelen_link||null,
+      chassis_nummer:f.chassis_nummer||null,
     }).eq("id", motorId);
     setKlanten(prev => prev.map(k => ({
       ...k,
@@ -4248,6 +4256,12 @@ export default function AdminApp(){
     sb.functions.invoke("cloudinary-delete", { body: { urls } });
   };
 
+  // Chassisnummer staat in een aparte, alleen-admin tabel (afgeschermd voor website/klanten)
+  const bewaarChassis = async (sb, voorraadId, chassis) => {
+    if(chassis) await sb.from("voorraad_chassis").upsert({voorraad_id:voorraadId, chassis_nummer:chassis});
+    else await sb.from("voorraad_chassis").delete().eq("voorraad_id",voorraadId);
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
@@ -4256,10 +4270,13 @@ export default function AdminApp(){
       prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
-      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
+      onderdelen_link:f.onderdelen_link||null,
       status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
-    if(v) setShowroom(p=>[v,...p]);
+    if(v){
+      if(f.chassis_nummer) await bewaarChassis(sb, v.id, f.chassis_nummer);
+      setShowroom(p=>[{...v, chassis_nummer:f.chassis_nummer||null},...p]);
+    }
   };
 
   const updateVoorraadMotor = async (id, f, behoudeFotos, nieuweUrls, verwijderdeUrls) => {
@@ -4268,11 +4285,12 @@ export default function AdminApp(){
     await sb.from("voorraad").update({
       merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
-      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
+      onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       fotos:alleFotos,
     }).eq("id",id);
+    await bewaarChassis(sb, id, f.chassis_nummer||null);
     setShowroom(p=>p.map(m=>m.id===id?{
       ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
@@ -4297,6 +4315,7 @@ export default function AdminApp(){
     const {data:nieuwMotor} = await sb.from("motoren").insert({
       klant_id:klantId,kenteken:motor.kenteken,merk:motor.merk,
       model:motor.model||"",bouwjaar:motor.bouwjaar||0,aankoopdatum:TODAY,
+      chassis_nummer:motor.chassis_nummer||null, // koper mag het chassisnummer van zijn eigen motor zien
       source_voorraad_id:motor.id,
     }).select().single();
     if(nieuwMotor){
@@ -4340,7 +4359,10 @@ export default function AdminApp(){
       voorband_datum: motor.voorband_datum||null, achterband_datum: motor.achterband_datum||null,
       voorband_maat: motor.voorband_maat||null, achterband_maat: motor.achterband_maat||null,
     }).select().single();
-    if(v) setShowroom(p=>[v,...p]);
+    if(v){
+      if(motor.chassis_nummer) await bewaarChassis(sb, v.id, motor.chassis_nummer);
+      setShowroom(p=>[{...v, chassis_nummer:motor.chassis_nummer||null},...p]);
+    }
     await sb.from("motoren").delete().eq("id",motor.id);
     setKlanten(prev=>prev.map(k=>k.id===klantId?{...k,motoren:(k.motoren||[]).filter(m=>m.id!==motor.id)}:k));
   };
@@ -4746,12 +4768,26 @@ export default function AdminApp(){
     const geldig = rijen.filter(r=>r.id);
     if(geldig.length){
       await sb.from("voorraad").upsert(
-        geldig.map(r=>({id:String(r.id),kenteken:r.kenteken||null,merk:r.merk||null,model:r.model||null,bouwjaar:r.bouwjaar||null,km:r.km||null,prijs:r.prijs||null,status:r.status||"beschikbaar",datum_in:r.datum_in||null,chassis_nummer:r.chassis_nummer||null})),
+        geldig.map(r=>({id:String(r.id),kenteken:r.kenteken||null,merk:r.merk||null,model:r.model||null,bouwjaar:r.bouwjaar||null,km:r.km||0,prijs:r.prijs||0,status:r.status||"beschikbaar",datum_in:r.datum_in||null})),
         {onConflict:"id",ignoreDuplicates:true}
       );
+      // Chassisnummers apart opslaan (afgeschermde tabel)
+      const metChassis = geldig.filter(r=>r.chassis_nummer);
+      if(metChassis.length){
+        await sb.from("voorraad_chassis").upsert(
+          metChassis.map(r=>({voorraad_id:String(r.id), chassis_nummer:String(r.chassis_nummer)})),
+          {onConflict:"voorraad_id",ignoreDuplicates:true}
+        );
+      }
     }
-    const {data} = await sb.from("voorraad").select("*").order("datum_in",{ascending:false});
-    if(data) setShowroom(data);
+    const [{data}, {data:chassisData}] = await Promise.all([
+      sb.from("voorraad").select("*").order("datum_in",{ascending:false}),
+      sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"),
+    ]);
+    if(data){
+      const cMap = Object.fromEntries((chassisData||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
+      setShowroom(data.map(m=>({...m, chassis_nummer:cMap[m.id]||null})));
+    }
   };
 
   // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten

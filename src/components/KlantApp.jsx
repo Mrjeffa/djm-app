@@ -221,6 +221,12 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe, onNaarIn
             </div>
           ))}
         </div>
+        {motor.chassis_nummer && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 10, color: T.muted, letterSpacing: 1, textTransform: "uppercase" }}>Chassisnummer</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3, fontFamily: "Barlow Condensed, sans-serif", letterSpacing: 1 }}>{motor.chassis_nummer}</div>
+          </div>
+        )}
       </div>
 
       <div style={css.card}>
