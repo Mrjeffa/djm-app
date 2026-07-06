@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { JuridischModal, CookieBanner, PRIVACY_VERSIE, VOORWAARDEN_VERSIE } from './Juridisch.jsx'
 
 const T_LIGHT = { bg:'#F8F8F8', surf:'#FFFFFF', surf2:'#F2F2F2', border:'#E0E0E0', accent:'#E31E24', text:'#1A1A1A', muted:'#767676', red:'#DC2626' }
 const T_DARK  = { bg:'#111111', surf:'#1C1C1E', surf2:'#2C2C2E', border:'#38383A', accent:'#E31E24', text:'#F2F2F7', muted:'#8E8E93', red:'#FF453A' }
@@ -40,6 +41,8 @@ export default function LoginScreen() {
   const [reg, setReg] = useState(leegReg)
   const [laden, setLaden] = useState(false)
   const [fout, setFout] = useState(null)
+  const [akkoord, setAkkoord] = useState(false)
+  const [juridisch, setJuridisch] = useState(null) // null | 'privacy' | 'voorwaarden'
 
   const setR = k => e => setReg(p => ({...p, [k]: e.target.value}))
 
@@ -76,6 +79,7 @@ export default function LoginScreen() {
     if (!ww) return
     if (ww.length < 8) { setFout('Wachtwoord minimaal 8 tekens.'); return }
     if (ww !== ww2) { setFout('Wachtwoorden komen niet overeen.'); return }
+    if (!akkoord) { setFout('Ga akkoord met het privacybeleid en de algemene voorwaarden om een account aan te maken.'); return }
     setLaden(true); setFout(null)
     const { error } = await supabase.auth.signUp({
       email,
@@ -87,6 +91,9 @@ export default function LoginScreen() {
           telefoon: reg.telefoon.trim(),
           adres: reg.adres.trim(),
           woonplaats: reg.woonplaats.trim(),
+          privacy_akkoord_versie: PRIVACY_VERSIE,
+          voorwaarden_akkoord_versie: VOORWAARDEN_VERSIE,
+          akkoord_op: new Date().toISOString(),
         }
       }
     })
@@ -206,6 +213,18 @@ export default function LoginScreen() {
               <input style={{...inp, marginBottom:4}} type="password" autoComplete="new-password" placeholder="Zelfde wachtwoord"
                 value={ww2} onChange={e => setWw2(e.target.value)}
                 onKeyDown={e => e.key==='Enter' && registreer()}/>
+
+              {/* AVG: verplicht akkoord bij registratie */}
+              <label style={{ display:'flex', alignItems:'flex-start', gap:10, marginTop:12, cursor:'pointer', userSelect:'none' }}>
+                <input type="checkbox" checked={akkoord} onChange={e => setAkkoord(e.target.checked)}
+                  style={{ accentColor:T.accent, width:17, height:17, flexShrink:0, marginTop:1 }}/>
+                <span style={{ fontSize:12, color:T.muted, lineHeight:1.6 }}>
+                  Ik ga akkoord met het{' '}
+                  <span onClick={e => { e.preventDefault(); setJuridisch('privacy') }} style={{ color:T.accent, textDecoration:'underline' }}>privacybeleid</span>
+                  {' '}en de{' '}
+                  <span onClick={e => { e.preventDefault(); setJuridisch('voorwaarden') }} style={{ color:T.accent, textDecoration:'underline' }}>algemene voorwaarden</span>. *
+                </span>
+              </label>
             </>
           )}
 
@@ -223,7 +242,17 @@ export default function LoginScreen() {
             </div>
           )}
         </div>
+
+        {/* Juridische footer */}
+        <div style={{ textAlign:'center', marginTop:18, fontSize:12, color:T.muted }}>
+          <span onClick={() => setJuridisch('privacy')} style={{ cursor:'pointer', textDecoration:'underline' }}>Privacybeleid</span>
+          <span style={{ margin:'0 8px' }}>·</span>
+          <span onClick={() => setJuridisch('voorwaarden')} style={{ cursor:'pointer', textDecoration:'underline' }}>Algemene voorwaarden</span>
+        </div>
       </div>
+
+      <JuridischModal type={juridisch} T={T} onClose={() => setJuridisch(null)} />
+      <CookieBanner T={T} onToonPrivacy={() => setJuridisch('privacy')} />
     </div>
   )
 }

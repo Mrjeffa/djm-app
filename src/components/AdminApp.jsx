@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -55,7 +55,9 @@ const timeToMin = t => { const [h,m]=t.split(":").map(Number); return h*60+m; };
 const minToTime = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const WSTART = 540; const WEND = 1020; // 09:00 - 17:00
 const MIDI_MIN = 780; // 13:00 — middag begint na lunch (12-13)
-const TODAY = new Date().toISOString().split("T")[0];
+// Lokale datum (niet toISOString — dat is UTC en verschuift 's nachts een dag)
+const lokaleDatum = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const TODAY = lokaleDatum();
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
@@ -68,8 +70,9 @@ const compressImage = async (file) => {
   if (file.size <= 1024 * 1024) return file;
   const img = new Image();
   const url = URL.createObjectURL(file);
-  await new Promise(r => { img.onload = r; img.src = url; });
-  URL.revokeObjectURL(url);
+  try {
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Kan afbeelding niet laden — is het een geldig fototype (jpg/png)?")); img.src = url; });
+  } finally { URL.revokeObjectURL(url); }
   const canvas = document.createElement('canvas');
   const MAX = 1920;
   let w = img.width, h = img.height;
@@ -77,7 +80,8 @@ const compressImage = async (file) => {
   canvas.width = w; canvas.height = h;
   canvas.getContext('2d').drawImage(img, 0, 0, w, h);
   let q = 0.85, blob;
-  do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob.size > 1024 * 1024 && q > 0.1);
+  do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob && blob.size > 1024 * 1024 && q > 0.1);
+  if (!blob) throw new Error("Afbeelding comprimeren mislukt");
   return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
 };
 
@@ -154,7 +158,7 @@ const LUNCH_SLOTS = new Set([720, 750, 780]); // 12:00, 12:30, 13:00 — lunchpa
 
 const getSlots = (afspraken, datum, duurUur) => {
   const dur = duurUur*60;
-  const busy = afspraken.filter(a=>a.datum===datum && a.tijd)
+  const busy = afspraken.filter(a=>a.datum===datum && a.tijd && a.status!=="geannuleerd")
     .map(a=>({s:timeToMin(a.tijd),e:timeToMin(a.tijd)+(parseInt(a.duur)||1)*60}))
     .sort((a,b)=>a.s-b.s);
   const slots=[]; let cur=WSTART;
@@ -224,7 +228,7 @@ function UitnodigingModal({klant, onClose}){
   const [gekopieerd, setGekopieerd] = useState(false);
   const [bezig, setBezig] = useState(false);
   const inviteLink = `${window.location.origin}`;
-  const whatsappTekst = `Hallo ${klant.naam.split(' ')[0]}! 👋\n\nBij De Jonge Motoren kunt u uw motorgegevens en servicehistorie inzien via onze app.\n\n📱 Ga naar: ${window.location.origin}\n\nMaak een account aan met uw e-mailadres: ${klant.email}\n\nTot ziens!`;
+  const whatsappTekst = `Hallo ${(klant.naam||"").split(' ')[0]||"motorrijder"}! 👋\n\nBij De Jonge Motoren kunt u uw motorgegevens en servicehistorie inzien via onze app.\n\n📱 Ga naar: ${window.location.origin}\n\nMaak een account aan met uw e-mailadres: ${klant.email}\n\nTot ziens!`;
 
   const stuurEmail = async () => {
     setBezig(true);
@@ -346,7 +350,7 @@ function KlantModal({onSave, onClose, voorraad=[]}){
     } catch(e){ setRdwStatus("fout"); }
   };
 
-  const sla_op = () => {
+  const sla_op = async () => {
     if(!f.naam||!f.email) return;
     let motor = null;
     if(motorKeuze==="voorraad" && geselecteerdeVoorraad) {
@@ -354,7 +358,8 @@ function KlantModal({onSave, onClose, voorraad=[]}){
     } else if(motorKeuze==="nieuw" && normK(kenteken)) {
       motor = {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:parseInt(motorF.km)||0};
     }
-    onSave({...f, motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
+    // Eerst wachten tot de klant echt is opgeslagen, pas dan de uitnodigingsflow tonen
+    await onSave({...f, motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
     setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email});
   };
 
@@ -396,9 +401,9 @@ function KlantModal({onSave, onClose, voorraad=[]}){
                   style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${geselecteerdeVoorraad?.id===m.id?T.accent:T.border}`,background:geselecteerdeVoorraad?.id===m.id?`${T.accent}20`:"transparent",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontSize:13,fontWeight:500}}>{m.merk} {m.model}</div>
-                    <div style={{fontSize:11,color:T.muted,marginTop:2}}>{m.kenteken} · {m.bouwjaar} · {m.km.toLocaleString()} km</div>
+                    <div style={{fontSize:11,color:T.muted,marginTop:2}}>{m.kenteken} · {m.bouwjaar} · {(m.km??0).toLocaleString()} km</div>
                   </div>
-                  <div style={{fontSize:13,color:T.accent,fontWeight:600}}>€{m.prijs.toLocaleString()}</div>
+                  <div style={{fontSize:13,color:T.accent,fontWeight:600}}>€{(m.prijs??0).toLocaleString()}</div>
                 </div>
               ))}
             </div>
@@ -514,6 +519,9 @@ function VoorraadModal({onSave,onClose}){
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
   const [uploadStatus,setUploadStatus]=useState(null);
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  // Blob-URL's opruimen bij sluiten van de modal (memory leak) — via ref, anders stale closure
+  const fotoItemsRef=useRef(fotoItems); fotoItemsRef.current=fotoItems;
+  useEffect(()=>()=>{fotoItemsRef.current.forEach(it=>it.preview&&URL.revokeObjectURL(it.preview));},[]);
 
   const normKenteken = k => k.replace(/-/g,"").toUpperCase();
 
@@ -671,6 +679,9 @@ function VoorraadEditModal({motor, onSave, onClose}){
   );
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
   const [uploadStatus,setUploadStatus]=useState(null);
+  // Blob-URL's opruimen bij sluiten (memory leak) — via ref, anders stale closure
+  const allFotosRef=useRef(allFotos); allFotosRef.current=allFotos;
+  useEffect(()=>()=>{allFotosRef.current.forEach(it=>it.type==="nieuw"&&it.preview&&URL.revokeObjectURL(it.preview));},[]);
 
   const voegFotosToe=(e)=>{
     const files=Array.from(e.target.files||[]);
@@ -856,7 +867,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
   const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
   const datumGesloten=isDatumGesloten(f.datum);
   const serviceSlots=f.datum&&f.duur&&!datumGesloten?getSlots(afspraken.filter(a=>a.type!=="proefrit"),f.datum,parseInt(f.duur)):[];
-  const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
+  const gefilterd=zoek.trim().length>0?klanten.filter(k=>(k.naam||"").toLowerCase().includes(zoek.toLowerCase())):[];
 
   // Actieve motor: intern-modus gebruikt internMotorId/Type, bestaand-modus de geselecteerde klantmotor
   const actieveMotorId=modus==="intern"?internMotorId:modus==="bestaand"?(f.motor||null):null;
@@ -880,9 +891,12 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       const motorRef=modus==="intern"
         ?(internMotorType==="voorraad"?{voorraad_motor_id:internMotorId}:{motor_id:internMotorId})
         :{motor_id:actieveMotorId};
-      nieuweKlus=await onAddKlus(motorRef,klusTitel.trim(),klusGeschatteUren,klusFases);
+      // Lege fase-regels wegfilteren mét hun geplande datum, zodat fase↔datum gekoppeld blijft
+      const gevuldeFases=klusFases.map((naam,idx)=>({naam:naam.trim(),data:klusFaseData[idx]})).filter(fa=>fa.naam);
+      nieuweKlus=await onAddKlus(motorRef,klusTitel.trim(),klusGeschatteUren,gevuldeFases.map(fa=>fa.naam));
       setKlusBezig(false);
       if(nieuweKlus){
+        nieuweKlus._faseData=gevuldeFases.map(fa=>fa.data);
         effKlusId=nieuweKlus.id;
         effFaseNaam=(nieuweKlus.fases||[])[0]?.naam||null;
       }
@@ -905,7 +919,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
     if(nieuweKlus){
       (nieuweKlus.fases||[]).forEach((fase,i)=>{
         if(i===0) return;
-        const data=klusFaseData[i];
+        const data=(nieuweKlus._faseData||[])[i];
         if(!data?.datum||!data?.tijd) return;
         const basis={medewerker_namen:[...gekozenMedewerkers],categorie:gekozenCategorie||null,klus_id:nieuweKlus.id,fase_naam:fase.naam,datum:data.datum,duur:parseInt(data.duur)||1,tijd:data.tijd};
         if(modus==="intern"){
@@ -1392,7 +1406,7 @@ function ProefritModal({motor, afspraken, klanten=[], onSave, onClose, geslotenD
   const [f,setF]=useState({naam:"",telefoon:"",email:"",datum:TODAY,tijd:"",omschrijving:""});
   const datumGesloten=isDatumGesloten(f.datum);
   const slots=f.datum&&!datumGesloten?getProefritSlots(afspraken,f.datum):[];
-  const gefilterd=zoek.trim().length>0?klanten.filter(k=>k.naam.toLowerCase().includes(zoek.toLowerCase())):[];
+  const gefilterd=zoek.trim().length>0?klanten.filter(k=>(k.naam||"").toLowerCase().includes(zoek.toLowerCase())):[];
   const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
 
   const kiesKlant=(k)=>{
@@ -1597,7 +1611,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
         <AfwerkModal
           afspraak={afwerkAfspraakItem}
           klanten={klanten}
-          voorraad={voorraad}
+          voorraad={showroom}
           onSave={onAfwerkAfspraak}
           onClose={()=>setAfwerkAfspraakItem(null)}/>
       )}
@@ -1909,7 +1923,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
 
   const filtered=klanten.filter(k=>
     k.status!=="in_afwachting"&&k.status!=="gearchiveerd"&&(
-      k.naam.toLowerCase().includes(search.toLowerCase())||
+      (k.naam||"").toLowerCase().includes(search.toLowerCase())||
       (k.motoren||[]).some(m=>(m.kenteken||"").toLowerCase().includes(search.toLowerCase()))
     )
   );
@@ -2129,6 +2143,9 @@ function ProductModal({categorie, product=null, onSave, onClose}){
   const [bestaandeFotos,setBestaandeFotos]=useState(product?.fotos||[]);
   const [uploadStatus,setUploadStatus]=useState(null);
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  // Blob-URL's opruimen bij sluiten (memory leak) — via ref, anders stale closure
+  const fotoPreviewsRef=useRef(fotoPreviews); fotoPreviewsRef.current=fotoPreviews;
+  useEffect(()=>()=>{fotoPreviewsRef.current.forEach(u=>URL.revokeObjectURL(u));},[]);
 
   const voegFotosToe = (e) => {
     const files = Array.from(e.target.files||[]);
@@ -2286,7 +2303,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                     <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:22,color:m.verkocht_op?T.green:T.accent,flexShrink:0}}>{m.verkocht_op?"Verkocht":`€${m.prijs?.toLocaleString()}`}</div>
                   </div>
                   <div style={{fontSize:12,color:T.muted,lineHeight:1.8,marginBottom:10}}>
-                    {m.bouwjaar} · {m.km.toLocaleString()} km · Binnen: {m.datum_in}
+                    {m.bouwjaar} · {(m.km??0).toLocaleString()} km · Binnen: {m.datum_in}
                   </div>
 
                   {/* Klus voortgang */}
@@ -2493,7 +2510,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
         <Modal title="MOTOR VERKOPEN" onClose={()=>setVerkoopMotor(null)}>
           <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
             <div style={{fontSize:14,fontWeight:500}}>{verkoopMotor.merk} {verkoopMotor.model} — {verkoopMotor.kenteken}</div>
-            <div style={{fontSize:12,color:T.muted,marginTop:4}}>Vraagprijs: €{verkoopMotor.prijs.toLocaleString()}</div>
+            <div style={{fontSize:12,color:T.muted,marginTop:4}}>Vraagprijs: €{(verkoopMotor.prijs??0).toLocaleString()}</div>
           </div>
           <Field label="Verkopen aan">
             <select style={s.input} value={verkoopKlant} onChange={e=>setVerkoopKlant(e.target.value)}>
@@ -3071,6 +3088,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
     if(!nieuweTask.trim()) return;
     const {supabase}=await import("../lib/supabase.js");
     const {data:{user}}=await supabase.auth.getUser();
+    if(!user) return; // sessie verlopen
     const {data}=await supabase.from("taken").insert({tekst:nieuweTask.trim(),user_id:user.id}).select().single();
     if(data) setTaken(p=>[...p,data]);
     setNieuweTask("");
@@ -3261,6 +3279,7 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
           <AfwerkModal
             afspraak={afwerkAfspraakItem}
             klanten={klanten}
+            voorraad={voorraad}
             onSave={onAfwerkAfspraak}
             onClose={()=>setAfwerkAfspraakItem(null)}/>
         )}
@@ -4142,20 +4161,24 @@ export default function AdminApp(){
 
   const addService = async (klantId, motorId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const {data:svc} = await sb.from("service_beurten").insert({
+    const {data:svc, error} = await sb.from("service_beurten").insert({
       motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
     }).select().single();
-    if(!svc) return;
-    const kmVal = f.km ? parseInt(f.km) : 0;
-    const updates = [sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId)];
-    if(kmVal>0) updates.push(sb.from("km_historie").insert({motor_id:motorId, km:kmVal, datum:f.datum}));
-    await Promise.all(updates);
+    if(error||!svc){ alert("Service opslaan mislukt: "+(error?.message||"onbekende fout")); return; }
+    // Zonder km-stand geen interval-reset — anders wordt last_service_km ten onrechte 0
+    const kmVal = f.km ? parseInt(f.km) : null;
+    if(kmVal){
+      await Promise.all([
+        sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId),
+        sb.from("km_historie").insert({motor_id:motorId, km:kmVal, datum:f.datum}),
+      ]);
+    }
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:k.motoren.map(m=>m.id===motorId?{
       ...m,
       service:[svc,...m.service],
-      last_service_km:kmVal,
-      kmHistory: kmVal>0 ? [...(m.kmHistory||[]), {datum:f.datum, km:kmVal}] : m.kmHistory
+      last_service_km: kmVal ?? m.last_service_km,
+      kmHistory: kmVal ? [...(m.kmHistory||[]), {datum:f.datum, km:kmVal}] : m.kmHistory
     }:m)}:k));
   };
 
@@ -4404,13 +4427,20 @@ export default function AdminApp(){
 
     const aantal = f.herhalen ? Math.max(1,Math.min(52,parseInt(f.herhaalAantal)||1)) : 1;
     const herhaalGroepId = aantal>1 ? crypto.randomUUID() : null;
-    const basisDatum = new Date(f.datum+"T00:00:00");
+    // Datum-string als UTC parsen én als UTC optellen — voorkomt dag-verschuiving in lokale tijdzone
+    const basisDatum = new Date(f.datum);
     const nieuweRijen = [];
 
+    const DAGMAP_AA=["zo","ma","di","wo","do","vr","za"];
     for(let i=0;i<aantal;i++){
       const d = new Date(basisDatum);
-      d.setDate(d.getDate()+i*7);
+      d.setUTCDate(d.getUTCDate()+i*7);
       const datumStr = d.toISOString().split("T")[0];
+      // Herhalingen (na de eerste) niet op gesloten dagen plannen
+      if(i>0){
+        const dagGesloten = geslotenDagen.includes(datumStr) || (openingstijden && openingstijden[DAGMAP_AA[d.getUTCDay()]]?.gesloten===true);
+        if(dagGesloten) continue;
+      }
       const {data:afs, error:afsErr} = await sb.from("afspraken").insert({
         klant_id: klantId,
         datum: datumStr,
@@ -4449,16 +4479,23 @@ export default function AdminApp(){
 
   const editAfspraak = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const nieuweStatus = f.tijd ? "gepland" : (f.status || "aangevraagd");
+    // Alleen een aanvraag met tijd wordt "gepland" — afgewerkt/geannuleerd blijft zoals het was
+    const nieuweStatus = f.status === "aangevraagd" && f.tijd ? "gepland" : (f.status || "gepland");
     const wordtBevestigd = f.status === "aangevraagd" && nieuweStatus === "gepland";
-    await sb.from("afspraken").update({
+    // Klant-dropdown wijzigt de naam — koppel ook de klant_id, anders staat de afspraak na herladen weer op de oude klant
+    const nieuweKlantId = (f.type!=="proefrit" && f.type!=="intern" && f.klant)
+      ? (klanten.find(kk=>kk.naam===f.klant)?.id ?? f.klant_id ?? null)
+      : (f.klant_id ?? null);
+    const { error } = await sb.from("afspraken").update({
       datum:f.datum, tijd:f.tijd||null, duur:parseInt(f.duur)||1,
       opmerking:f.omschrijving||f.opmerking||"", status:nieuweStatus,
       soort:f.soort||null, naam:f.naam||null, voorraad_motor_id:f.voorraad_motor_id||null,
+      klant_id:nieuweKlantId,
       medewerker_namen:f.medewerker_namen||[], categorie:f.categorie||null,
       ...(wordtBevestigd ? { melding_gezien: false } : {}),
     }).eq("id",f.id);
-    setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,status:nieuweStatus}:a));
+    if(error){ alert("Wijzigen mislukt: "+error.message); return; }
+    setAfspraken(p=>p.map(a=>a.id===f.id?{...a,...f,klant_id:nieuweKlantId,opmerking:f.omschrijving||f.opmerking||"",status:nieuweStatus}:a));
   };
 
   const afwerkAfspraak = async (f) => {
@@ -4593,7 +4630,7 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     const klus = klussen.find(k=>k.id===klusId);
     if(!klus) return;
-    const vandaag = new Date().toISOString().split("T")[0];
+    const vandaag = lokaleDatum();
     const nieuweFases = (klus.fases||[]).map(f=>f.naam===naam?{...f,status:"klaar",klant_akkoord_op:vandaag,notitie:notitie||null}:f);
     await sb.from("klussen").update({fases:nieuweFases}).eq("id",klusId);
     setKlussen(p=>p.map(k=>k.id===klusId?{...k,fases:nieuweFases}:k));

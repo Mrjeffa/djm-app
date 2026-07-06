@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase, uitloggen } from "../lib/supabase.js";
+import { JuridischModal, CookieBanner } from "./Juridisch.jsx";
 
 const useIsMobile = () => {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -25,7 +26,9 @@ const T_DARK = {
 let T = {...T_LIGHT};
 
 // ── Utils ──────────────────────────────────────────────────────────────────
-const TODAY = new Date().toISOString().split("T")[0];
+// Lokale datum (niet toISOString — dat is UTC en verschuift 's nachts een dag)
+const lokaleDatum = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const TODAY = lokaleDatum();
 
 const agendaDateStr = (datum, tijd, duur) => {
   if (!datum) return { start: "", end: "" };
@@ -103,7 +106,7 @@ const getBeschikbareDagen = (bezet = [], geslotenDagen = [], openingstijden = nu
     d.setDate(start.getDate() + i);
     const dayOfWeek = d.getDay();
     if (!isOpen(dayOfWeek)) continue;
-    const iso = d.toISOString().split("T")[0];
+    const iso = lokaleDatum(d);
     if (geslotenDagen.includes(iso)) continue;
     dagen.push({ datum: iso, bezet: bezet.includes(iso), dag: DAGEN_NL[dayOfWeek] });
   }
@@ -504,6 +507,7 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
   const [notitie, setNotitie] = useState("");
   const [verstuurd, setVerstuurd] = useState(false);
   const [bezig, setBezig] = useState(false);
+  const [verstuurFout, setVerstuurFout] = useState(null);
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   const dynamischeGroepen = (afspraakSoorten.length ? afspraakSoorten : K_SOORT_GROEPEN.map(g => ({...g, items: g.items.map(naam => ({naam, duur: K_SOORT_DUUR[naam] || 1}))}))).filter(g => !g.intern);
   const duurMap = Object.fromEntries(dynamischeGroepen.flatMap(g => (g.items || []).map(i => [i.naam, i.duur || 1])));
@@ -514,9 +518,10 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
 
   const verstuur = async () => {
     if (!selDatum || soorten.size === 0 || bezig) return;
-    setBezig(true);
-    await onSlaOp({ motorId: selMotorId || motor?.id, datum: selDatum, soort: [...soorten].join(", "), duur: totaalUur, opmerking: notitie });
+    setBezig(true); setVerstuurFout(null);
+    const err = await onSlaOp({ motorId: selMotorId || motor?.id, datum: selDatum, soort: [...soorten].join(", "), duur: totaalUur, opmerking: notitie });
     setBezig(false);
+    if (err) { setVerstuurFout(err); return; }
     setVerstuurd(true);
   };
 
@@ -591,6 +596,7 @@ function Afspraak({ motoren, selMotorId, onSelMotor, bezetteDagen = [], gesloten
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Opmerkingen <span style={{ fontWeight: 400, color: T.muted }}>(optioneel)</span></div>
         <textarea style={{ ...css.input, height: 70, resize: "none" }} placeholder="Aanvullende informatie..." value={notitie} onChange={e => setNotitie(e.target.value)} />
       </div>
+      {verstuurFout && <div style={{ fontSize: 12, color: T.red, marginTop: 12 }}>⚠ {verstuurFout}</div>}
       <button style={{ ...css.btn, opacity: !selDatum || soorten.size === 0 || bezig ? 0.4 : 1, marginTop: 14 }} onClick={verstuur}
         disabled={!selDatum || soorten.size === 0 || bezig}>
         {bezig ? "Versturen..." : "Afspraak aanvragen"}
@@ -621,7 +627,7 @@ function WeekKalender({ openingstijden, geslotenDagen = [] }) {
     const dagen = ["ma","di","wo","do","vr","za","zo"].map((dag, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
-      const iso = d.toISOString().split("T")[0];
+      const iso = lokaleDatum(d);
       const isVandaag = iso === TODAY;
       const isGesloten = geslotenDagen.includes(iso);
       return { dag, datum: d.getDate(), iso, isVandaag, tijd: isGesloten ? null : getTijd(dag), gesloten: isGesloten };
@@ -704,8 +710,9 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     if (file.size <= 1024 * 1024) return file;
     const img = new Image();
     const url = URL.createObjectURL(file);
-    await new Promise(r => { img.onload = r; img.src = url; });
-    URL.revokeObjectURL(url);
+    try {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Kan afbeelding niet laden")); img.src = url; });
+    } finally { URL.revokeObjectURL(url); }
     const canvas = document.createElement('canvas');
     const MAX = 1920;
     let w = img.width, h = img.height;
@@ -713,7 +720,8 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     canvas.width = w; canvas.height = h;
     canvas.getContext('2d').drawImage(img, 0, 0, w, h);
     let q = 0.85, blob;
-    do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob.size > 1024 * 1024 && q > 0.1);
+    do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob && blob.size > 1024 * 1024 && q > 0.1);
+    if (!blob) throw new Error("Afbeelding comprimeren mislukt");
     return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
   };
 
@@ -1117,7 +1125,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
 }
 
 // ── Scherm: Instellingen ───────────────────────────────────────────────────
-function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden, themeMode="automatisch", onThemeMode=()=>{}, autoOpenMotorForm=false, onMotorFormOpened=()=>{} }) {
+function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant, onVoegMotorToe, onVerwijderMotor, onWijzigWachtwoord, onUpdateBanden, themeMode="automatisch", onThemeMode=()=>{}, autoOpenMotorForm=false, onMotorFormOpened=()=>{}, onDownloadGegevens=()=>{}, onVerwijderAccount=async()=>null, onToonJuridisch=()=>{} }) {
   const [profiel, setProfiel] = useState({
     naam: klant.naam || "", telefoon: klant.telefoon || "",
     adres: klant.adres || "", postcode: klant.postcode || "", woonplaats: klant.woonplaats || "",
@@ -1143,6 +1151,13 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
   const [verwijderBevestigId, setVerwijderBevestigId] = useState(null);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
   const [verwijderFout, setVerwijderFout] = useState(null);
+
+  // AVG: account verwijderen
+  const [accVerwijderOpen, setAccVerwijderOpen] = useState(false);
+  const [accVerwijderCheck, setAccVerwijderCheck] = useState(false);
+  const [accVerwijderBezig, setAccVerwijderBezig] = useState(false);
+  const [accVerwijderFout, setAccVerwijderFout] = useState(null);
+  const [exportOk, setExportOk] = useState(false);
 
   useEffect(() => {
     if (autoOpenMotorForm) {
@@ -1432,6 +1447,65 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
         </div>
       </div>
 
+      {/* AVG: Privacy & gegevens */}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>Privacy &amp; gegevens</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          <button onClick={() => onToonJuridisch("privacy")}
+            style={{ ...css.btnGhost, textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", color:T.text }}>
+            <span>Privacybeleid</span><span style={{ color:T.muted }}>→</span>
+          </button>
+          <button onClick={() => onToonJuridisch("voorwaarden")}
+            style={{ ...css.btnGhost, textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", color:T.text }}>
+            <span>Algemene voorwaarden</span><span style={{ color:T.muted }}>→</span>
+          </button>
+          <button onClick={() => { onDownloadGegevens(); setExportOk(true); setTimeout(()=>setExportOk(false), 2500); }}
+            style={{ ...css.btnGhost, textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", color:T.text }}>
+            <span>{exportOk ? "✓ Gedownload!" : "Download mijn gegevens"}</span><span style={{ color:T.muted }}>⬇</span>
+          </button>
+        </div>
+
+        <div style={{ borderTop:`1px solid ${T.border}`, margin:"14px 0 12px" }}/>
+        {!accVerwijderOpen ? (
+          <button onClick={() => { setAccVerwijderOpen(true); setAccVerwijderCheck(false); setAccVerwijderFout(null); }}
+            style={{ ...css.btnGhost, color:T.red, borderColor:`${T.red}50` }}>
+            Account verwijderen
+          </button>
+        ) : (
+          <div style={{ background:`${T.red}10`, border:`1px solid ${T.red}40`, borderRadius:8, padding:"14px 14px" }}>
+            <div style={{ fontSize:14, fontWeight:700, color:T.red, marginBottom:8 }}>Account definitief verwijderen</div>
+            <div style={{ fontSize:12, color:T.text, lineHeight:1.7, marginBottom:10 }}>
+              Je login en online toegang worden <strong>permanent verwijderd</strong>. Dit kan niet ongedaan
+              worden gemaakt. Tip: download eerst je gegevens hierboven.
+            </div>
+            <div style={{ fontSize:11, color:T.muted, lineHeight:1.6, marginBottom:12 }}>
+              De werkplaatsadministratie (servicehistorie) bewaart De Jonge Motoren conform de wettelijke
+              bewaarplicht — zie het privacybeleid. Wil je ook die gegevens laten verwijderen? Neem dan
+              contact met ons op.
+            </div>
+            <label style={{ display:"flex", alignItems:"flex-start", gap:8, cursor:"pointer", marginBottom:12, userSelect:"none" }}>
+              <input type="checkbox" checked={accVerwijderCheck} onChange={e=>setAccVerwijderCheck(e.target.checked)}
+                style={{ accentColor:T.red, width:16, height:16, flexShrink:0, marginTop:1 }}/>
+              <span style={{ fontSize:12, color:T.text, lineHeight:1.5 }}>Ik begrijp dat mijn account en online toegang permanent verwijderd worden.</span>
+            </label>
+            {accVerwijderFout && <div style={{ fontSize:12, color:T.red, marginBottom:10 }}>⚠ {accVerwijderFout}</div>}
+            <div style={{ display:"flex", gap:8 }}>
+              <button disabled={!accVerwijderCheck || accVerwijderBezig}
+                onClick={async () => {
+                  setAccVerwijderBezig(true); setAccVerwijderFout(null);
+                  const err = await onVerwijderAccount();
+                  setAccVerwijderBezig(false);
+                  if (err) setAccVerwijderFout(err);
+                }}
+                style={{ flex:1, padding:"11px", background:T.red, color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif", opacity:(!accVerwijderCheck||accVerwijderBezig)?0.5:1 }}>
+                {accVerwijderBezig ? "Verwijderen..." : "Verwijder mijn account"}
+              </button>
+              <button onClick={() => setAccVerwijderOpen(false)} style={{ ...css.btnGhost, flex:1 }}>Annuleer</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Uitloggen */}
       <button onClick={uitloggen} style={{ ...css.btnGhost, marginTop: 4 }}>Uitloggen</button>
     </div>
@@ -1637,18 +1711,20 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
       d.setDate(start.getDate() + i);
       const dow = d.getDay();
       if (!isOpenDag(dow)) continue;
-      const iso = d.toISOString().split("T")[0];
+      const iso = lokaleDatum(d);
       if (geslotenDagen.includes(iso)) continue;
       dagen.push({ datum: iso, dag: DAGMAP[dow] });
     }
     return dagen;
   })();
 
+  const [proefritFout, setProefritFout] = useState(null);
   const verstuurProefrit = async () => {
     if (!f.datum || !f.naam || !f.telefoon || bezig) return;
-    setBezig(true);
-    await onSlaProefritOp({ voorraadMotorId: detailMotor.id, datum: f.datum, naam: f.naam, telefoon: f.telefoon, email: f.email, opmerking: f.opmerking });
+    setBezig(true); setProefritFout(null);
+    const err = await onSlaProefritOp({ voorraadMotorId: detailMotor.id, datum: f.datum, naam: f.naam, telefoon: f.telefoon, email: f.email, opmerking: f.opmerking });
     setBezig(false);
+    if (err) { setProefritFout(err); return; }
     setMotorView("verstuurd");
   };
 
@@ -1826,6 +1902,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
                       placeholder="Voorkeur ochtend/middag, rijervaring..."
                       value={f.opmerking} onChange={e => setF(p => ({...p, opmerking:e.target.value}))} />
                   </div>
+                  {proefritFout && <div style={{ fontSize:12, color:T.red, marginBottom:8 }}>⚠ {proefritFout}</div>}
                   <button style={{ ...css.btn, opacity:(!f.datum||!f.naam||!f.telefoon||bezig)?0.4:1 }}
                     onClick={verstuurProefrit} disabled={!f.datum||!f.naam||!f.telefoon||bezig}>
                     {bezig ? "Versturen..." : "Proefrit aanvragen"}
@@ -1993,6 +2070,7 @@ export default function KlantApp({ userId }) {
   const [eigenAfspraken, setEigenAfspraken] = useState([]);
   const [agendaKeuzeId, setAgendaKeuzeId] = useState(null);
   const [laden, setLaden] = useState(true);
+  const [juridisch, setJuridisch] = useState(null); // null | 'privacy' | 'voorwaarden'
 
   const [autoOpenMotorForm, setAutoOpenMotorForm] = useState(false);
 
@@ -2123,17 +2201,19 @@ export default function KlantApp({ userId }) {
 
   const slaAfspraakOp = async (f) => {
     const motor = motoren.find(m => m.id === f.motorId);
-    await supabase.from("afspraken").insert({
+    const { error } = await supabase.from("afspraken").insert({
       klant_id: klant.id, motor_id: motor?.id || null,
       datum: f.datum, opmerking: f.opmerking || "", status: "aangevraagd",
       type: "service", soort: f.soort || null, duur: f.duur || 1,
       naam: klant.naam || null, telefoon: klant.telefoon || null, email: klant.email || null,
     });
+    if (error) return "Versturen mislukt — probeer het opnieuw of neem contact op.";
     setBezetteDagen(prev => [...prev, f.datum]);
+    return null;
   };
 
   const slaProefritAanvraagOp = async (f) => {
-    await supabase.from("afspraken").insert({
+    const { error } = await supabase.from("afspraken").insert({
       klant_id: klant.id,
       voorraad_motor_id: f.voorraadMotorId,
       datum: f.datum,
@@ -2145,6 +2225,7 @@ export default function KlantApp({ userId }) {
       type: "proefrit",
       duur: 1,
     });
+    return error ? "Versturen mislukt — probeer het opnieuw of neem contact op." : null;
   };
 
   const updateKlantProfiel = async (data) => {
@@ -2276,6 +2357,49 @@ export default function KlantApp({ userId }) {
     await supabase.from("afspraken").update({ melding_gezien: true }).eq("id", id);
     setEigenAfspraken(prev => prev.map(a => a.id === id ? { ...a, melding_gezien: true } : a));
     setAgendaKeuzeId(null);
+  };
+
+  // AVG art. 20: dataportabiliteit — alle eigen gegevens als JSON-download
+  const downloadGegevens = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const exportData = {
+      omschrijving: "Export van jouw persoonsgegevens bij De Jonge Motoren",
+      export_datum: new Date().toISOString(),
+      account: { email: user?.email || klant.email, account_aangemaakt: user?.created_at || null },
+      profiel: {
+        naam: klant.naam, email: klant.email, telefoon: klant.telefoon,
+        adres: klant.adres, postcode: klant.postcode, woonplaats: klant.woonplaats,
+        klant_sinds: klant.created_at,
+      },
+      motoren: motoren.map(m => ({
+        merk: m.merk, model: m.model, kenteken: m.kenteken, bouwjaar: m.bouwjaar,
+        aankoopdatum: m.aankoopdatum, voorband_maat: m.voorband_maat, achterband_maat: m.achterband_maat,
+        voorband_datum: m.voorband_datum, achterband_datum: m.achterband_datum,
+        bijzonderheden: m.bijzonderheden,
+        kilometer_historie: m.kmHistory,
+        service_historie: (m.service || []).map(sv => ({ datum: sv.datum, omschrijving: sv.omschrijving, km: sv.km, eigen_invoer: sv.klant_invoer })),
+      })),
+      afspraken: eigenAfspraken.map(a => ({ datum: a.datum, tijd: a.tijd, soort: a.soort, type: a.type, status: a.status })),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `mijn_gegevens_dejongemotoren_${TODAY}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // AVG art. 17: recht op vergetelheid — verwijdert login + online toegang via SECURITY DEFINER functie
+  const verwijderAccount = async () => {
+    const { error } = await supabase.rpc("verwijder_eigen_account");
+    if (error) return "Verwijderen mislukt — probeer het later opnieuw of neem contact op.";
+    try { localStorage.removeItem("djm_hoofd_motor"); sessionStorage.removeItem("djm_sel_motor"); } catch { /* leeg */ }
+    try { await supabase.auth.signOut(); } catch { /* user bestaat niet meer — lokaal opruimen volstaat */ }
+    window.location.reload();
+    return null;
   };
 
   const ongelezenMeldingen = eigenAfspraken.filter(a => a.status === "gepland" && a.melding_gezien === false);
@@ -2425,10 +2549,15 @@ export default function KlantApp({ userId }) {
                 onThemeMode={setTheme}
                 autoOpenMotorForm={autoOpenMotorForm}
                 onMotorFormOpened={() => setAutoOpenMotorForm(false)}
+                onDownloadGegevens={downloadGegevens}
+                onVerwijderAccount={verwijderAccount}
+                onToonJuridisch={setJuridisch}
               />
             )}
           </div>
         </div>
+        <JuridischModal type={juridisch} T={T} onClose={() => setJuridisch(null)} />
+        <CookieBanner T={T} onToonPrivacy={() => setJuridisch("privacy")} />
       </div>
     );
   }
@@ -2483,9 +2612,19 @@ export default function KlantApp({ userId }) {
             onVerwijderMotor={verwijderMotor}
             onWijzigWachtwoord={wijzigWachtwoord}
             onUpdateBanden={updateMotorBanden}
+            themeMode={themeMode}
+            onThemeMode={setTheme}
+            autoOpenMotorForm={autoOpenMotorForm}
+            onMotorFormOpened={() => setAutoOpenMotorForm(false)}
+            onDownloadGegevens={downloadGegevens}
+            onVerwijderAccount={verwijderAccount}
+            onToonJuridisch={setJuridisch}
           />
         )}
       </div>
+
+      <JuridischModal type={juridisch} T={T} onClose={() => setJuridisch(null)} />
+      <CookieBanner T={T} onToonPrivacy={() => setJuridisch("privacy")} />
 
       <nav style={css.bottomNav}>
         {nav.map(n => (
