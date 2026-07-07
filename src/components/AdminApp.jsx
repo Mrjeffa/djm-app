@@ -3970,15 +3970,46 @@ export default function AdminApp(){
   const [klussen,setKlussen]=useState([]);
   const [laden,setLaden]=useState(true);
 
+  // ── Opruimen van verlopen records (30 dagen na verkoop/verwijdering) ──
+  // Draait ná het eerste scherm, zodat de gebruiker er nooit op hoeft te wachten.
+  const ruimVerlopenOp = async (sb, verlopenVoorraad) => {
+    for(const m of (verlopenVoorraad||[])){
+      // Migreer voorraad_service naar service_beurten vóór delete, zodat service bij klant motor blijft
+      if(m.verkocht_aan){
+        const {data:klantMotor} = await sb.from("motoren").select("id").eq("source_voorraad_id",m.id).maybeSingle();
+        if(klantMotor){
+          const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",m.id);
+          if(vs?.length){
+            const {data:existing} = await sb.from("service_beurten").select("datum,omschrijving,km").eq("motor_id",klantMotor.id);
+            const toMigrate=vs.filter(s=>!(existing||[]).some(e=>e.datum===s.datum&&e.omschrijving===s.omschrijving&&String(e.km||"")===String(s.km||"")));
+            if(toMigrate.length) await sb.from("service_beurten").insert(toMigrate.map(s=>({motor_id:klantMotor.id,datum:s.datum,omschrijving:s.omschrijving,km:s.km,voorband_datum:s.voorband_datum||null,achterband_datum:s.achterband_datum||null})));
+          }
+        }
+      }
+      const urls=(m.fotos||[]).filter(Boolean);
+      if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
+      await sb.from("voorraad").delete().eq("id",m.id);
+    }
+    const verlopenProd = await sb.from("producten").select("id,fotos").lte("fotos_bewaren_tot",TODAY);
+    for(const p of (verlopenProd.data||[])){
+      const urls=(p.fotos||[]).filter(Boolean);
+      if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
+      await sb.from("producten").delete().eq("id",p.id);
+    }
+  };
+
   // ── Data ophalen bij laden ──────────────────────────────────
   useEffect(()=>{
     const laadAlles = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
+        // Agenda-venster: vanaf 12 maanden terug — oudere afspraken zijn historie
+        // (servicegeschiedenis staat los in service_beurten en blijft volledig)
+        const jaarTerug = new Date(); jaarTerug.setFullYear(jaarTerug.getFullYear()-1);
         const [k, v, a, verlopen, pData, vsData, klusData, chassisData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
-          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").order("datum"),
+          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
           sb.from("voorraad").select("id,fotos,verkocht_aan").lte("fotos_bewaren_tot",TODAY),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
           sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
@@ -3986,40 +4017,18 @@ export default function AdminApp(){
           sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"), // aparte tabel: alleen admin leesbaar
         ]);
         const chassisMap = Object.fromEntries((chassisData.data||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
-        // Cleanup: verwijder records 30 dagen na verkoop/verwijdering
-        for(const m of (verlopen.data||[])){
-          // Migreer voorraad_service naar service_beurten vóór delete, zodat service bij klant motor blijft
-          if(m.verkocht_aan){
-            const {data:klantMotor} = await sb.from("motoren").select("id").eq("source_voorraad_id",m.id).maybeSingle();
-            if(klantMotor){
-              const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",m.id);
-              if(vs?.length){
-                const {data:existing} = await sb.from("service_beurten").select("datum,omschrijving,km").eq("motor_id",klantMotor.id);
-                const toMigrate=vs.filter(s=>!(existing||[]).some(e=>e.datum===s.datum&&e.omschrijving===s.omschrijving&&String(e.km||"")===String(s.km||"")));
-                if(toMigrate.length) await sb.from("service_beurten").insert(toMigrate.map(s=>({motor_id:klantMotor.id,datum:s.datum,omschrijving:s.omschrijving,km:s.km,voorband_datum:s.voorband_datum||null,achterband_datum:s.achterband_datum||null})));
-              }
-            }
-          }
-          const urls=(m.fotos||[]).filter(Boolean);
-          if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
-          await sb.from("voorraad").delete().eq("id",m.id);
-        }
-        // Cleanup producten
-        const verlopenProd = await sb.from("producten").select("id,fotos").lte("fotos_bewaren_tot",TODAY);
-        for(const p of (verlopenProd.data||[])){
-          const urls=(p.fotos||[]).filter(Boolean);
-          if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
-          await sb.from("producten").delete().eq("id",p.id);
-        }
+        // Opruimen op de achtergrond — blokkeert het eerste scherm niet
+        ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
 
         const klantIds = (k.data||[]).map(x=>x.id);
         let verrijkt = (k.data||[]).map(klant=>({...klant, motoren:[]}));
 
         if(klantIds.length > 0){
+          // Gerichte kolomselecties: historie-tabellen groeien het hardst
           const [mot, km, svc] = await Promise.all([
             sb.from("motoren").select("*").in("klant_id",klantIds),
-            sb.from("km_historie").select("*").order("datum"),
-            sb.from("service_beurten").select("*").order("datum",{ascending:false}),
+            sb.from("km_historie").select("motor_id,datum,km").order("datum"),
+            sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin").order("datum",{ascending:false}),
           ]);
           const motoren = mot.data||[];
           const kmHist = km.data||[];

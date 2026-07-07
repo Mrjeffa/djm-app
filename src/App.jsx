@@ -1,9 +1,35 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Component } from 'react'
 import { supabase } from './lib/supabase.js'
 import AdminApp from './components/AdminApp.jsx'
 import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
+
+// ── Foutvangnet: onverwachte fout → nette herlaadpagina i.p.v. wit scherm ──
+class FoutVangnet extends Component {
+  constructor(props) { super(props); this.state = { fout: null } }
+  static getDerivedStateFromError(fout) { return { fout } }
+  componentDidCatch(fout, info) { console.error('App-fout:', fout, info?.componentStack) }
+  render() {
+    if (!this.state.fout) return this.props.children
+    const sysDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100dvh', background:sysDark?'#111':'#F8F8F8', fontFamily:'Barlow, sans-serif', padding:24, textAlign:'center' }}>
+        <div>
+          <div style={{ fontSize:40, marginBottom:14 }}>🔧</div>
+          <div style={{ fontSize:17, fontWeight:700, color:sysDark?'#F2F2F7':'#1A1A1A', marginBottom:8 }}>Er ging iets mis</div>
+          <div style={{ fontSize:13, color:sysDark?'#8E8E93':'#767676', lineHeight:1.7, maxWidth:300, margin:'0 auto 20px' }}>
+            De app liep tegen een onverwachte fout aan. Herlaad de app — je gegevens zijn veilig opgeslagen.
+          </div>
+          <button onClick={() => window.location.reload()}
+            style={{ padding:'12px 28px', background:'#E31E24', color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'Barlow, sans-serif' }}>
+            Herlaad de app
+          </button>
+        </div>
+      </div>
+    )
+  }
+}
 
 // Gecachte admin-hint: laadscherm voelt sneller aan bij refresh/wakeup
 const ADMIN_CACHE = 'djm_admin_v1'
@@ -49,6 +75,10 @@ const koppelKlant = (user) =>
   }, null)
 
 export default function App() {
+  return <FoutVangnet><AppInner/></FoutVangnet>
+}
+
+function AppInner() {
   const [sessie, setSessie] = useState(null)
   // Begin met gecachte admin-waarde zodat snelle refresh geen laadscherm toont
   const [admin, setAdmin] = useState(getCachedAdmin)
