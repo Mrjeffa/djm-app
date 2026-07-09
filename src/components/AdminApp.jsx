@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { openOnderdelen, larssonZoekFallback, preloadLarsson } from "../lib/larsson.js";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -101,11 +102,9 @@ const uploadFoto = async (file) => {
 const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
 // ── Onderdelen-bestellen link ────────────────────────────────────────────────
-// Larsson heeft geen API; zonder opgeslagen directe link vallen we terug op een site-zoekopdracht.
-const onderdelenZoekLink = (merk, model) => {
-  const q = encodeURIComponent([merk, model].filter(Boolean).join(" ").trim());
-  return `https://www.google.com/search?q=${q}+site%3Amike2.larsson.nl`;
-};
+// De juiste Larsson-deeplink (merk+model+bouwjaar) wordt opgezocht in larsson.js.
+// onderdelenZoekLink is de placeholder/fallback voor de invoervelden.
+const onderdelenZoekLink = larssonZoekFallback;
 
 // ── Afspraak-kleur: categorie wint, anders het standaard type-kleurenschema ──
 const getAfspraakKleur = (a, categorieen) => {
@@ -116,13 +115,12 @@ const getAfspraakKleur = (a, categorieen) => {
   return a.type==="proefrit"?T.green:a.type==="intern"?"#6366F1":T.accent;
 };
 
-function OnderdelenBestellenKnop({merk, model, link, style}){
-  const href = link || onderdelenZoekLink(merk, model);
+function OnderdelenBestellenKnop({merk, model, bouwjaar, link, style}){
   return(
-    <a href={href} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-      style={{...s.btnOutline,textDecoration:"none",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,...style}}>
+    <button onClick={e=>{e.stopPropagation();openOnderdelen({merk,model,bouwjaar,handmatig:link});}}
+      style={{...s.btnOutline,textDecoration:"none",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,cursor:"pointer",...style}}>
       🔧 Onderdelen bestellen
-    </a>
+    </button>
   );
 }
 
@@ -1801,7 +1799,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
                   <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,minWidth:160,zIndex:100,boxShadow:"0 4px 20px #0009",overflow:"hidden"}}>
                     <button onClick={()=>{setEditMotorItem(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Wijzigen</button>
                     <button onClick={()=>{setMeerdaagseMotor(motor);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>🛠 Meerdaagse klus</button>
-                    <a href={motor.onderdelen_link||onderdelenZoekLink(motor.merk,motor.model)} target="_blank" rel="noopener noreferrer" onClick={()=>setMotorMenuId(null)} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left",textDecoration:"none"}}>🔧 Onderdelen bestellen</a>
+                    <button onClick={()=>{openOnderdelen({merk:motor.merk,model:motor.model,bouwjaar:motor.bouwjaar,handmatig:motor.onderdelen_link});setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>🔧 Onderdelen bestellen</button>
                     <button onClick={()=>{setInruilConfirmId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Inruilen →</button>
                     <div style={{height:1,background:T.border}}/>
                     <button onClick={()=>{setDelMotorId(motor.id);setMotorMenuId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
@@ -2394,7 +2392,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                             <button onClick={()=>{setHistorieMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Historie</button>
                             {!m.verkocht_op&&<button onClick={()=>{setInternAfspraakMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Interne afspraak</button>}
                             {!m.verkocht_op&&<button onClick={()=>{setMeerdaagseMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>🛠 Meerdaagse klus</button>}
-                            <a href={m.onderdelen_link||onderdelenZoekLink(m.merk,m.model)} target="_blank" rel="noopener noreferrer" onClick={()=>setMenuMotorId(null)} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left",textDecoration:"none"}}>🔧 Onderdelen bestellen</a>
+                            <button onClick={()=>{openOnderdelen({merk:m.merk,model:m.model,bouwjaar:m.bouwjaar,handmatig:m.onderdelen_link});setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.text,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>🔧 Onderdelen bestellen</button>
                             <div style={{height:1,background:T.border}}/>
                             <button onClick={()=>{setDelMotor(m);setMenuMotorId(null);}} style={{display:"block",width:"100%",padding:"11px 14px",background:"none",border:"none",color:T.red,fontSize:13,cursor:"pointer",fontFamily:"Barlow, sans-serif",textAlign:"left"}}>Verwijderen</button>
                           </div>
@@ -2817,7 +2815,7 @@ function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, afspraken=[]
         </div>
       )}
       {motorInfo&&(
-        <OnderdelenBestellenKnop merk={motorInfo.merk} model={motorInfo.model} link={motorInfo.onderdelen_link} style={{width:"100%",padding:"9px 14px"}}/>
+        <OnderdelenBestellenKnop merk={motorInfo.merk} model={motorInfo.model} bouwjaar={motorInfo.bouwjaar} link={motorInfo.onderdelen_link} style={{width:"100%",padding:"9px 14px"}}/>
       )}
       <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4000,6 +3998,7 @@ export default function AdminApp(){
 
   // ── Data ophalen bij laden ──────────────────────────────────
   useEffect(()=>{
+    preloadLarsson(); // Larsson-opzoektabel vast op de achtergrond inladen
     const laadAlles = async () => {
       try {
         const sb = (await import("../lib/supabase.js")).supabase;
