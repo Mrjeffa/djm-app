@@ -4024,11 +4024,14 @@ export default function AdminApp(){
         // Agenda-venster: vanaf 12 maanden terug — oudere afspraken zijn historie
         // (servicegeschiedenis staat los in service_beurten en blijft volledig)
         const jaarTerug = new Date(); jaarTerug.setFullYear(jaarTerug.getFullYear()-1);
+        // Verkochte motoren blijven 30 dagen zichtbaar — op basis van verkocht_op,
+        // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
+        const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
         const [k, v, a, verlopen, pData, vsData, klusData, chassisData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
-          sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY}`).order("created_at",{ascending:false}),
+          sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
-          sb.from("voorraad").select("id,fotos,verkocht_aan").lte("fotos_bewaren_tot",TODAY),
+          sb.from("voorraad").select("id,fotos,verkocht_aan").or(`fotos_bewaren_tot.lte.${TODAY},verkocht_op.lte.${grens30}`),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
           sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
           sb.from("klussen").select("*").order("created_at",{ascending:false}),
@@ -4630,8 +4633,28 @@ export default function AdminApp(){
 
   const rondKlusAf = async (klusId) => {
     const sb = (await import("../lib/supabase.js")).supabase;
+    const klus = klussen.find(k=>k.id===klusId);
     await sb.from("klussen").update({status:"afgerond"}).eq("id",klusId);
     setKlussen(p=>p.map(k=>k.id===klusId?{...k,status:"afgerond"}:k));
+    // Nog geplande sessies van deze klus zijn nu ook gedaan → niet als openstaand laten staan
+    await sb.from("afspraken").update({status:"afgewerkt"}).eq("klus_id",klusId).eq("status","gepland");
+    setAfspraken(p=>p.map(a=>a.klus_id===klusId&&a.status==="gepland"?{...a,status:"afgewerkt"}:a));
+    if(!klus) return;
+    // Afgeronde klus als servicebeurt vastleggen in de historie van de motor
+    const oms = klus.titel;
+    if(klus.voorraad_motor_id){
+      const {data:svc} = await sb.from("voorraad_service").insert({voorraad_motor_id:klus.voorraad_motor_id, datum:TODAY, omschrijving:oms}).select().single();
+      if(svc) setShowroom(p=>p.map(m=>m.id===klus.voorraad_motor_id?{...m,service:[...(m.service||[]),svc]}:m));
+      // Al verkocht aan een klant? Dan ook op de klant-motor registreren
+      const {data:km} = await sb.from("motoren").select("id,klant_id").eq("source_voorraad_id",klus.voorraad_motor_id).maybeSingle();
+      if(km){
+        const {data:kb} = await sb.from("service_beurten").insert({motor_id:km.id, datum:TODAY, omschrijving:oms}).select().single();
+        if(kb) setKlanten(prev=>prev.map(k=>k.id===km.klant_id?{...k,motoren:(k.motoren||[]).map(m=>m.id===km.id?{...m,service:[{id:kb.id,datum:kb.datum,omschrijving:kb.omschrijving,km:kb.km,klant_invoer:false,interval_gereset:false,gezien_admin:false},...(m.service||[])]}:m)}:k));
+      }
+    } else if(klus.motor_id){
+      const {data:kb} = await sb.from("service_beurten").insert({motor_id:klus.motor_id, datum:TODAY, omschrijving:oms}).select().single();
+      if(kb) setKlanten(prev=>prev.map(k=>({...k,motoren:(k.motoren||[]).map(m=>m.id===klus.motor_id?{...m,service:[{id:kb.id,datum:kb.datum,omschrijving:kb.omschrijving,km:kb.km,klant_invoer:false,interval_gereset:false,gezien_admin:false},...(m.service||[])]}:m)})));
+    }
   };
 
   const heropenKlus = async (klusId) => {
