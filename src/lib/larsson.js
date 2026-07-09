@@ -91,14 +91,22 @@ export const larssonZoekFallback = (merk, model) => {
 // 1) handmatig ingevulde directe link, 2) Larsson-match, 3) zoek-fallback.
 // Opent eerst synchroon een tab (popup-safe) en zet daarna de juiste URL.
 export const openOnderdelen = async ({ merk, model, bouwjaar, handmatig }) => {
-  const tab = window.open("", "_blank", "noopener");
+  // Zonder "noopener" — anders geeft window.open geen referentie terug en
+  // blijft het nieuwe tabblad leeg. We verbreken de opener-koppeling ná het
+  // navigeren, zodat de Larsson-pagina onze app niet kan benaderen.
+  const tab = window.open("", "_blank");
   let url = handmatig && handmatig.trim() ? handmatig.trim() : null;
   if (!url) {
     try { url = await zoekLarssonLink(merk, model, bouwjaar); } catch { url = null; }
   }
   if (!url) url = larssonZoekFallback(merk, model);
-  if (tab) tab.location = url;
-  else window.location.href = url;
+  if (tab) {
+    try { tab.opener = null; } catch { /* sommige browsers verbieden dit — ok */ }
+    tab.location = url;
+  } else {
+    // Popup geblokkeerd → alsnog in een nieuw tabblad openen (app blijft staan)
+    window.open(url, "_blank", "noopener");
+  }
 };
 
 // Warmt de cache op (optioneel, bij openen van de admin-app aangeroepen).
