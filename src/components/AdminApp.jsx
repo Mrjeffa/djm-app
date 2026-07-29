@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { openOnderdelen, larssonZoekFallback, preloadLarsson } from "../lib/larsson.js";
+import { openAutoScout } from "../lib/autoscout.js";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -509,9 +510,63 @@ function ServiceModal({onSave,onClose,initial}){
   );
 }
 
+// ── AutoScout24 advertentie-opties ───────────────────────────────────────────
+// Waarden waarmee het invulscript / de browserextensie de juiste keuzes op
+// AutoScout kan maken. AutoScout haalt techniek (kW, cc, gewicht, brandstof)
+// zelf uit de RDW; deze velden vult AutoScout niet automatisch.
+const AS_CARROSSERIE = ["Naked bike","Sport Touring","Sport/Superbike","Touring","Enduro/Offroad","Chopper/Cruiser","Scooter","Bromfiets","Trial","Cross","Quad/ATV","Zijspan","Overig"];
+const AS_KLEUREN = ["Zwart","Wit","Zilver","Grijs","Blauw","Rood","Groen","Geel","Oranje","Bruin","Beige","Goud","Paars","Roze"];
+const AS_UITRUSTING = ["ABS","Antislipregeling","Boordcomputer","Cruise control","Verwarmde handvatten","Kuip","Windscherm","Topkoffer","Zijkoffers","Middenbok","Valbeugel","LED-verlichting","USB-aansluiting","Navigatie","Alarm","Startonderbreker","Handkappen"];
+
+// Gedeelde advertentievelden voor het toevoeg- én wijzig-formulier van een
+// voorraadmotor. Werkt op { kleur, carrosserietype, uitvoering, uitrusting[], beschrijving }.
+function AdvertentieVelden({f,setF}){
+  const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  const uit=Array.isArray(f.uitrusting)?f.uitrusting:[];
+  const toggleUit=(item)=>setF(p=>{const cur=Array.isArray(p.uitrusting)?p.uitrusting:[];return {...p,uitrusting:cur.includes(item)?cur.filter(x=>x!==item):[...cur,item]};});
+  return(
+    <>
+      <Grid2>
+        <Field label="Kleur">
+          <select style={s.input} value={f.kleur||""} onChange={set("kleur")}>
+            <option value="">— Kies kleur —</option>
+            {AS_KLEUREN.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+        </Field>
+        <Field label="Carrosserietype">
+          <select style={s.input} value={f.carrosserietype||""} onChange={set("carrosserietype")}>
+            <option value="">— Kies type —</option>
+            {AS_CARROSSERIE.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <Field label="Uitvoering (optioneel)">
+        <input style={s.input} value={f.uitvoering||""} onChange={set("uitvoering")} placeholder="bijv. CBF 600 SA"/>
+      </Field>
+      <Field label="Uitrusting (voor de advertentie)">
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {AS_UITRUSTING.map(item=>{
+            const sel=uit.includes(item);
+            return(
+              <button type="button" key={item} onClick={()=>toggleUit(item)}
+                style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${sel?T.accent:T.border}`,background:sel?`${T.accent}20`:"transparent",color:sel?T.accent:T.muted,cursor:"pointer",fontSize:12,fontFamily:"Barlow, sans-serif",fontWeight:sel?600:400}}>
+                {item}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+      <Field label="Verkoopbeschrijving">
+        <textarea style={{...s.input,height:90,resize:"vertical",fontFamily:"Barlow, sans-serif"}} value={f.beschrijving||""} onChange={set("beschrijving")}
+          placeholder="Korte wervende tekst: staat, bijzonderheden, accessoires, onderhoud…"/>
+      </Field>
+    </>
+  );
+}
+
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:""});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoItems,setFotoItems]=useState([]); // [{preview,file}]
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
@@ -610,6 +665,11 @@ function VoorraadModal({onSave,onClose}){
         {!f.op_website&&<span style={{fontSize:11,background:"#f59e0b20",color:"#b45309",border:"1px solid #f59e0b40",padding:"2px 8px",borderRadius:10}}>Verborgen voor klanten</span>}
       </label>
 
+      {/* Stap 2b: advertentiegegevens (AutoScout / website) */}
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Advertentiegegevens (voor AutoScout / website)</div>
+      <AdvertentieVelden f={f} setF={setF}/>
+
       {/* Stap 3: bandendatums */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Stap 3 — Bandendatums (optioneel)</div>
@@ -669,6 +729,8 @@ function VoorraadEditModal({motor, onSave, onClose}){
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
     onderdelen_link:motor.onderdelen_link||"",
+    kleur:motor.kleur||"", carrosserietype:motor.carrosserietype||"", uitvoering:motor.uitvoering||"",
+    uitrusting:Array.isArray(motor.uitrusting)?motor.uitrusting:[], beschrijving:motor.beschrijving||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   // Unified foto list: {type:"bestaand",url} | {type:"nieuw",preview,file}
@@ -723,6 +785,9 @@ function VoorraadEditModal({motor, onSave, onClose}){
       <Field label="Chassisnummer">
         <input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/>
       </Field>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <div style={s.sectionLabel}>Advertentiegegevens (voor AutoScout / website)</div>
+      <AdvertentieVelden f={f} setF={setF}/>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Bandendatums</div>
       <Grid2>
@@ -2439,10 +2504,18 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                     <div style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Publiceren op</div>
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       {[{naam:"Motoroccasion.nl",kleur:"#1a6bc4"},{naam:"Autoscout24.nl",kleur:"#f50c30"},{naam:"Marktplaats.nl",kleur:"#ed7d00"}].map(p=>(
-                        <button key={p.naam} title="Binnenkort beschikbaar"
-                          style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:"transparent",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"not-allowed",fontFamily:"Barlow, sans-serif",opacity:0.6}}>
-                          {p.naam} ↗
-                        </button>
+                        p.naam==="Autoscout24.nl"?(
+                          <button key={p.naam} onClick={()=>openAutoScout(m)}
+                            title="Opent AutoScout in een nieuw tabblad met de gegevens klaargezet. Ze staan ook op je klembord."
+                            style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:p.kleur,border:`1px solid ${p.kleur}`,borderRadius:3,color:"#fff",cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                            {p.naam} ↗
+                          </button>
+                        ):(
+                          <button key={p.naam} title="Binnenkort beschikbaar"
+                            style={{padding:"6px 10px",fontSize:11,fontWeight:600,background:"transparent",border:`1px solid ${T.border}`,borderRadius:3,color:T.muted,cursor:"not-allowed",fontFamily:"Barlow, sans-serif",opacity:0.6}}>
+                            {p.naam} ↗
+                          </button>
+                        )
                       ))}
                     </div>
                   </div>
@@ -4344,6 +4417,8 @@ export default function AdminApp(){
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       onderdelen_link:f.onderdelen_link||null,
+      kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
+      uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
       status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
     if(v){
@@ -4361,6 +4436,8 @@ export default function AdminApp(){
       onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
+      kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
+      uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
       fotos:alleFotos,
     }).eq("id",id);
     await bewaarChassis(sb, id, f.chassis_nummer||null);
@@ -4370,6 +4447,8 @@ export default function AdminApp(){
       chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
+      kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
+      uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
       fotos:alleFotos,
     }:m));
     if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
