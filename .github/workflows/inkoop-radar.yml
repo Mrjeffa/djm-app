@@ -1,0 +1,49 @@
+name: Inkoop-radar
+
+# Haalt dagelijks nieuwe (particuliere) motoradvertenties op van 2dehands.be,
+# slaat nieuwe leads op in Supabase en mailt een digest via Resend.
+# Handmatig testen kan via de "Run workflow"-knop (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # ~07:00 Europe/Brussel
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: "Extra zoekterm binnen categorie Motoren (optioneel)"
+        required: false
+        default: ""
+      max_items:
+        description: "Max. aantal advertenties"
+        required: false
+        default: "150"
+
+concurrency:
+  group: inkoop-radar
+  cancel-in-progress: false
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r inkoop-radar/requirements.txt
+      - name: Run inkoop-radar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          # Configureerbare filters — repo-variables (Settings → Variables) met veilige defaults.
+          RADAR_KEYWORD: ${{ github.event.inputs.keyword || vars.RADAR_KEYWORD }}
+          RADAR_PRICE_MIN: ${{ vars.RADAR_PRICE_MIN || '0' }}
+          RADAR_PRICE_MAX: ${{ vars.RADAR_PRICE_MAX || '8000' }}
+          RADAR_MAX_ITEMS: ${{ github.event.inputs.max_items || vars.RADAR_MAX_ITEMS || '150' }}
+          RADAR_L1_CATEGORY: ${{ vars.RADAR_L1_CATEGORY || '678' }}
+          RADAR_SEARCH_URL: ${{ vars.RADAR_SEARCH_URL || 'https://www.2dehands.be/lrp/api/search' }}
+          RADAR_BRON: ${{ vars.RADAR_BRON || '2dehands' }}
+        run: python inkoop-radar/fetch_leads.py
