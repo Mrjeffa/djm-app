@@ -4082,6 +4082,142 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   );
 }
 
+// ── Inkoop-radar ─────────────────────────────────────────────────────────────
+// Toont automatisch gevonden particuliere motoradvertenties (via de dagelijkse
+// GitHub Actions-job) als inkoop-leads. Alleen zichtbaar in de admin-app.
+const LEAD_STATUS = {
+  nieuw:       { label:"Nieuw",       kleur:"#E31E24" },
+  bekeken:     { label:"Bekeken",     kleur:"#767676" },
+  genegeerd:   { label:"Genegeerd",   kleur:"#DC2626" },
+  naar_inkoop: { label:"Naar inkoop", kleur:"#16A34A" },
+};
+
+function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}}){
+  const mob=useIsMobile();
+  const [prijsMin,setPrijsMin]=useState("");
+  const [prijsMax,setPrijsMax]=useState("");
+  const [zoek,setZoek]=useState("");
+  const [plaats,setPlaats]=useState("");
+  const [toonDealers,setToonDealers]=useState(false);
+  const [toonGenegeerd,setToonGenegeerd]=useState(false);
+
+  const fmt=(iso)=>{ if(!iso) return ""; const d=new Date(iso); return isNaN(d.getTime())?"":d.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}); };
+  const fmtDT=(iso)=>{ if(!iso) return "—"; const d=new Date(iso); return isNaN(d.getTime())?"—":d.toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); };
+
+  const zichtbaar=leads.filter(l=>{
+    if(!toonDealers && l.is_particulier===false) return false;
+    if(!toonGenegeerd && l.status==="genegeerd") return false;
+    if(prijsMin && (l.prijs==null || l.prijs<parseInt(prijsMin))) return false;
+    if(prijsMax && (l.prijs==null || l.prijs>parseInt(prijsMax))) return false;
+    if(zoek.trim()){ const q=zoek.toLowerCase(); if(!((l.titel||"").toLowerCase().includes(q)||(l.beschrijving||"").toLowerCase().includes(q))) return false; }
+    if(plaats.trim() && !((l.plaats||"").toLowerCase().includes(plaats.toLowerCase()))) return false;
+    return true;
+  });
+
+  const statusKnop=(lead,key)=>{
+    const actief=lead.status===key;
+    const c=LEAD_STATUS[key].kleur;
+    return(
+      <button key={key} onClick={()=>onUpdateStatus(lead.ad_id,key)}
+        style={{padding:"5px 10px",borderRadius:4,border:`1px solid ${actief?c:T.border}`,background:actief?`${c}20`:"transparent",color:actief?c:T.muted,cursor:"pointer",fontSize:12,fontWeight:actief?600:400,fontFamily:"Barlow, sans-serif"}}>
+        {LEAD_STATUS[key].label}
+      </button>
+    );
+  };
+
+  return(
+    <div>
+      {/* Onderhouds-alarm als het API-schema mogelijk is gewijzigd */}
+      {status?.waarschuwing&&(
+        <div style={{background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:6,padding:"12px 14px",marginBottom:16,color:T.red,fontSize:13}}>
+          ⚠ <strong>Inkoop-radar: onderhoud nodig.</strong> {status.waarschuwing}
+          <div style={{color:T.muted,fontSize:11,marginTop:4}}>Laatste run: {fmtDT(status.laatste_run)}. Controleer de GitHub Actions-log van "Inkoop-radar".</div>
+        </div>
+      )}
+
+      {/* Statusregel */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:16}}>
+        <div style={{fontSize:12,color:T.muted}}>
+          {leads.filter(l=>l.status==="nieuw").length} nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{...s.card,marginBottom:16,display:"grid",gridTemplateColumns:mob?"1fr 1fr":"2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
+        <div>
+          <label style={s.label}>Zoek (titel / merk)</label>
+          <input style={s.input} value={zoek} onChange={e=>setZoek(e.target.value)} placeholder="bijv. Honda, Yamaha…"/>
+        </div>
+        <div>
+          <label style={s.label}>Plaats</label>
+          <input style={s.input} value={plaats} onChange={e=>setPlaats(e.target.value)} placeholder="Gent…"/>
+        </div>
+        <div>
+          <label style={s.label}>Prijs van (€)</label>
+          <input style={s.input} type="number" value={prijsMin} onChange={e=>setPrijsMin(e.target.value)} placeholder="0"/>
+        </div>
+        <div>
+          <label style={s.label}>Prijs tot (€)</label>
+          <input style={s.input} type="number" value={prijsMax} onChange={e=>setPrijsMax(e.target.value)} placeholder="8000"/>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,gridColumn:mob?"1 / -1":"auto"}}>
+          <input type="checkbox" checked={toonDealers} onChange={e=>setToonDealers(e.target.checked)} style={{accentColor:T.accent,width:15,height:15}}/>
+          Toon ook dealers
+        </label>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,gridColumn:mob?"1 / -1":"auto"}}>
+          <input type="checkbox" checked={toonGenegeerd} onChange={e=>setToonGenegeerd(e.target.checked)} style={{accentColor:T.accent,width:15,height:15}}/>
+          Toon genegeerde
+        </label>
+      </div>
+
+      {leads.length===0&&(
+        <div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:60,lineHeight:1.7}}>
+          Nog geen leads gevonden.<br/>De inkoop-radar draait dagelijks automatisch (of test handmatig via GitHub Actions).
+        </div>
+      )}
+      {leads.length>0&&zichtbaar.length===0&&(
+        <div style={{color:T.muted,fontSize:13,textAlign:"center",marginTop:40}}>Geen leads die aan de filters voldoen.</div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {zichtbaar.map(l=>{
+          const st=LEAD_STATUS[l.status]||LEAD_STATUS.nieuw;
+          return(
+            <div key={l.ad_id} style={{...s.card,padding:0,overflow:"hidden",display:"flex",gap:0,opacity:l.status==="genegeerd"?0.55:1}}>
+              <div style={{width:mob?96:140,flexShrink:0,background:T.surf2,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {l.foto_url
+                  ? <img src={l.foto_url} alt="" loading="lazy" referrerPolicy="no-referrer" style={{width:"100%",height:"100%",maxHeight:mob?96:120,objectFit:"cover",display:"block"}}/>
+                  : <span style={{fontSize:11,color:T.muted,padding:20}}>Geen foto</span>}
+              </div>
+              <div style={{flex:1,padding:"12px 14px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
+                  <a href={l.url} target="_blank" rel="noopener noreferrer"
+                    style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none"}}>
+                    {l.titel} ↗
+                  </a>
+                  <span style={{...s.badge(st.kleur),flexShrink:0}}>{st.label}</span>
+                </div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:T.muted}}>
+                  <span style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:16,color:T.accent}}>
+                    {l.prijs!=null?`€ ${l.prijs.toLocaleString("nl-NL")}`:"n.o.t.k."}
+                  </span>
+                  {l.plaats&&<span>{l.plaats}</span>}
+                  <span>{l.bron}</span>
+                  {!l.is_particulier&&<span style={{...s.badge(T.muted),fontSize:10}}>Dealer</span>}
+                  <span>Gevonden {fmt(l.gevonden_op)}</span>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+                  {["bekeken","genegeerd","naar_inkoop"].map(k=>statusKnop(l,k))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminApp(){
   const [themeMode,setThemeMode]=useState(()=>{try{return localStorage.getItem("djm_admin_theme")||"automatisch"}catch{return"automatisch"}});
   const [sysDark,setSysDark]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -4101,6 +4237,8 @@ export default function AdminApp(){
   const [producten,setProducten]=useState([]);
   const [afspraken,setAfspraken]=useState([]);
   const [klussen,setKlussen]=useState([]);
+  const [inkoopLeads,setInkoopLeads]=useState([]);
+  const [inkoopStatus,setInkoopStatus]=useState(null);
   const [laden,setLaden]=useState(true);
 
   // ── Opruimen van verlopen records (30 dagen na verkoop/verwijdering) ──
@@ -4143,7 +4281,7 @@ export default function AdminApp(){
         // Verkochte motoren blijven 30 dagen zichtbaar — op basis van verkocht_op,
         // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
         const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
@@ -4152,7 +4290,11 @@ export default function AdminApp(){
           sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
           sb.from("klussen").select("*").order("created_at",{ascending:false}),
           sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"), // aparte tabel: alleen admin leesbaar
+          sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
+          sb.from("inkoop_radar_status").select("*").maybeSingle(),
         ]);
+        setInkoopLeads(inkoopRes.data||[]);
+        setInkoopStatus(inkoopStatusRes.data||null);
         const chassisMap = Object.fromEntries((chassisData.data||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
@@ -4225,6 +4367,13 @@ export default function AdminApp(){
   },[]);
 
   // ── Mutaties ───────────────────────────────────────────────
+  const updateLeadStatus = async (adId, nieuweStatus) => {
+    setInkoopLeads(p=>p.map(l=>l.ad_id===adId?{...l,status:nieuweStatus}:l)); // optimistisch
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {error} = await sb.from("inkoop_leads").update({status:nieuweStatus}).eq("ad_id",adId);
+    if(error) console.error("Lead-status bijwerken mislukt:", error);
+  };
+
   const addKlant = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:klant} = await sb.from("klanten").insert({
@@ -5019,8 +5168,10 @@ export default function AdminApp(){
     {id:"klanten",icon:"◎",label:"Klanten"},
     {id:"voorraad",icon:"◧",label:"Voorraad"},
     {id:"agenda",icon:"◫",label:"Agenda"},
+    {id:"inkoop",icon:"⌖",label:"Inkoop"},
     {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
+  const inkoopNieuw = inkoopLeads.filter(l=>l.status==="nieuw").length;
 
   if(laden) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100dvh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
@@ -5036,6 +5187,7 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
+      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} onUpdateStatus={updateLeadStatus}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
     </>
   );
@@ -5069,9 +5221,12 @@ export default function AdminApp(){
         {/* Bottom nav */}
         <div style={{display:"flex",borderTop:`1px solid ${T.border}`,background:T.surf,flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
           {nav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${page===n.id?T.accent:"transparent"}`,color:page===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:page===n.id?600:400}}>
+            <button key={n.id} onClick={()=>setPage(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${page===n.id?T.accent:"transparent"}`,color:page===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:page===n.id?600:400}}>
               <span style={{fontSize:15}}>{n.icon}</span>
               <span>{n.label}</span>
+              {n.id==="inkoop"&&inkoopNieuw>0&&(
+                <span style={{position:"absolute",top:4,right:"50%",marginRight:-18,background:T.accent,color:"#fff",borderRadius:8,fontSize:9,fontWeight:700,padding:"0 5px",minWidth:14,textAlign:"center"}}>{inkoopNieuw}</span>
+              )}
             </button>
           ))}
         </div>
@@ -5091,6 +5246,9 @@ export default function AdminApp(){
             <div key={n.id} style={s.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
               <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
               <span>{n.label}</span>
+              {n.id==="inkoop"&&inkoopNieuw>0&&(
+                <span style={{marginLeft:"auto",background:T.accent,color:"#fff",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 7px",minWidth:16,textAlign:"center"}}>{inkoopNieuw}</span>
+              )}
             </div>
           ))}
         </nav>
