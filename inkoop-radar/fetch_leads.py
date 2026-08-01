@@ -103,7 +103,14 @@ def is_particulier(traits, seller_name, description):
     return True
 
 
-def is_voertuig(titel):
+def is_voertuig(titel, url):
+    """Echte motoren staan op 2dehands onder de subcategorie 'motoren-<merk>'
+    (bv. /motoren/motoren-suzuki/). Onderdelen/accessoires/kleding/tuning/
+    handleidingen hebben een andere slug en vallen zo weg. Zonder categorie-slug
+    (fallback-link) vallen we terug op het trefwoordfilter."""
+    m = re.search(r"/motoren/([a-z0-9-]+)/", (url or "").lower())
+    if m:
+        return m.group(1).startswith("motoren-")
     t = (titel or "").lower()
     return not any(sig in t for sig in PART_SIGNALS)
 
@@ -337,13 +344,14 @@ def main():
 
     log(f"{len(listings)} listings opgehaald.")
 
-    voertuigen = [m for m in (map_listing(x) for x in listings) if m]
-    voertuigen = [m for m in voertuigen if is_voertuig(m["titel"])]
+    gemapt_raw = [m for m in (map_listing(x) for x in listings) if m]  # succesvol gemapt
+    voertuigen = [m for m in gemapt_raw if is_voertuig(m["titel"], m["url"])]  # alleen echte motoren
     gemapt = len(voertuigen)
-    log(f"{gemapt} voertuig-leads na mapping + onderdelen-filter.")
+    log(f"{len(gemapt_raw)} gemapt, {gemapt} echte motoren na subcategorie-filter.")
 
     # Defensieve schema-check: wel 200 + listings, maar niets gemapt → alarm.
-    if http_ok and listings and gemapt == 0:
+    # (Bewust op de mapping vóór het voertuigfilter — een parts-heavy run is geen schemafout.)
+    if http_ok and listings and len(gemapt_raw) == 0:
         waarschuwing = ("API-schema mogelijk gewijzigd: "
                         f"0 van {len(listings)} listings gemapt.")
         log("WAARSCHUWING: " + waarschuwing)
