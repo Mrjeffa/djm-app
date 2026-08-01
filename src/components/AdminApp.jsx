@@ -4092,8 +4092,10 @@ const LEAD_STATUS = {
   naar_inkoop: { label:"Naar inkoop", kleur:"#16A34A" },
 };
 
-function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}}){
+function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefresh=async()=>{}}){
   const mob=useIsMobile();
+  const [verversen,setVerversen]=useState(false);
+  const ververs=async()=>{ setVerversen(true); try{ await onRefresh(); } finally { setVerversen(false); } };
   const [prijsMin,setPrijsMin]=useState("");
   const [prijsMax,setPrijsMax]=useState("");
   const [zoek,setZoek]=useState("");
@@ -4127,6 +4129,7 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}}){
 
   return(
     <div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       {/* Onderhouds-alarm als het API-schema mogelijk is gewijzigd */}
       {status?.waarschuwing&&(
         <div style={{background:`${T.red}15`,border:`1px solid ${T.red}40`,borderRadius:6,padding:"12px 14px",marginBottom:16,color:T.red,fontSize:13}}>
@@ -4140,6 +4143,10 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}}){
         <div style={{fontSize:12,color:T.muted}}>
           {leads.filter(l=>l.status==="nieuw").length} nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
         </div>
+        <button onClick={ververs} disabled={verversen} style={{...s.btnGhost,opacity:verversen?0.6:1,display:"flex",alignItems:"center",gap:7}}>
+          <span style={{display:"inline-block",animation:verversen?"spin 0.8s linear infinite":"none"}}>↻</span>
+          {verversen?"Verversen…":"Ververs leads"}
+        </button>
       </div>
 
       {/* Filters */}
@@ -4367,6 +4374,19 @@ export default function AdminApp(){
   },[]);
 
   // ── Mutaties ───────────────────────────────────────────────
+  // Herlaadt de leads + radarstatus uit de database (toont wat de ophaal-job
+  // sinds de vorige keer heeft toegevoegd). Haalt zélf geen nieuwe advertenties
+  // op — dat doet de GitHub Actions-job.
+  const herlaadInkoop = async () => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const [leadsRes, statusRes] = await Promise.all([
+      sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
+      sb.from("inkoop_radar_status").select("*").maybeSingle(),
+    ]);
+    setInkoopLeads(leadsRes.data||[]);
+    setInkoopStatus(statusRes.data||null);
+  };
+
   const updateLeadStatus = async (adId, nieuweStatus) => {
     setInkoopLeads(p=>p.map(l=>l.ad_id===adId?{...l,status:nieuweStatus}:l)); // optimistisch
     const sb = (await import("../lib/supabase.js")).supabase;
@@ -5187,7 +5207,7 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
-      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} onUpdateStatus={updateLeadStatus}/>}
+      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
     </>
   );
