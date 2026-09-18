@@ -21,13 +21,14 @@ Env (GitHub Actions repo-secrets / vars):
   RADAR_SEARCH_URL   (default 2dehands.be)
   RADAR_L1_CATEGORY  (default "678" = Motoren)
   RADAR_BRON         (default "2dehands")
+  RADAR_BEWAAR_DAGEN (default "5")            — leads ouder dan X dagen opruimen
 """
 import json
 import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -45,6 +46,7 @@ MAX_ITEMS = int(os.environ.get("RADAR_MAX_ITEMS", "150"))
 SEARCH_URL = os.environ.get("RADAR_SEARCH_URL", "https://www.2dehands.be/lrp/api/search")
 L1_CATEGORY = os.environ.get("RADAR_L1_CATEGORY", "678")  # 678 = Motoren
 BRON = os.environ.get("RADAR_BRON", "2dehands")
+BEWAAR_DAGEN = int(os.environ.get("RADAR_BEWAAR_DAGEN", "5"))
 SITE_BASE = "https://www.2dehands.be"
 
 HEADERS = {
@@ -255,6 +257,32 @@ def insert_leads(leads):
         fail(f"Insert mislukt ({r.status_code}): {r.text[:500]}")
 
 
+def ruim_oude_leads_op():
+    """Verwijdert leads die langer dan BEWAAR_DAGEN dagen geleden zijn gevonden,
+    zodat de inkoop-tab alleen verse advertenties toont en niet de hele maand
+    volloopt. Leads die de gebruiker naar de inkoop heeft gezet ('naar_inkoop')
+    blijven altijd bewaard. Geeft het aantal verwijderde rijen terug."""
+    if BEWAAR_DAGEN <= 0:
+        return 0
+    grens = (datetime.now(timezone.utc) - timedelta(days=BEWAAR_DAGEN)).isoformat()
+    try:
+        r = requests.delete(
+            f"{SUPABASE_URL}/rest/v1/inkoop_leads",
+            params={"gevonden_op": f"lt.{grens}", "status": "neq.naar_inkoop"},
+            headers=sb_headers({"Prefer": "return=representation"}),
+            timeout=60,
+        )
+        if r.status_code >= 300:
+            log(f"WAARSCHUWING: opruimen mislukt ({r.status_code}): {r.text[:300]}")
+            return 0
+        aantal = len(r.json()) if r.text.strip().startswith("[") else 0
+        log(f"{aantal} lead(s) ouder dan {BEWAAR_DAGEN} dagen opgeruimd.")
+        return aantal
+    except requests.RequestException as e:
+        log(f"WAARSCHUWING: opruimen mislukt: {e}")
+        return 0
+
+
 def update_status(http_ok, gevonden, gemapt, nieuw, waarschuwing):
     body = {
         "id": 1,
@@ -380,6 +408,11 @@ def main():
         log(f"{nieuw_count} nieuwe leads (na dedup tegen bestaande).")
         insert_leads(nieuw)
         nieuwe_particulier = [m for m in nieuw if m["is_particulier"]]
+
+    # Oude leads opruimen (verse tab). Alleen als de run gezond was, zodat een
+    # mislukte API-aanroep niet per ongeluk de hele lijst leegveegt.
+    if http_ok and not waarschuwing:
+        ruim_oude_leads_op()
 
     update_status(http_ok, len(listings), gemapt, nieuw_count, waarschuwing)
     stuur_digest(nieuwe_particulier)
