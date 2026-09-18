@@ -20,8 +20,12 @@ CREATE TABLE IF NOT EXISTS public.inkoop_leads (
 );
 CREATE INDEX IF NOT EXISTS inkoop_leads_status_idx   ON public.inkoop_leads (status);
 CREATE INDEX IF NOT EXISTS inkoop_leads_gevonden_idx ON public.inkoop_leads (gevonden_op DESC);
--- Opruimen: de dagelijkse job verwijdert leads ouder dan RADAR_BEWAAR_DAGEN
--- (default 5) op basis van gevonden_op; status 'naar_inkoop' blijft altijd staan.
+-- Opruimen: de dagelijkse job verwijdert leads ouder dan het ingestelde aantal
+-- dagen (instellingen.inkoop_bewaar_dagen, default 5; fallback env RADAR_BEWAAR_DAGEN)
+-- op basis van gevonden_op; status 'naar_inkoop' blijft altijd staan.
+-- De admin stelt dit aantal in op de Instellingen-pagina:
+--   ALTER TABLE public.instellingen
+--     ADD COLUMN IF NOT EXISTS inkoop_bewaar_dagen int NOT NULL DEFAULT 5;
 
 ALTER TABLE public.inkoop_leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY inkoop_leads_admin ON public.inkoop_leads

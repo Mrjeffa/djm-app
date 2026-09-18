@@ -21,7 +21,8 @@ Env (GitHub Actions repo-secrets / vars):
   RADAR_SEARCH_URL   (default 2dehands.be)
   RADAR_L1_CATEGORY  (default "678" = Motoren)
   RADAR_BRON         (default "2dehands")
-  RADAR_BEWAAR_DAGEN (default "5")            — leads ouder dan X dagen opruimen
+  RADAR_BEWAAR_DAGEN (default "5")            — fallback; de admin stelt dit in
+                                               via instellingen.inkoop_bewaar_dagen
 """
 import json
 import os
@@ -257,14 +258,34 @@ def insert_leads(leads):
         fail(f"Insert mislukt ({r.status_code}): {r.text[:500]}")
 
 
+def haal_bewaar_dagen():
+    """Leest het aantal bewaar-dagen uit de instellingen-tabel (door de admin
+    in te stellen: 's winters minder kijken dan in het voorjaar). Valt terug op
+    de env-default RADAR_BEWAAR_DAGEN als de kolom/rij ontbreekt."""
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/instellingen",
+            params={"select": "inkoop_bewaar_dagen", "id": "eq.1"},
+            headers=sb_headers(), timeout=30,
+        )
+        if r.status_code < 300:
+            rijen = r.json()
+            if rijen and rijen[0].get("inkoop_bewaar_dagen") is not None:
+                return int(rijen[0]["inkoop_bewaar_dagen"])
+    except (requests.RequestException, ValueError, KeyError) as e:
+        log(f"WAARSCHUWING: bewaar-dagen lezen mislukt, val terug op default: {e}")
+    return BEWAAR_DAGEN
+
+
 def ruim_oude_leads_op():
-    """Verwijdert leads die langer dan BEWAAR_DAGEN dagen geleden zijn gevonden,
-    zodat de inkoop-tab alleen verse advertenties toont en niet de hele maand
-    volloopt. Leads die de gebruiker naar de inkoop heeft gezet ('naar_inkoop')
-    blijven altijd bewaard. Geeft het aantal verwijderde rijen terug."""
-    if BEWAAR_DAGEN <= 0:
+    """Verwijdert leads die langer dan de ingestelde bewaar-dagen geleden zijn
+    gevonden, zodat de inkoop-tab alleen verse advertenties toont en niet de
+    hele maand volloopt. Leads die de gebruiker naar de inkoop heeft gezet
+    ('naar_inkoop') blijven altijd bewaard. Geeft het aantal verwijderde rijen terug."""
+    dagen = haal_bewaar_dagen()
+    if dagen <= 0:
         return 0
-    grens = (datetime.now(timezone.utc) - timedelta(days=BEWAAR_DAGEN)).isoformat()
+    grens = (datetime.now(timezone.utc) - timedelta(days=dagen)).isoformat()
     try:
         r = requests.delete(
             f"{SUPABASE_URL}/rest/v1/inkoop_leads",
@@ -276,7 +297,7 @@ def ruim_oude_leads_op():
             log(f"WAARSCHUWING: opruimen mislukt ({r.status_code}): {r.text[:300]}")
             return 0
         aantal = len(r.json()) if r.text.strip().startswith("[") else 0
-        log(f"{aantal} lead(s) ouder dan {BEWAAR_DAGEN} dagen opgeruimd.")
+        log(f"{aantal} lead(s) ouder dan {dagen} dagen opgeruimd.")
         return aantal
     except requests.RequestException as e:
         log(f"WAARSCHUWING: opruimen mislukt: {e}")

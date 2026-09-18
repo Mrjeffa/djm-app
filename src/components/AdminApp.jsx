@@ -3702,7 +3702,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{}}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -3725,6 +3725,15 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
+
+  // Inkoop-radar: bewaar-dagen + populaire modellen
+  const [dagen,setDagen]=useState(inkoopBewaarDagen);
+  const [dagenOk,setDagenOk]=useState(false);
+  useEffect(()=>setDagen(inkoopBewaarDagen),[inkoopBewaarDagen]);
+  const [nieuwTerm,setNieuwTerm]=useState("");
+  const [termBezig,setTermBezig]=useState(false);
+  const slaDagenOp=async()=>{ const n=await onSaveInkoopDagen(dagen); if(n) setDagen(n); setDagenOk(true); setTimeout(()=>setDagenOk(false),2000); };
+  const voegTermToe=async()=>{ const t=nieuwTerm.trim(); if(!t) return; setTermBezig(true); try{ await onAddPopulair(t); setNieuwTerm(""); } finally { setTermBezig(false); } };
 
   const exporteerKlanten = async () => {
     const {utils,writeFile} = await import("xlsx");
@@ -4045,6 +4054,52 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
         </button>
       </div>
 
+      {/* Inkoop-radar */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={s.sectionLabel}>Inkoop-radar</div>
+
+        {/* Bewaar-dagen */}
+        <div style={{marginBottom:22,paddingBottom:22,borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:6,color:T.text}}>Advertenties bewaren</div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+            Advertenties ouder dan dit aantal dagen verdwijnen automatisch uit de inkoop-tab. In de winter kun je dit lager zetten dan in het voorjaar.
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input style={{...s.input,width:80,textAlign:"center"}} type="number" min="1" max="60"
+              value={dagen} onChange={e=>setDagen(e.target.value)}/>
+            <span style={{fontSize:13,color:T.muted}}>dagen</span>
+            <button style={{...s.btn,width:"auto",padding:"9px 18px",background:dagenOk?T.green:T.accent,marginLeft:4}} onClick={slaDagenOp}>
+              {dagenOk?"✓ Opgeslagen":"Opslaan"}
+            </button>
+          </div>
+        </div>
+
+        {/* Populaire modellen */}
+        <div>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:6,color:T.text}}>🔥 Populaire modellen</div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+            Vul de modellen in die op motoroccasion.nl bovenaan "Meest getoond in deze maand" staan — merk + model of los trefwoord (bijv. "Kawasaki Z900", "MT-07"). Leads met dat woord in de titel/omschrijving komen in de inkoop-tab bovenaan met een 🔥-badge. Er is geen limiet; check dit maandelijks even.
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            <input style={{...s.input,flex:1,minWidth:180}} value={nieuwTerm} onChange={e=>setNieuwTerm(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&voegTermToe()} placeholder="bijv. Kawasaki Z900"/>
+            <button onClick={voegTermToe} disabled={termBezig||!nieuwTerm.trim()} style={{...s.btn,width:"auto",padding:"9px 18px",opacity:(termBezig||!nieuwTerm.trim())?0.5:1}}>Toevoegen</button>
+          </div>
+          {inkoopPopulair.length===0
+            ? <div style={{fontSize:12,color:T.muted}}>Nog geen populaire modellen ingesteld.</div>
+            : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {inkoopPopulair.map((p,i)=>(
+                  <span key={p.id} style={{display:"inline-flex",alignItems:"center",gap:7,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 12px",fontSize:13,color:T.text}}>
+                    <span style={{color:T.muted,fontSize:11,fontWeight:700}}>{i+1}.</span>
+                    {p.term}
+                    <button onClick={()=>onDeletePopulair(p.id)} title="Verwijderen"
+                      style={{border:"none",background:"transparent",color:T.muted,cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>
+                  </span>
+                ))}
+              </div>}
+        </div>
+      </div>
+
       {/* Gegevens exporteren / importeren */}
       <div style={{...s.card,marginTop:16}}>
         <div style={s.sectionLabel}>Gegevens exporteren / importeren</div>
@@ -4092,11 +4147,18 @@ const LEAD_STATUS = {
   naar_inkoop: { label:"Naar inkoop", kleur:"#16A34A" },
 };
 
-// Aantal dagen dat een lead zichtbaar blijft; moet gelijk zijn aan
-// RADAR_BEWAAR_DAGEN in de ophaal-job (die de rijen ook echt opruimt).
-const BEWAAR_DAGEN = 5;
+// Bepaalt of een lead "van vandaag" is (voor de NIEUW-badge): de advertentie-
+// datum als die bekend is, anders wanneer de radar hem vond. Alles ouder dan
+// vandaag is niet meer nieuw.
+function isVandaag(l){
+  const iso=l.advertentie_datum||l.gevonden_op;
+  if(!iso) return false;
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return false;
+  return d.toDateString()===new Date().toDateString();
+}
 
-function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=>{}, onRefresh=async()=>{}, onAddPopulair=async()=>{}, onDeletePopulair=async()=>{}}){
+function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onUpdateStatus=()=>{}, onRefresh=async()=>{}}){
   const mob=useIsMobile();
   const [verversen,setVerversen]=useState(false);
   const ververs=async()=>{ setVerversen(true); try{ await onRefresh(); } finally { setVerversen(false); } };
@@ -4107,14 +4169,13 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
   const [toonDealers,setToonDealers]=useState(false);
   const [toonGenegeerd,setToonGenegeerd]=useState(false);
   const [alleenPopulair,setAlleenPopulair]=useState(false);
-  const [beheerOpen,setBeheerOpen]=useState(false);
-  const [nieuwTerm,setNieuwTerm]=useState("");
-  const [bezig,setBezig]=useState(false);
 
   const fmt=(iso)=>{ if(!iso) return ""; const d=new Date(iso); return isNaN(d.getTime())?"":d.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}); };
   const fmtDT=(iso)=>{ if(!iso) return "—"; const d=new Date(iso); return isNaN(d.getTime())?"—":d.toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); };
 
-  const verseGrens=Date.now()-BEWAAR_DAGEN*86400000;
+  // Vangnet: leads ouder dan de ingestelde bewaar-dagen verbergen (de job ruimt
+  // ze ook echt op). bewaarDagen wordt op de Instellingen-pagina beheerd.
+  const verseGrens=Date.now()-(bewaarDagen>0?bewaarDagen:5)*86400000;
 
   // Rang van de best matchende populaire term (laagste rang wint), of null.
   const populairRang=(l)=>{
@@ -4130,7 +4191,6 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
   const zichtbaar=leads.filter(l=>{
     if(!toonDealers && l.is_particulier===false) return false;
     if(!toonGenegeerd && l.status==="genegeerd") return false;
-    // Vangnet: leads ouder dan BEWAAR_DAGEN verbergen (de job ruimt ze ook op).
     // Wat naar de inkoop is gezet blijft altijd zichtbaar.
     if(l.status!=="naar_inkoop" && l.gevonden_op){
       const t=new Date(l.gevonden_op).getTime();
@@ -4151,13 +4211,6 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
     if(rb==null) return -1;
     return ra-rb;
   });
-
-  const voegToe=async()=>{
-    const t=nieuwTerm.trim();
-    if(!t) return;
-    setBezig(true);
-    try{ await onAddPopulair(t); setNieuwTerm(""); } finally { setBezig(false); }
-  };
 
   const statusKnop=(lead,key)=>{
     const actief=lead.status===key;
@@ -4184,7 +4237,7 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
       {/* Statusregel */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <div style={{fontSize:12,color:T.muted}}>
-          {leads.filter(l=>l.status==="nieuw").length} nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
+          {leads.filter(l=>l.status==="nieuw"&&isVandaag(l)).length} vandaag nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button onClick={()=>setAlleenPopulair(v=>!v)}
@@ -4196,41 +4249,6 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
             {verversen?"Verversen…":"Ververs leads"}
           </button>
         </div>
-      </div>
-
-      {/* Beheer populaire modellen (top-lijst van motoroccasion.nl) */}
-      <div style={{...s.card,marginBottom:16,padding:"12px 14px"}}>
-        <div onClick={()=>setBeheerOpen(v=>!v)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:16,color:T.text}}>🔥 Populaire modellen</span>
-            <span style={{fontSize:12,color:T.muted}}>{populair.length} in de lijst · staan bovenaan je zoekresultaten</span>
-          </div>
-          <span style={{color:T.muted,fontSize:13}}>{beheerOpen?"▲":"▼"}</span>
-        </div>
-        {beheerOpen&&(
-          <div style={{marginTop:12}}>
-            <div style={{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.6}}>
-              Vul hier de modellen in die op motoroccasion.nl bovenaan "Meest getoond in deze maand" staan — merk + model of los trefwoord (bijv. "Kawasaki Z900", "MT-07"). Leads met dat woord in de titel/omschrijving komen automatisch bovenaan met een 🔥-badge. Check dit maandelijks even.
-            </div>
-            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-              <input style={{...s.input,flex:1,minWidth:180}} value={nieuwTerm} onChange={e=>setNieuwTerm(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter")voegToe();}} placeholder="bijv. Kawasaki Z900"/>
-              <button onClick={voegToe} disabled={bezig||!nieuwTerm.trim()} style={{...s.btn,opacity:(bezig||!nieuwTerm.trim())?0.5:1}}>Toevoegen</button>
-            </div>
-            {populair.length===0
-              ? <div style={{fontSize:12,color:T.muted}}>Nog geen populaire modellen ingesteld.</div>
-              : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                  {populair.map((p,i)=>(
-                    <span key={p.id} style={{display:"inline-flex",alignItems:"center",gap:7,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 12px",fontSize:13,color:T.text}}>
-                      <span style={{color:T.muted,fontSize:11,fontWeight:700}}>{i+1}.</span>
-                      {p.term}
-                      <button onClick={()=>onDeletePopulair(p.id)} title="Verwijderen"
-                        style={{border:"none",background:"transparent",color:T.muted,cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>
-                    </span>
-                  ))}
-                </div>}
-          </div>
-        )}
       </div>
 
       {/* Filters */}
@@ -4274,6 +4292,7 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
         {zichtbaar.map(l=>{
           const st=LEAD_STATUS[l.status]||LEAD_STATUS.nieuw;
           const pop=populairRang(l)!=null;
+          const nieuwVandaag=l.status==="nieuw"&&isVandaag(l);
           return(
             <div key={l.ad_id} style={{...s.card,padding:0,overflow:"hidden",display:"flex",gap:0,opacity:l.status==="genegeerd"?0.55:1}}>
               <div style={{width:mob?96:140,flexShrink:0,background:T.surf2,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -4289,7 +4308,11 @@ function InkoopRadarPage({leads=[], status=null, populair=[], onUpdateStatus=()=
                   </a>
                   <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
                     {pop&&<span style={{...s.badge(T.accent),flexShrink:0}}>🔥 Populair</span>}
-                    <span style={{...s.badge(st.kleur),flexShrink:0}}>{st.label}</span>
+                    {/* NIEUW alleen voor onbehandelde leads van vandaag; overige
+                        statussen (bekeken/genegeerd/naar inkoop) tonen hun label. */}
+                    {l.status==="nieuw"
+                      ? (nieuwVandaag&&<span style={{...s.badge(T.red),flexShrink:0}}>NIEUW</span>)
+                      : <span style={{...s.badge(st.kleur),flexShrink:0}}>{st.label}</span>}
                   </div>
                 </div>
                 <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:T.muted}}>
@@ -4443,7 +4466,7 @@ export default function AdminApp(){
         }));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
@@ -4451,6 +4474,7 @@ export default function AdminApp(){
         if(inst.data?.afspraak_soorten?.length) setAfspraakSoorten(inst.data.afspraak_soorten);
         if(inst.data?.medewerkers) setMedewerkers(inst.data.medewerkers);
         if(inst.data?.afspraak_categorieen) setAfspraakCategorieen(inst.data.afspraak_categorieen);
+        if(inst.data?.inkoop_bewaar_dagen != null) setInkoopBewaarDagen(inst.data.inkoop_bewaar_dagen);
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -5155,6 +5179,15 @@ export default function AdminApp(){
   const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [medewerkers, setMedewerkers] = useState([]);
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
+  const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
+
+  const slaInkoopDagenOp = async (dagen) => {
+    const n = Math.max(1, Math.min(60, parseInt(dagen)||5));
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ inkoop_bewaar_dagen: n }).eq("id", 1);
+    setInkoopBewaarDagen(n);
+    return n;
+  };
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
@@ -5317,8 +5350,8 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
-      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
+      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 
