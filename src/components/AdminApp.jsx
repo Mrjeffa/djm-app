@@ -5334,7 +5334,6 @@ export default function AdminApp(){
     {id:"inkoop",icon:"⌖",label:"Inkoop"},
     {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
-  const inkoopNieuw = inkoopLeads.filter(l=>l.status==="nieuw").length;
 
   if(laden) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100dvh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
@@ -5387,9 +5386,6 @@ export default function AdminApp(){
             <button key={n.id} onClick={()=>setPage(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${page===n.id?T.accent:"transparent"}`,color:page===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:page===n.id?600:400}}>
               <span style={{fontSize:15}}>{n.icon}</span>
               <span>{n.label}</span>
-              {n.id==="inkoop"&&inkoopNieuw>0&&(
-                <span style={{position:"absolute",top:4,right:"50%",marginRight:-18,background:T.accent,color:"#fff",borderRadius:8,fontSize:9,fontWeight:700,padding:"0 5px",minWidth:14,textAlign:"center"}}>{inkoopNieuw}</span>
-              )}
             </button>
           ))}
         </div>
@@ -5409,9 +5405,6 @@ export default function AdminApp(){
             <div key={n.id} style={s.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
               <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
               <span>{n.label}</span>
-              {n.id==="inkoop"&&inkoopNieuw>0&&(
-                <span style={{marginLeft:"auto",background:T.accent,color:"#fff",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 7px",minWidth:16,textAlign:"center"}}>{inkoopNieuw}</span>
-              )}
             </div>
           ))}
         </nav>
