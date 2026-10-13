@@ -24,9 +24,17 @@ on:
         options: [normaal, diagnose]
         default: normaal
       test_model:
-        description: "Model voor de diagnose/prijstest (bijv. Kawasaki Z900)"
+        description: "Prijstest: model als 'Merk Model' (bijv. Kawasaki Z900)"
         required: false
         default: "Kawasaki Z900"
+      test_bouwjaar:
+        description: "Prijstest: bouwjaar"
+        required: false
+        default: "2020"
+      test_km:
+        description: "Prijstest: km-stand"
+        required: false
+        default: "20000"
 
 concurrency:
   group: inkoop-radar
@@ -57,10 +65,15 @@ jobs:
           RADAR_L1_CATEGORY: ${{ vars.RADAR_L1_CATEGORY || '678' }}
           RADAR_SEARCH_URL: ${{ vars.RADAR_SEARCH_URL || 'https://www.2dehands.be/lrp/api/search' }}
           RADAR_BRON: ${{ vars.RADAR_BRON || '2dehands' }}
+          RADAR_MO_MAX: ${{ vars.RADAR_MO_MAX || '40' }}
         run: python inkoop-radar/fetch_leads.py
       - name: Diagnose (dry-run — schrijft niets weg, stuurt geen mail)
         if: ${{ github.event.inputs.modus == 'diagnose' }}
         env:
+          # Alleen om leads te LEZEN voor de droogtest; diagnose.py schrijft niets.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TEST_MODEL: ${{ github.event.inputs.test_model }}
-          DIAGNOSE_2DEHANDS: "0"
+          TEST_BOUWJAAR: ${{ github.event.inputs.test_bouwjaar }}
+          TEST_KM: ${{ github.event.inputs.test_km }}
         run: python inkoop-radar/diagnose.py

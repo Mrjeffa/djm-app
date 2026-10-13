@@ -4158,6 +4158,109 @@ function isVandaag(l){
   return d.toDateString()===new Date().toDateString();
 }
 
+// ── Inkoopadvies (populaire modellen, alleen particulier) ──
+// Het verkoopdoel (gemiddelde van max. 3 goedkoopste vergelijkbare op
+// Motoroccasion) berekent de ophaal-job; zie inkoop-radar/prijzen.py.
+const OPENINGSBOD_ONDER_DOEL = 1500;
+const MAX_ONDER_DOEL = 1000;
+const GEEL_BOVEN_MAX = 1000;
+const afrondOp50 = (n) => Math.round(n/50)*50;
+const euro = (n) => `€${Math.round(n).toLocaleString("nl-NL")}`;
+
+function inkoopAdvies(l){
+  if(!l.mo_verkoopdoel) return null;
+  const doel=l.mo_verkoopdoel;
+  const openingsbod=afrondOp50(doel-OPENINGSBOD_ONDER_DOEL);
+  const max=doel-MAX_ONDER_DOEL;
+  const vraag=l.prijs;
+  const kleur = vraag==null ? "grijs" : vraag<=max ? "groen" : vraag<=max+GEEL_BOVEN_MAX ? "geel" : "grijs";
+  // Vraagt de verkoper al minder dan ons openingsbod: bied € 500 onder zijn vraagprijs.
+  const bod = (vraag!=null && vraag<openingsbod) ? vraag-500 : openingsbod;
+  return {doel, openingsbod, max, kleur, bod};
+}
+
+function bodTekst(l, model, bod){
+  return `Hoi, ik heb interesse in je ${model} (${l.bouwjaar}, ${Number(l.km).toLocaleString("nl-NL")} km). `
+    + `Ik bied je ${euro(bod)}. Als dat bespreekbaar is, kom ik hem graag bekijken.\n`
+    + `Groet, Jeffrey – De Jonge Motoren, Tholen`;
+}
+
+async function kopieerNaarKlembord(tekst){
+  try{ await navigator.clipboard.writeText(tekst); return true; }
+  catch{
+    // Fallback voor browsers/webviews zonder Clipboard-API
+    const ta=document.createElement("textarea");
+    ta.value=tekst; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand("copy"); }catch{}
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+function InkoopPrijsBlok({lead, model}){
+  const [gekopieerd,setGekopieerd]=useState(false);
+  const advies=inkoopAdvies(lead);
+  const kleurCode={groen:T.green, geel:T.yellow, grijs:T.muted}[advies?.kleur||"grijs"];
+  const vergelijkers=Array.isArray(lead.mo_vergelijkers)?lead.mo_vergelijkers:[];
+  const kopieer=async()=>{
+    if(await kopieerNaarKlembord(bodTekst(lead, model, advies.bod))){
+      setGekopieerd(true); setTimeout(()=>setGekopieerd(false),2000);
+    }
+  };
+  const kolom=(label,waarde,sub)=>(
+    <div style={{minWidth:0}}>
+      <div style={{fontSize:10,color:T.muted,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+      <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:16,color:T.text,lineHeight:1.2}}>{waarde}</div>
+      {sub&&<div style={{fontSize:11,color:T.muted}}>{sub}</div>}
+    </div>
+  );
+
+  return(
+    <div style={{marginTop:4,padding:"10px 12px",borderRadius:6,border:`1px solid ${kleurCode}55`,background:`${kleurCode}12`}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,alignItems:"start"}}>
+        {kolom("Vraagprijs", lead.prijs!=null?euro(lead.prijs):"n.o.t.k.",
+          lead.bouwjaar||lead.km!=null?[lead.bouwjaar, lead.km!=null?`${Number(lead.km).toLocaleString("nl-NL")} km`:null].filter(Boolean).join(" · "):null)}
+        {advies
+          ? kolom("Verkoopdoel MO", euro(advies.doel), `${lead.mo_aantal} vergelijker${lead.mo_aantal===1?"":"s"}`)
+          : kolom("Verkoopdoel MO", <span style={{fontSize:14,color:T.muted}}>{lead.mo_status==="te_weinig_data"?"te weinig data":lead.mo_status==="fout"?"niet gelukt":"volgt bij volgende run"}</span>,
+              lead.mo_toelichting||null)}
+        {advies&&kolom("Inkoop", `${euro(advies.openingsbod)} – ${euro(advies.max)}`, "openingsbod – max")}
+      </div>
+      {!advies&&lead.mo_url&&(
+        <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:8,fontSize:12,color:T.muted}}>
+          Zelf bekijken op Motoroccasion ↗
+        </a>
+      )}
+      {advies&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={kopieer}
+            style={{...s.btn,padding:"7px 14px",fontSize:13,background:gekopieerd?T.green:T.accent}}>
+            {gekopieerd?"✓ Gekopieerd":`Kopieer bod (${euro(advies.bod)})`}
+          </button>
+          {lead.mo_url&&(
+            <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.muted}}>
+              Motoroccasion ↗
+            </a>
+          )}
+          {vergelijkers.length>0&&(
+            <details style={{fontSize:12,color:T.muted}}>
+              <summary style={{cursor:"pointer"}}>Vergelijkers bekijken</summary>
+              <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
+                {vergelijkers.map((v,i)=>(
+                  <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                    {euro(v.prijs)} · {v.bouwjaar} · {Number(v.km).toLocaleString("nl-NL")} km{v.titel?` · ${v.titel}`:""} ↗
+                  </a>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onUpdateStatus=()=>{}, onRefresh=async()=>{}}){
   const mob=useIsMobile();
   const [verversen,setVerversen]=useState(false);
@@ -4177,16 +4280,17 @@ function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onU
   // ze ook echt op). bewaarDagen wordt op de Instellingen-pagina beheerd.
   const verseGrens=Date.now()-(bewaarDagen>0?bewaarDagen:5)*86400000;
 
-  // Rang van de best matchende populaire term (laagste rang wint), of null.
-  const populairRang=(l)=>{
+  // Best matchende populaire term (laagste rang wint), of null.
+  const populairMatch=(l)=>{
     const hooi=((l.titel||"")+" "+(l.beschrijving||"")).toLowerCase();
     let best=null;
     for(const p of populair){
       const t=(p.term||"").trim().toLowerCase();
-      if(t && hooi.includes(t) && (best==null||p.rang<best)) best=p.rang;
+      if(t && hooi.includes(t) && (best==null||p.rang<best.rang)) best=p;
     }
     return best;
   };
+  const populairRang=(l)=>populairMatch(l)?.rang ?? null;
 
   const zichtbaar=leads.filter(l=>{
     if(!toonDealers && l.is_particulier===false) return false;
@@ -4291,7 +4395,8 @@ function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onU
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {zichtbaar.map(l=>{
           const st=LEAD_STATUS[l.status]||LEAD_STATUS.nieuw;
-          const pop=populairRang(l)!=null;
+          const match=populairMatch(l);
+          const pop=match!=null;
           const nieuwVandaag=l.status==="nieuw"&&isVandaag(l);
           return(
             <div key={l.ad_id} style={{...s.card,padding:0,overflow:"hidden",display:"flex",gap:0,opacity:l.status==="genegeerd"?0.55:1}}>
@@ -4324,6 +4429,7 @@ function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onU
                   {!l.is_particulier&&<span style={{...s.badge(T.muted),fontSize:10}}>Dealer</span>}
                   <span>Gevonden {fmt(l.gevonden_op)}</span>
                 </div>
+                {pop&&l.is_particulier!==false&&<InkoopPrijsBlok lead={l} model={l.mo_model||match.term}/>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
                   {["bekeken","genegeerd","naar_inkoop"].map(k=>statusKnop(l,k))}
                 </div>

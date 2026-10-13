@@ -1,442 +1,104 @@
 #!/usr/bin/env python3
 """
-Diagnose voor de inkoop-radar — DRY-RUN: leest alleen en print naar de log.
-Schrijft niets naar Supabase en verstuurt geen mail.
+Diagnose / prijstest voor de inkoop-radar — DRY-RUN: leest alleen en print naar
+de log. Schrijft niets naar Supabase en verstuurt geen mail.
 
 Start via GitHub Actions → Inkoop-radar → Run workflow → modus "diagnose".
-Handig als motoroccasion.nl of 2dehands hun site/API aanpassen: de log laat
-dan zien hoe de pagina's en advertentievelden er nu uitzien.
+Gebruik het als een van de sites iets lijkt te hebben veranderd, of om te zien
+welk verkoopdoel de radar voor een model/bouwjaar/km zou bepalen.
 
-Env:
-  TEST_MODEL   (default "Kawasaki Z900") — model om op motoroccasion te bekijken
+  1. 2dehands: leveren de advertenties nog bouwjaar, km en adverteerder-type?
+  2. Motoroccasion: prijstest voor TEST_MODEL / TEST_BOUWJAAR / TEST_KM
+     (precies hetzelfde ene zoekverzoek als de dagelijkse job).
+  3. Als Supabase-gegevens beschikbaar zijn: wat de job voor de huidige
+     populaire leads zou berekenen (alleen lezen).
+
+Env: TEST_MODEL (default "Kawasaki Z900"), TEST_BOUWJAAR (2020), TEST_KM (20000)
 """
-import json
 import os
-import re
 
 import requests
-from bs4 import BeautifulSoup
+
+import fetch_leads as fl
+import motoroccasion as mo
+from prijzen import bepaal_verkoopdoel
 
 TEST_MODEL = (os.environ.get("TEST_MODEL") or "Kawasaki Z900").strip()
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-    "Accept-Language": "nl-NL,nl;q=0.9",
-}
+TEST_BOUWJAAR = int(os.environ.get("TEST_BOUWJAAR") or 2020)
+TEST_KM = int(os.environ.get("TEST_KM") or 20000)
 
 
 def kop(t):
-    print(f"\n{'=' * 20} {t} {'=' * 20}", flush=True)
+    print(f"\n{'=' * 16} {t} {'=' * 16}", flush=True)
 
 
-def kort(s, n=600):
-    s = re.sub(r"\s+", " ", s or "").strip()
-    return s if len(s) <= n else s[:n] + " …"
-
-
-def slug(t):
-    return re.sub(r"[^a-z0-9]+", "-", t.lower()).strip("-")
-
-
-# ── motoroccasion.nl ─────────────────────────────────────────────────────────
-def dump_pagina(url, kaarten=2):
-    kop(f"GET {url}")
+def check_2dehands():
+    kop("1) 2dehands — velden in de nieuwste motoradvertenties")
+    params = {"l1CategoryId": fl.L1_CATEGORY, "limit": "30", "offset": "0", "viewOptions": "list-view",
+              "searchInTitleAndDescription": "true", "sortBy": "SORT_INDEX", "sortOrder": "DECREASING"}
     try:
-        r = requests.get(url, headers=HEADERS, timeout=30, allow_redirects=True)
-    except requests.RequestException as e:
-        print(f"FOUT: {e}")
-        return None
-    print(f"status={r.status_code} final={r.url} len={len(r.text)} type={r.headers.get('content-type')}")
-    if "text/plain" in (r.headers.get("content-type") or ""):
-        print(kort(r.text, 1500))
-        return None
-    soup = BeautifulSoup(r.text, "html.parser")
-    print(f"title: {kort(soup.title.string if soup.title else '', 200)}")
-
-    # Formulieren (zoek/sorteer/filters)
-    for f in soup.find_all("form")[:6]:
-        velden = []
-        for el in f.find_all(["input", "select"])[:25]:
-            naam = el.get("name")
-            if not naam:
-                continue
-            if el.name == "select":
-                opts = [f"{o.get('value')}={kort(o.get_text(), 30)}" for o in el.find_all("option")[:12]]
-                velden.append(f"{naam}[{'; '.join(opts)}]")
-            else:
-                velden.append(f"{naam}={el.get('value', '')}({el.get('type', '')})")
-        print(f"FORM action={f.get('action')} method={f.get('method')} :: {kort(' | '.join(velden), 1500)}")
-
-    # Scripts met data (JSON/state) en externe scripts
-    for s in soup.find_all("script"):
-        src = s.get("src")
-        txt = s.string or s.get_text() or ""
-        if src:
-            if "motoroccasion" in src or src.startswith("/"):
-                print(f"SCRIPT src={src}")
-            continue
-        if s.get("type") == "application/ld+json" or s.get("id") == "__NEXT_DATA__" \
-                or re.search(r"prijs|price|bouwjaar|kilometer|__INITIAL|window\.\w+\s*=", txt, re.I):
-            print(f"SCRIPT type={s.get('type')} id={s.get('id')} :: {kort(txt, 1200)}")
-
-    # Sorteer-/pagineerlinks
-    gezien = set()
-    for a in soup.find_all("a", href=True):
-        h = a["href"]
-        if re.search(r"sort|order|volgorde|prijs|price|page|pagina|[?&]p=", h, re.I) and h not in gezien:
-            gezien.add(h)
-            print(f"LINK {kort(a.get_text(), 40)} -> {h}")
-            if len(gezien) >= 25:
-                break
-
-    # Advertentielinks + de HTML van de eerste kaarten
-    adlinks = [a for a in soup.find_all("a", href=True) if re.search(r"-m\d+\.html", a["href"])]
-    uniek = list(dict.fromkeys(a["href"] for a in adlinks))
-    print(f"ADVERTENTIELINKS: {len(uniek)} uniek; eerste: {uniek[:5]}")
-    getoond = 0
-    for a in adlinks:
-        kaart = a
-        for _ in range(6):  # omhoog tot een blok met een €-prijs erin
-            if kaart.parent is None:
-                break
-            kaart = kaart.parent
-            if "€" in kaart.get_text() and len(kaart.get_text()) > 60:
-                break
-        print(f"KAART-HTML ({kaart.name} class={kaart.get('class')}): {kort(str(kaart), 3500)}")
-        print(f"KAART-TEKST: {kort(kaart.get_text(' '), 600)}")
-        getoond += 1
-        if getoond >= kaarten:
-            break
-    return soup
-
-
-def structuur(obj, pad="$", diepte=0, max_diepte=4):
-    """Print de vorm van een JSON-object (sleutels, types, lijstlengtes)."""
-    if diepte > max_diepte:
-        return
-    if isinstance(obj, dict):
-        print(f"{'  ' * diepte}{pad}: dict({len(obj)}) sleutels={list(obj.keys())[:40]}")
-        for k, v in list(obj.items())[:40]:
-            if isinstance(v, (dict, list)):
-                structuur(v, f"{pad}.{k}", diepte + 1, max_diepte)
-    elif isinstance(obj, list):
-        print(f"{'  ' * diepte}{pad}: list({len(obj)})")
-        if obj and isinstance(obj[0], (dict, list)):
-            structuur(obj[0], f"{pad}[0]", diepte + 1, max_diepte)
-
-
-def dump_json(url):
-    kop(f"GET (JSON) {url}")
-    try:
-        r = requests.get(url, headers={**HEADERS, "Accept": "application/json"}, timeout=30)
-        print(f"status={r.status_code} final={r.url} len={len(r.text)} type={r.headers.get('content-type')}")
-        data = r.json()
-    except (requests.RequestException, ValueError) as e:
-        print(f"FOUT: {e}")
-        return None
-    structuur(data)
-    # Zoek de eerste lijst met dicts die op advertenties lijkt en toon 2 items volledig.
-    def vind(o):
-        if isinstance(o, list) and o and isinstance(o[0], dict) and len(o) >= 3:
-            return o
-        if isinstance(o, dict):
-            for v in o.values():
-                x = vind(v)
-                if x:
-                    return x
-        return None
-    items = vind(data)
-    if items:
-        print(f"EERSTE ITEMLIJST: {len(items)} items")
-        for it in items[:2]:
-            print(f"ITEM: {kort(json.dumps(it, ensure_ascii=False), 3000)}")
-    # Ook alles wat naar paginering/sortering/totaal ruikt
-    if isinstance(data, dict):
-        for k, v in data.items():
-            if re.search(r"page|total|count|sort|order|meta|pagination|links", k, re.I):
-                print(f"META {k}: {kort(json.dumps(v, ensure_ascii=False), 800)}")
-    return data
-
-
-def dump_js(url, patroon=r"sort|order|price|prijs|page"):
-    kop(f"JS {url}")
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=30)
-    except requests.RequestException as e:
-        print(f"FOUT: {e}")
-        return
-    print(f"status={r.status_code} len={len(r.text)}")
-    gezien = 0
-    for m in re.finditer(patroon, r.text, re.I):
-        s = max(0, m.start() - 120)
-        print(f"…{kort(r.text[s:m.end() + 160], 300)}…")
-        gezien += 1
-        if gezien >= 25:
-            break
-
-
-def mo_json(url):
-    try:
-        r = requests.get(url, headers={**HEADERS, "Accept": "application/json"}, timeout=30)
-        return r, r.json()
-    except (requests.RequestException, ValueError) as e:
-        print(f"FOUT {url}: {e}")
-        return None, None
-
-
-def samenvatting(url):
-    """Kern van een modelpagina: totaal, welk model geselecteerd is, eerste items."""
-    r, d = mo_json(url)
-    if d is None:
-        return
-    meta = d.get("metadata") or {}
-    inv = d.get("inventories") or []
-    paren = {}
-    for it in inv:
-        k = f"{it.get('brand')}/{it.get('type')}"
-        paren[k] = paren.get(k, 0) + 1
-    eerste = [(it.get("legacyId"), (it.get("attributesByKey") or {}).get("price", {}).get("amount"),
-               it.get("manufactureYear")) for it in inv[:4]]
-    print(f"{url}\n   status={r.status_code} final={r.url} totaal={meta.get('totalCount')} "
-          f"paginas={meta.get('totalPages')} pagina={meta.get('page')} canonical={d.get('canonicalUrl')}")
-    print(f"   type={d.get('type')} selectedTypes={[t.get('name') for t in d.get('selectedTypes') or []]} "
-          f"brands={[b.get('name') for b in d.get('selectedBrands') or []]}")
-    print(f"   filters={kort(json.dumps(d.get('activeFiltersList'), ensure_ascii=False), 400)}")
-    print(f"   merk/type in items: {paren}")
-    print(f"   eerste (legacyId, prijs, jaar): {eerste}")
-    return d
-
-
-def diagnose_filters():
-    """Hoe bouwt de site filter-URL's op (sortering, bouwjaar, paginering)?"""
-    s = slug(TEST_MODEL)
-    kop("A) Slugs: welk model levert welke pagina op")
-    for sl in [s, "kawasaki-z-900", "kawasaki-z-900-rs", "yamaha-mt-07", "mt-07", "kawasaki-bestaatniet-xyz"]:
-        samenvatting(f"https://www.motoroccasion.nl/motoren/{sl}")
-
-    kop("B) Filter-opbouw in de scripts")
-    try:
-        js = requests.get("https://www.motoroccasion.nl/min/js/search-form.js", headers=HEADERS, timeout=30).text
-        gezien = 0
-        for m in re.finditer(r"pagina-|filters=|prijsoplopend|bouwjaar_vanaf|\.join\(`/`\)|\.join\(\"/\"\)", js):
-            st = max(0, m.start() - 250)
-            print(f"…{kort(js[st:m.end() + 250], 520)}…")
-            gezien += 1
-            if gezien >= 14:
-                break
-        inv = requests.get("https://www.motoroccasion.nl/min/js/inventory_filters.js", headers=HEADERS, timeout=30).text
-        print(f"inventory_filters.js: {kort(inv, 5800)}")
-    except requests.RequestException as e:
-        print(f"FOUT: {e}")
-
-    # Alleen URL's zonder ?filters= (die vraagt robots.txt niet automatisch op te halen).
-    kop("C) Sorteren zonder ?filters=")
-    samenvatting(f"https://www.motoroccasion.nl/motoren/{s}?order=prijsoplopend")
-
-
-def items_kort(d, n=10):
-    out = []
-    for it in (d.get("inventories") or [])[:n]:
-        a = it.get("attributesByKey") or {}
-        out.append((it.get("manufactureYear"), (a.get("price") or {}).get("amount"),
-                    (a.get("odometer") or {}).get("value"), "N" if a.get("new") else "", "BTW" if a.get("vat_deductible") else ""))
-    return out
-
-
-def diagnose_filter_url():
-    """Hoe ziet de filter-URL voor merk+type+bouwjaar+prijs-oplopend eruit?
-    Zoals een browser: zoekformulier POSTen en de doorverwijzing aflezen."""
-    kop("FILTER-URL via het zoekformulier (zoals de browser)")
-    pogingen = [
-        {"motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900",
-         "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"},
-        {"motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900", "availability": "occasions",
-         "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"},
-    ]
-    locaties = []
-    for data in pogingen:
-        try:
-            r = requests.post("https://www.motoroccasion.nl/motoren", data=data, headers=HEADERS,
-                              timeout=30, allow_redirects=False)
-            loc = r.headers.get("Location")
-            print(f"POST {data}\n   status={r.status_code} Location={loc} len={len(r.text)}")
-            if not loc and r.text:
-                m = re.search(r"https?://www\.motoroccasion\.nl/motoren/[^\"'\s<>]+|/motoren/[^\"'\s<>]*filters=[^\"'\s<>]+", r.text)
-                print(f"   (geen Location; URL in body: {m.group(0) if m else '—'}) body: {kort(r.text, 400)}")
-                loc = m.group(0) if m else None
-            if loc:
-                locaties.append(loc if loc.startswith("http") else "https://www.motoroccasion.nl" + loc)
-        except requests.RequestException as e:
-            print(f"FOUT: {e}")
-
-    for loc in locaties:
-        r, d = mo_json(loc)
-        if d is None:
-            continue
-        meta = d.get("metadata") or {}
-        print(f"\nGET {loc}\n   totaal={meta.get('totalCount')} paginas={meta.get('totalPages')}")
-        print(f"   filters={kort(json.dumps(d.get('activeFiltersList'), ensure_ascii=False), 700)}")
-        print(f"   (jaar, prijs, km, nieuw, btw): {items_kort(d, 12)}")
-
-
-def diagnose_sortering():
-    """Hoe komt 'prijs laag→hoog' in de filter-URL (of sessie)?"""
-    basis = "https://www.motoroccasion.nl/motoren/kawasaki-z900?filters=bouwjaar-vanaf-2019/bouwjaar-tot-2021"
-
-    kop("S1) Sorteerlogica in de site-scripts")
-    for js_url in ["https://www.motoroccasion.nl/min/js/site.js"]:
-        try:
-            js = requests.get(js_url, headers=HEADERS, timeout=30).text
-            print(f"{js_url} len={len(js)}")
-            n = 0
-            for m in re.finditer(r"#order|\[name=.?order|sorteer|volgorde|prijsoplopend|filters=|pagina-", js):
-                st = max(0, m.start() - 300)
-                print(f"…{kort(js[st:m.end() + 300], 620)}…")
-                n += 1
-                if n >= 10:
-                    break
-        except requests.RequestException as e:
-            print(f"FOUT: {e}")
-
-    kop("S2) Sortering via sessie (formulier met order, dan doorverwijzing volgen)")
-    try:
-        sessie = requests.Session()
-        sessie.headers.update(HEADERS)
-        r = sessie.post("https://www.motoroccasion.nl/motoren", timeout=30, allow_redirects=False, data={
-            "motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900",
-            "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"})
-        print(f"POST status={r.status_code} Location={r.headers.get('Location')} cookies={list(sessie.cookies.keys())}")
-        r2 = sessie.get(basis, headers={"Accept": "application/json"}, timeout=30)
-        d = r2.json()
-        print(f"GET met sessie: prijzen={[x[1] for x in items_kort(d, 12)]}")
-    except (requests.RequestException, ValueError) as e:
-        print(f"FOUT: {e}")
-
-    kop("S3) Sortering als extra filter-segment")
-    for kand in [basis + "/prijsoplopend", basis + "/sorteer-prijsoplopend", basis + "/order-prijsoplopend",
-                 basis + "/sortering-prijsoplopend", basis + "&order=prijsoplopend"]:
-        r, d = mo_json(kand)
-        if d is None:
-            continue
-        keys = [f.get("key") for f in d.get("activeFiltersList") or []]
-        print(f"{kand}\n   totaal={(d.get('metadata') or {}).get('totalCount')} filterkeys={keys} "
-              f"prijzen={[x[1] for x in items_kort(d, 12)]}")
-
-
-def diagnose_motoroccasion():
-    kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
-    s = slug(TEST_MODEL)
-
-    kop("1) Welke slugs leveren welk model op (en wat doet een onbekend model?)")
-    basis = None
-    for sl in [s, "kawasaki-z-900", "kawasaki-z-900-rs", "yamaha-mt-07", "mt-07", "kawasaki-bestaatniet-xyz"]:
-        d = samenvatting(f"https://www.motoroccasion.nl/motoren/{sl}")
-        if sl == s:
-            basis = d
-
-    kop("2) Pagineringslinks uit paginationHtml")
-    if basis:
-        hrefs = re.findall(r'href="([^"]+)"', basis.get("paginationHtml") or "")
-        print(f"hrefs: {hrefs[:12]}")
-
-    kop("3) Sorteerkeuze op de HTML-pagina")
-    try:
-        r = requests.get(f"https://www.motoroccasion.nl/motoren/{s}", headers={**HEADERS, "Accept": "text/html"}, timeout=30)
-        soup = BeautifulSoup(r.text, "html.parser")
-        print(f"status={r.status_code} len={len(r.text)} type={r.headers.get('content-type')}")
-        for blok in soup.select(".list-navigation__sort")[:2]:
-            print(f"SORT-BLOK: {kort(str(blok), 2500)}")
-        for sel in soup.find_all("select"):
-            attrs = {k: v for k, v in sel.attrs.items() if k.startswith("data") or k in ("name", "id")}
-            opts = [f"{o.get('value')}={kort(o.get_text(), 40)}" for o in sel.find_all("option")[:15]]
-            print(f"SELECT {attrs} :: {opts}")
-    except requests.RequestException as e:
-        print(f"FOUT: {e}")
-
-    kop("4) Kandidaat-URL's voor pagina 2 en prijs-sortering")
-    for kand in [f"{s}/pagina-2", f"{s}/2", f"{s}?p=2", f"{s}?pagina=2",
-                 f"{s}?sort=prijs-oplopend", f"{s}?sortering=prijs-oplopend", f"{s}?order=price_asc",
-                 f"{s}/prijs-oplopend"]:
-        samenvatting(f"https://www.motoroccasion.nl/motoren/{kand}")
-
-    kop("5) Detail-URL van een advertentie")
-    if basis and basis.get("inventories"):
-        it = basis["inventories"][0]
-        for u in [f"https://www.motoroccasion.nl/motoren/{it.get('slug')}",
-                  f"https://www.motoroccasion.nl/motoren/{it.get('slug')}-m{it.get('legacyId')}.html",
-                  f"https://www.motoroccasion.nl/motoren/x-m{it.get('legacyId')}.html"]:
-            try:
-                r = requests.get(u, headers={**HEADERS, "Accept": "text/html"}, timeout=30, allow_redirects=True)
-                titel = BeautifulSoup(r.text, "html.parser").title
-                print(f"{u}\n   status={r.status_code} final={r.url} title={kort(titel.string if titel else '', 120)}")
-            except requests.RequestException as e:
-                print(f"FOUT {u}: {e}")
-
-
-def dump_pagina_html(url):
-    """Als dump_pagina, maar dwingt HTML af en toont tegels/paginering/sortering."""
-    kop(f"GET (HTML) {url}")
-    try:
-        r = requests.get(url, headers={**HEADERS, "Accept": "text/html"}, timeout=30)
-    except requests.RequestException as e:
-        print(f"FOUT: {e}")
-        return
-    print(f"status={r.status_code} final={r.url} len={len(r.text)} type={r.headers.get('content-type')}")
-    soup = BeautifulSoup(r.text, "html.parser")
-    print(f"title: {kort(soup.title.string if soup.title else '', 200)}")
-    klassen = {}
-    for art in soup.find_all("article"):
-        k = " ".join(art.get("class") or [])
-        klassen[k] = klassen.get(k, 0) + 1
-    print(f"ARTICLE-klassen: {klassen}")
-    for sel in soup.find_all("select"):
-        opts = [f"{o.get('value')}={kort(o.get_text(), 30)}" for o in sel.find_all("option")[:15]]
-        print(f"SELECT name={sel.get('name')} id={sel.get('id')} :: {opts}")
-    for el in soup.find_all(attrs={"data-sort": True})[:10]:
-        print(f"DATA-SORT: {kort(str(el), 300)}")
-    for a in soup.find_all("a", href=True):
-        if re.search(r"page|pagina|sort|[?&]p=", a["href"], re.I):
-            print(f"LINK {kort(a.get_text(), 30)} -> {a['href']}")
-    tegels = [a for a in soup.find_all("article") if a.find("a", href=re.compile(r"-m\d+\.html"))]
-    print(f"TEGELS met advertentielink: {len(tegels)}")
-    for t in tegels[:2]:
-        print(f"TEGEL-HTML: {kort(str(t), 2500)}")
-    # totaal/teller-tekst
-    m = re.search(r"(\d[\d.]*)\s+(?:nieuwe en gebruikte|motoren|resultaten)", soup.get_text(" "), re.I)
-    if m:
-        print(f"TELLER: {m.group(0)}")
-
-
-# ── 2dehands ─────────────────────────────────────────────────────────────────
-def diagnose_2dehands():
-    kop("2DEHANDS — velden van de nieuwste motoradvertenties")
-    params = {
-        "l1CategoryId": "678", "limit": "30", "offset": "0",
-        "searchInTitleAndDescription": "true", "viewOptions": "list-view",
-        "sortBy": "SORT_INDEX", "sortOrder": "DECREASING",
-    }
-    try:
-        r = requests.get("https://www.2dehands.be/lrp/api/search", params=params,
-                         headers={**HEADERS, "Accept": "application/json"}, timeout=30)
-        data = r.json()
+        r = requests.get(fl.SEARCH_URL, params=params, headers=fl.HEADERS, timeout=30)
+        listings = r.json().get("listings") or []
     except (requests.RequestException, ValueError) as e:
         print(f"FOUT: {e}")
         return
-    listings = data.get("listings") or []
-    print(f"status={r.status_code} listings={len(listings)}")
-    motoren = [l for l in listings if "/motoren/motoren-" in (l.get("vipUrl") or "")][:6]
-    for l in motoren:
-        print(f"\n-- {kort(l.get('title'), 80)} | {l.get('vipUrl')}")
-        print(f"   sleutels: {sorted(l.keys())}")
-        for k in ("attributes", "extendedAttributes", "verticals", "categorySpecificDescription"):
-            if k in l:
-                print(f"   {k}: {kort(json.dumps(l[k], ensure_ascii=False), 1200)}")
-        print(f"   beschrijving: {kort(l.get('description'), 300)}")
+    motoren = [m for m in (fl.map_listing(x) for x in listings) if m and fl.is_voertuig(m["titel"], m["url"])]
+    tel = lambda veld: sum(1 for x in listings if fl.attr_waarde(x, veld) is not None)
+    print(f"{len(listings)} advertenties, {len(motoren)} motoren. Met veld: bouwjaar {tel('constructionYear')}, "
+          f"km {tel('mileage')}, adverteerder {tel('advertiser')}")
+    print(f"Na mapping: bouwjaar bekend {sum(1 for m in motoren if m['bouwjaar'])}, "
+          f"km bekend {sum(1 for m in motoren if m['km'] is not None)}, "
+          f"particulier {sum(1 for m in motoren if m['is_particulier'])}")
+    for m in motoren[:5]:
+        print(f"  {m['titel'][:55]!r}: bouwjaar={m['bouwjaar']} km={m['km']} particulier={m['is_particulier']}")
+
+
+def prijstest():
+    kop(f"2) Motoroccasion — prijstest '{TEST_MODEL}', {TEST_BOUWJAAR}, {TEST_KM} km")
+    merk = mo.merk_uit_lead("", TEST_MODEL)
+    model = mo.model_uit_term(TEST_MODEL, merk) if merk else ""
+    if not merk or not model:
+        print("Geef het model op als 'Merk Model', bijv. 'Kawasaki Z900'.")
+        return
+    types = mo.types_voor_merk(merk)
+    gekozen = mo.kies_type(TEST_MODEL, model, types)
+    type_key, type_naam = gekozen if gekozen else (mo.slug(model), model)
+    print(f"merk={merk} model={model!r} → Motoroccasion-type {type_naam!r} ({type_key}); "
+          f"{len(types)} typen bekend voor dit merk")
+    try:
+        aanbod, url = mo.zoek_aanbod(merk, type_key, TEST_BOUWJAAR)
+    except (mo.MoFout, requests.RequestException) as e:
+        print(f"FOUT: {e}")
+        return
+    print(f"URL: {url}\n{len(aanbod)} advertenties op pagina 1 (prijs laag→hoog):")
+    for a in aanbod[:12]:
+        reden = "" if a["prijs"] and a["km"] and not a["nieuw"] and not a["btw"] else \
+            " [overslaan: " + ", ".join(r for r, j in (("geen prijs", not a["prijs"]), ("nieuw/0 km", a["nieuw"] or not a["km"]),
+                                                        ("BTW", a["btw"])) if j) + "]"
+        print(f"  € {a['prijs']} · {a['bouwjaar']} · {a['km']} km · {a['dealer']}{reden}")
+    doel, vgl, toel = bepaal_verkoopdoel(aanbod, TEST_BOUWJAAR, TEST_KM)
+    if doel:
+        print(f"VERKOOPDOEL: € {doel} op basis van {len(vgl)} vergelijker(s): "
+              + ", ".join(f"€ {a['prijs']} ({a['bouwjaar']}, {a['km']} km)" for a in vgl))
+    else:
+        print(f"Te weinig data: {toel}")
+
+
+def droog_op_leads():
+    kop("3) Huidige populaire leads — wat de job zou berekenen (alleen lezen)")
+    if not (fl.SUPABASE_URL and fl.SERVICE_KEY):
+        print("Geen Supabase-gegevens in deze run — overgeslagen.")
+        return
+    try:
+        w = fl.bereken_inkoopprijzen(schrijf=False, uitvoer=print)
+        if w:
+            print(f"WAARSCHUWING: {w}")
+    except requests.RequestException as e:
+        print(f"FOUT: {e}")
 
 
 if __name__ == "__main__":
-    if os.environ.get("DIAGNOSE_2DEHANDS", "1") == "1":
-        diagnose_2dehands()
-    diagnose_sortering()
+    check_2dehands()
+    prijstest()
+    droog_op_leads()
     print("\nKlaar (dry-run, niets weggeschreven).")

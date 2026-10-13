@@ -33,6 +33,9 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+import motoroccasion as mo
+from prijzen import bepaal_verkoopdoel
+
 # ── Config ───────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -48,6 +51,8 @@ SEARCH_URL = os.environ.get("RADAR_SEARCH_URL", "https://www.2dehands.be/lrp/api
 L1_CATEGORY = os.environ.get("RADAR_L1_CATEGORY", "678")  # 678 = Motoren
 BRON = os.environ.get("RADAR_BRON", "2dehands")
 BEWAAR_DAGEN = int(os.environ.get("RADAR_BEWAAR_DAGEN", "5"))
+MO_MAX_VERZOEKEN = int(os.environ.get("RADAR_MO_MAX", "40"))   # zoekverzoeken per run
+MO_VERVERS_DAGEN = 3   # verkoopdoel daarna opnieuw bepalen (markt verschuift)
 SITE_BASE = "https://www.2dehands.be"
 
 HEADERS = {
@@ -92,8 +97,59 @@ def fail(msg, code=1):
     sys.exit(code)
 
 
+# ── Advertentievelden ────────────────────────────────────────────────────────
+def attr_waarde(item, sleutel):
+    """Waarde van een 2dehands-attribuut (bv. constructionYear, mileage,
+    advertiser) uit attributes of extendedAttributes, of None."""
+    for lijst in (item.get("attributes") or [], item.get("extendedAttributes") or []):
+        for a in lijst:
+            if a.get("key") == sleutel:
+                return a.get("value")
+    return None
+
+
+def naar_int(s):
+    cijfers = re.sub(r"[^\d]", "", str(s or ""))
+    return int(cijfers) if cijfers else None
+
+
+KM_PATROON = re.compile(
+    r"(?:kilometerstand|km-stand|kmstand)\s*:?\s*(\d{1,3}(?:[.\s]\d{3})+|\d{1,6})"
+    r"|(\d{1,3}(?:[.\s]\d{3})+|\d{1,6})\s?(?:km|kilometer)\b(?!\s*/)",
+    re.I,
+)
+
+
+def bouwjaar_en_km(item, titel, beschrijving):
+    """Bouwjaar en km-stand. Eerst de gestructureerde 2dehands-velden; anders een
+    voorzichtige fallback uit de tekst (alleen als er precies één kandidaat is,
+    zodat bv. 'onderhoud bij 30.000 km' naast '42.000 km' niets oplevert)."""
+    nu = datetime.now(timezone.utc).year
+    jaar = naar_int(attr_waarde(item, "constructionYear")) if item else None
+    km = naar_int(attr_waarde(item, "mileage")) if item else None
+    if jaar is not None and not (1950 <= jaar <= nu + 1):
+        jaar = None
+    if jaar is None:  # jaartal alleen uit de titel — beschrijvingen noemen te vaak andere jaren
+        jaren = {int(j) for j in re.findall(r"\b(19[5-9]\d|20\d\d)\b", titel or "")}
+        jaren = {j for j in jaren if j <= nu + 1}
+        if len(jaren) == 1:
+            jaar = jaren.pop()
+    if km is None:
+        kandidaten = set()
+        for m in KM_PATROON.finditer(f"{titel or ''} {beschrijving or ''}"):
+            waarde = naar_int(m.group(1) or m.group(2))
+            if waarde is not None and waarde < 400000:
+                kandidaten.add(waarde)
+        if len(kandidaten) == 1:
+            km = kandidaten.pop()
+    return jaar, km
+
+
 # ── Verkopertype ─────────────────────────────────────────────────────────────
-def is_particulier(traits, seller_name, description):
+def is_particulier(traits, seller_name, description, advertiser=None):
+    # 2dehands geeft zelf aan of de adverteerder een bedrijf is.
+    if (advertiser or "").strip().lower() == "bedrijf":
+        return False
     if set(traits or []) & BUSINESS_TRAITS:
         return False
     naam = (seller_name or "").lower()
@@ -145,6 +201,7 @@ def map_listing(item):
 
     vip = item.get("vipUrl") or ""
     url = (SITE_BASE + vip) if vip.startswith("/") else (vip or f"https://link.2dehands.be/{ad_id}")
+    bouwjaar, km = bouwjaar_en_km(item, titel, beschrijving)
 
     return {
         "ad_id": str(ad_id),
@@ -155,7 +212,10 @@ def map_listing(item):
         "land": loc.get("countryName") or loc.get("countryAbbreviation"),
         "verkoper_id": str(seller.get("sellerId")) if seller.get("sellerId") is not None else None,
         "verkoper_naam": seller.get("sellerName"),
-        "is_particulier": is_particulier(traits, seller.get("sellerName"), beschrijving),
+        "is_particulier": is_particulier(traits, seller.get("sellerName"), beschrijving,
+                                         attr_waarde(item, "advertiser")),
+        "bouwjaar": bouwjaar,
+        "km": km,
         "url": url,
         "foto_url": foto or None,
         "bron": BRON,
@@ -304,6 +364,143 @@ def ruim_oude_leads_op():
         return 0
 
 
+# ── Inkoopprijzen (Motoroccasion) ────────────────────────────────────────────
+def haal_populair():
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_populair",
+                     params={"select": "term,rang", "order": "rang.asc"}, headers=sb_headers(), timeout=30)
+    r.raise_for_status()
+    return [p for p in r.json() if (p.get("term") or "").strip()]
+
+
+def populaire_term(lead, populair):
+    """Zelfde match als de app (term in titel/omschrijving); bij meerdere de
+    meest specifieke (langste) term, zodat 'Z900 RS' wint van 'Z900'."""
+    hooi = f"{lead.get('titel') or ''} {lead.get('beschrijving') or ''}".lower()
+    hits = [p for p in populair if p["term"].strip().lower() in hooi]
+    if not hits:
+        return None
+    return max(hits, key=lambda p: (len(p["term"].strip()), -p["rang"]))["term"].strip()
+
+
+def moet_prijzen(lead):
+    if not lead.get("mo_bijgewerkt") or lead.get("mo_status") == "fout":
+        return True
+    try:
+        gedaan = datetime.fromisoformat(lead["mo_bijgewerkt"].replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - gedaan > timedelta(days=MO_VERVERS_DAGEN)
+
+
+def merk_label(term, merk):
+    eerste = (term.split() or [""])[0]
+    return eerste if mo.norm(eerste) == mo.norm(merk) else merk.replace("-", " ").title()
+
+
+def prijs_lead(lead, term, cache):
+    """Bepaalt de mo_*-velden voor één lead. cache deelt zoekresultaten tussen
+    leads van hetzelfde model + bouwjaar (één verzoek per combinatie)."""
+    nu = datetime.now(timezone.utc).isoformat()
+    velden = {"mo_bijgewerkt": nu, "mo_model": term, "mo_verkoopdoel": None, "mo_aantal": 0,
+              "mo_vergelijkers": None, "mo_url": None, "mo_toelichting": None}
+
+    # Oudere leads (van vóór de bouwjaar/km-velden): proberen uit de tekst.
+    jaar, km = lead.get("bouwjaar"), lead.get("km")
+    if jaar is None or km is None:
+        j2, k2 = bouwjaar_en_km({}, lead.get("titel"), lead.get("beschrijving"))
+        if jaar is None and j2:
+            jaar = velden["bouwjaar"] = j2
+        if km is None and k2 is not None:
+            km = velden["km"] = k2
+
+    merk = mo.merk_uit_lead(lead.get("url"), term)
+    model = mo.model_uit_term(term, merk) if merk else ""
+    if not merk or not model:
+        return {**velden, "mo_status": "fout", "mo_toelichting": "merk/model niet te bepalen uit de zoekterm"}
+    if not jaar or km is None:
+        return {**velden, "mo_status": "te_weinig_data",
+                "mo_toelichting": "bouwjaar of km-stand onbekend in de advertentie"}
+
+    # Meest specifieke Motoroccasion-type uit de titel (Z900RS ≠ Z900).
+    gekozen = mo.kies_type(lead.get("titel"), model, mo.types_voor_merk(merk))
+    type_key, type_naam = gekozen if gekozen else (mo.slug(model), model)
+    if mo.norm(type_naam) != mo.norm(model):
+        velden["mo_model"] = f"{merk_label(term, merk)} {mo.mooi(type_naam)}"
+
+    sleutel = (merk, type_key, jaar)
+    if sleutel not in cache:
+        if cache.get("_verzoeken", 0) >= MO_MAX_VERZOEKEN:
+            return None  # limiet bereikt: volgende run verder
+        cache["_verzoeken"] = cache.get("_verzoeken", 0) + 1
+        try:
+            aanbod, url = mo.zoek_aanbod(merk, type_key, jaar)
+            cache[sleutel] = {"aanbod": aanbod, "url": url}
+        except mo.MoFout as e:
+            cache[sleutel] = {"fout": str(e), "systemisch": e.systemisch}
+        except requests.RequestException as e:
+            cache[sleutel] = {"fout": f"Motoroccasion niet bereikbaar: {e}", "systemisch": True}
+    res = cache[sleutel]
+    if "fout" in res:
+        return {**velden, "mo_status": "fout", "mo_toelichting": res["fout"][:300]}
+
+    doel, vgl, toelichting = bepaal_verkoopdoel(res["aanbod"], jaar, km)
+    return {**velden,
+            "mo_status": "ok" if doel else "te_weinig_data",
+            "mo_verkoopdoel": doel,
+            "mo_aantal": len(vgl),
+            "mo_vergelijkers": [{k: a.get(k) for k in ("prijs", "bouwjaar", "km", "url", "titel", "dealer")}
+                                for a in vgl] or None,
+            "mo_url": res["url"],
+            "mo_toelichting": toelichting}
+
+
+def bereken_inkoopprijzen(schrijf=True, uitvoer=log):
+    """Verkoopdoel voor particuliere leads van een populair model. Geeft een
+    waarschuwing (str) terug als Motoroccasion structureel niet werkt."""
+    populair = haal_populair()
+    if not populair:
+        uitvoer("Geen populaire modellen ingesteld — prijsvergelijking overgeslagen.")
+        return None
+    # Alleen wat de app toont: binnen de bewaartermijn, of naar de inkoop gezet.
+    grens = (datetime.now(timezone.utc) - timedelta(days=max(1, haal_bewaar_dagen()))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
+        "select": "ad_id,titel,beschrijving,url,prijs,bouwjaar,km,status,mo_status,mo_bijgewerkt",
+        "is_particulier": "eq.true", "status": "neq.genegeerd",
+        "or": f'(gevonden_op.gte."{grens}",status.eq.naar_inkoop)',
+        "order": "gevonden_op.desc", "limit": "500"})
+    r.raise_for_status()
+
+    cache, bijgewerkt, systeemfouten = {}, 0, set()
+    for lead in r.json():
+        term = populaire_term(lead, populair)
+        if not term or not moet_prijzen(lead):
+            continue
+        velden = prijs_lead(lead, term, cache)
+        if velden is None:
+            uitvoer(f"Limiet van {MO_MAX_VERZOEKEN} Motoroccasion-verzoeken bereikt; rest volgt bij de volgende run.")
+            break
+        doel = f"€ {velden['mo_verkoopdoel']}" if velden["mo_verkoopdoel"] else velden["mo_status"]
+        uitvoer(f"  {lead['titel'][:50]!r} → {velden['mo_model']} {lead.get('bouwjaar') or velden.get('bouwjaar')}"
+                f"/{lead.get('km') if lead.get('km') is not None else velden.get('km')} km: {doel}"
+                f" ({velden['mo_aantal']} vgl){' — ' + velden['mo_toelichting'] if velden['mo_toelichting'] else ''}")
+        if schrijf:
+            p = requests.patch(f"{SUPABASE_URL}/rest/v1/inkoop_leads", params={"ad_id": f"eq.{lead['ad_id']}"},
+                               headers=sb_headers({"Prefer": "return=minimal"}), data=json.dumps(velden), timeout=30)
+            if p.status_code >= 300:
+                uitvoer(f"WAARSCHUWING: prijs opslaan mislukt ({p.status_code}): {p.text[:200]}")
+                continue
+        bijgewerkt += 1
+
+    for res in cache.values():
+        if isinstance(res, dict) and res.get("systemisch"):
+            systeemfouten.add(res["fout"])
+    uitvoer(f"Prijsvergelijking: {bijgewerkt} lead(s) bijgewerkt, "
+            f"{cache.get('_verzoeken', 0)} Motoroccasion-zoekverzoek(en).")
+    if systeemfouten:
+        return "Motoroccasion-prijsvergelijking: " + "; ".join(sorted(systeemfouten))[:400]
+    return None
+
+
 def update_status(http_ok, gevonden, gemapt, nieuw, waarschuwing):
     body = {
         "id": 1,
@@ -435,7 +632,18 @@ def main():
     if http_ok and not waarschuwing:
         ruim_oude_leads_op()
 
-    update_status(http_ok, len(listings), gemapt, nieuw_count, waarschuwing)
+    # Verkoopdoel via Motoroccasion voor populaire particuliere leads. Na het
+    # opruimen (geen verzoeken voor leads die toch verdwijnen) en zo dat een fout
+    # hier nooit de leads of de digest-mail tegenhoudt.
+    mo_waarschuwing = None
+    try:
+        mo_waarschuwing = bereken_inkoopprijzen()
+    except Exception as e:  # noqa: BLE001 — bewust breed, zie hierboven
+        mo_waarschuwing = f"Motoroccasion-prijsvergelijking mislukt: {e}"
+        log("WAARSCHUWING: " + mo_waarschuwing)
+
+    update_status(http_ok, len(listings), gemapt, nieuw_count,
+                  "; ".join(w for w in (waarschuwing, mo_waarschuwing) if w) or None)
     stuur_digest(nieuwe_particulier)
     log("Klaar.")
 
