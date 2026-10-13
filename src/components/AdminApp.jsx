@@ -4408,10 +4408,10 @@ function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onU
               <div style={{flex:1,padding:"12px 14px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
                   <a href={l.url} target="_blank" rel="noopener noreferrer"
-                    style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none"}}>
+                    style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none",minWidth:0,overflowWrap:"anywhere"}}>
                     {l.titel} ↗
                   </a>
-                  <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+                  <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:mob?96:"none"}}>
                     {pop&&<span style={{...s.badge(T.accent),flexShrink:0}}>🔥 Populair</span>}
                     {/* NIEUW alleen voor onbehandelde leads van vandaag; overige
                         statussen (bekeken/genegeerd/naar inkoop) tonen hun label. */}

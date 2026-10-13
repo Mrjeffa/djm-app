@@ -15,10 +15,40 @@ De leads verschijnen in de app onder de admin-tab **Inkoop**.
 3. Nieuwe advertenties (ontdubbeld op `ad_id`) worden server-side in
    `inkoop_leads` geschreven met de **service-role key** (omzeilt RLS).
 4. Bij nieuwe *particuliere* leads gaat er één digest-mail uit (prijs oplopend).
-5. De gezondheid van elke run staat in `inkoop_radar_status`; de app toont
+5. Leads ouder dan de bewaartermijn (Instellingen → Inkoop-radar) worden
+   opgeruimd; leads op "naar inkoop" blijven staan.
+6. **Inkoopadvies**: voor particuliere leads van een populair model
+   (Instellingen → Populaire modellen) bepaalt `motoroccasion.py` een
+   verkoopdoel, zie hieronder.
+7. De gezondheid van elke run staat in `inkoop_radar_status`; de app toont
    bovenaan een melding als het API-schema mogelijk is gewijzigd.
 
 Idempotent: twee keer draaien levert geen dubbele rijen en geen dubbele mail op.
+
+## Inkoopadvies via Motoroccasion
+
+Per lead **precies één zoekverzoek** op motoroccasion.nl: het model, gefilterd
+op bouwjaar (1 ouder t/m 1 jonger), gesorteerd op prijs laag → hoog, alleen
+pagina 1. Plus hooguit één verzoek per merk per run (de gewone merkpagina) om
+de juiste typenaam te vinden. Leads van hetzelfde model en bouwjaar delen dat
+verzoek. Bewust zuinig: Motoroccasion vraagt in hun robots.txt geen
+filter-URL's automatisch op te halen, en dit is het afgesproken minimum.
+
+- **Model**: het meest specifieke Motoroccasion-type dat in de titel staat
+  (een Z900RS wordt met Z900RS vergeleken, niet met de Z900). Spelfouten in
+  letters mogen ("V-storm", "Versis"), cijfers moeten exact kloppen. Staat de
+  cilinderinhoud er niet in (bv. alleen "V-Strom"), dan geen advies.
+- **Vergelijkbaar**: zelfde bouwjaar of 1 ouder, max. 10.000 km verschil;
+  minder dan 3 → ook 1 jaar jonger. Overgeslagen: nieuw/0 km, prijs op
+  aanvraag, BTW-motoren.
+- **Verkoopdoel** = gemiddelde van de max. 3 goedkoopste vergelijkbare
+  (`prijzen.py`). Het openingsbod, max en de kleurcode rekent de app uit.
+- Elke 3 dagen opnieuw bepaald; max. `RADAR_MO_MAX` (40) verzoeken per run.
+
+Testen zonder iets op te slaan: Run workflow → modus **diagnose** met een
+model/bouwjaar/km. De log toont de gebruikte URL, de advertenties, het
+verkoopdoel, en wat de job voor de huidige populaire leads zou berekenen.
+Lokale tests (zonder netwerk): `python test_prijzen.py`, `python test_motoroccasion.py`.
 
 ## Eenmalige setup
 
@@ -43,6 +73,7 @@ Idempotent: twee keer draaien levert geen dubbele rijen en geen dubbele mail op.
 | `RADAR_L1_CATEGORY` | `678` | categorie-id Motoren |
 | `RADAR_SEARCH_URL` | `https://www.2dehands.be/lrp/api/search` | zoek-API |
 | `RADAR_BRON` | `2dehands` | label in de leads |
+| `RADAR_MO_MAX` | `40` | max. Motoroccasion-zoekverzoeken per run |
 
 ### 3. Testen
 

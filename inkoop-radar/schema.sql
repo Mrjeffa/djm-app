@@ -27,6 +27,19 @@ CREATE INDEX IF NOT EXISTS inkoop_leads_gevonden_idx ON public.inkoop_leads (gev
 --   ALTER TABLE public.instellingen
 --     ADD COLUMN IF NOT EXISTS inkoop_bewaar_dagen int NOT NULL DEFAULT 5;
 
+-- Bouwjaar/km + Motoroccasion-inkoopadvies (populaire particuliere leads):
+ALTER TABLE public.inkoop_leads
+  ADD COLUMN IF NOT EXISTS bouwjaar         int,
+  ADD COLUMN IF NOT EXISTS km               int,
+  ADD COLUMN IF NOT EXISTS mo_model         text,         -- model zoals in de bodtekst
+  ADD COLUMN IF NOT EXISTS mo_verkoopdoel   int,          -- gem. van max. 3 goedkoopste vergelijkbare
+  ADD COLUMN IF NOT EXISTS mo_aantal        int,          -- aantal gebruikte vergelijkers (0–3)
+  ADD COLUMN IF NOT EXISTS mo_status        text,         -- ok | te_weinig_data | fout
+  ADD COLUMN IF NOT EXISTS mo_toelichting   text,
+  ADD COLUMN IF NOT EXISTS mo_vergelijkers  jsonb,        -- [{prijs,bouwjaar,km,url,titel,dealer}]
+  ADD COLUMN IF NOT EXISTS mo_url           text,         -- de gebruikte Motoroccasion-zoekopdracht
+  ADD COLUMN IF NOT EXISTS mo_bijgewerkt    timestamptz;
+
 ALTER TABLE public.inkoop_leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY inkoop_leads_admin ON public.inkoop_leads
   FOR ALL USING (is_admin()) WITH CHECK (is_admin());
