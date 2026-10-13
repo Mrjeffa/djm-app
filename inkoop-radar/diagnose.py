@@ -138,9 +138,45 @@ def droog_op_leads():
         print(f"FOUT: {e}")
 
 
+def check_voorraad_functie():
+    """De voorraad-prijscheck (Supabase edge function) in testmodus: rekent met
+    proefmotoren en slaat niets op."""
+    kop("4) Voorraad-prijscheck (edge function, testmodus — slaat niets op)")
+    if not (fl.SUPABASE_URL and fl.SERVICE_KEY):
+        print("Geen Supabase-gegevens in deze run — overgeslagen.")
+        return
+    proef = [
+        {"merk": TEST_MODEL.split()[0], "model": " ".join(TEST_MODEL.split()[1:]), "bouwjaar": TEST_BOUWJAAR,
+         "km": TEST_KM, "prijs": 7900, "inkoopprijs": 6000},
+        {"merk": "Suzuki", "model": "V-Strom 650", "bouwjaar": 2018, "km": 30000, "prijs": 7200, "inkoopprijs": 5500},
+        {"merk": "BMW", "model": "R 1200 GS", "bouwjaar": 2015, "km": 50000, "prijs": 9500, "inkoopprijs": 8000},
+    ]
+    for t in proef:
+        try:
+            r = requests.post(f"{fl.SUPABASE_URL}/functions/v1/voorraad-prijscheck", timeout=120,
+                              headers={"Authorization": f"Bearer {fl.SERVICE_KEY}", "Content-Type": "application/json"},
+                              json={"test": t})
+            u = r.json().get("test") or r.json()
+        except (requests.RequestException, ValueError) as e:
+            print(f"FOUT {t['merk']} {t['model']}: {e}")
+            continue
+        b = u.get("beoordeling") or {}
+        print(f"\n{t['merk']} {t['model']} {t['bouwjaar']}, {t['km']} km, vraag €{t['prijs']}, inkoop €{t['inkoopprijs']}"
+              f"  [HTTP {r.status_code}]")
+        print(f"   status={u.get('status')} model={u.get('mo_model')!r} zelfde bouwjaar={u.get('zelfde_bouwjaar')} "
+              f"toelichting={u.get('toelichting')}")
+        print(f"   url={u.get('mo_url')}")
+        for c in (u.get("concurrenten") or [])[:5]:
+            print(f"   € {c['prijs']} · {c['km']} km · {c['dealer']}")
+        print(f"   → {b.get('kleur')}: {b.get('kop')} | advies={b.get('advies')} minimum={b.get('minimum')} "
+              f"marge te laag={b.get('margeTeLaag')} actie={b.get('actieNodig')}")
+
+
 if __name__ == "__main__":
-    check_2dehands()
-    check_prijstypes()
-    prijstest()
-    droog_op_leads()
+    if os.environ.get("ALLEEN_VOORRAAD") != "1":
+        check_2dehands()
+        check_prijstypes()
+        prijstest()
+        droog_op_leads()
+    check_voorraad_functie()
     print("\nKlaar (dry-run, niets weggeschreven).")
