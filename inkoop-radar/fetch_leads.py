@@ -21,15 +21,20 @@ Env (GitHub Actions repo-secrets / vars):
   RADAR_SEARCH_URL   (default 2dehands.be)
   RADAR_L1_CATEGORY  (default "678" = Motoren)
   RADAR_BRON         (default "2dehands")
+  RADAR_BEWAAR_DAGEN (default "5")            — fallback; de admin stelt dit in
+                                               via instellingen.inkoop_bewaar_dagen
 """
 import json
 import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
+
+import motoroccasion as mo
+from prijzen import bepaal_verkoopdoel
 
 # ── Config ───────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -45,6 +50,9 @@ MAX_ITEMS = int(os.environ.get("RADAR_MAX_ITEMS", "150"))
 SEARCH_URL = os.environ.get("RADAR_SEARCH_URL", "https://www.2dehands.be/lrp/api/search")
 L1_CATEGORY = os.environ.get("RADAR_L1_CATEGORY", "678")  # 678 = Motoren
 BRON = os.environ.get("RADAR_BRON", "2dehands")
+BEWAAR_DAGEN = int(os.environ.get("RADAR_BEWAAR_DAGEN", "5"))
+MO_MAX_VERZOEKEN = int(os.environ.get("RADAR_MO_MAX", "40"))   # zoekverzoeken per run
+MO_VERVERS_DAGEN = 3   # verkoopdoel daarna opnieuw bepalen (markt verschuift)
 SITE_BASE = "https://www.2dehands.be"
 
 HEADERS = {
@@ -89,8 +97,68 @@ def fail(msg, code=1):
     sys.exit(code)
 
 
+# ── Advertentievelden ────────────────────────────────────────────────────────
+def attr_waarde(item, sleutel):
+    """Waarde van een 2dehands-attribuut (bv. constructionYear, mileage,
+    advertiser) uit attributes of extendedAttributes, of None."""
+    for lijst in (item.get("attributes") or [], item.get("extendedAttributes") or []):
+        for a in lijst:
+            if a.get("key") == sleutel:
+                return a.get("value")
+    return None
+
+
+def naar_int(s):
+    cijfers = re.sub(r"[^\d]", "", str(s or ""))
+    return int(cijfers) if cijfers else None
+
+
+KM_PATROON = re.compile(
+    r"(?:kilometerstand|km-stand|kmstand)\s*:?\s*(\d{1,3}(?:[.\s]\d{3})+|\d{1,6})"
+    r"|(\d{1,3}(?:[.\s]\d{3})+|\d{1,6})\s?(?:km|kilometer)\b(?!\s*/)",
+    re.I,
+)
+
+
+BOUWJAAR_PATROON = re.compile(
+    r"\b(?:bouwjaar|bj|van|uit|de|année|annee|year|modèle|modele)\s*[:.]?\s*((?:19|20)\d\d)\b", re.I)
+
+
+def bouwjaar_en_km(item, titel, beschrijving):
+    """Bouwjaar en km-stand. Eerst de gestructureerde 2dehands-velden; anders een
+    voorzichtige fallback uit de tekst (alleen als er precies één kandidaat is,
+    zodat bv. 'onderhoud bij 30.000 km' naast '42.000 km' niets oplevert)."""
+    nu = datetime.now(timezone.utc).year
+    jaar = naar_int(attr_waarde(item, "constructionYear")) if item else None
+    km = naar_int(attr_waarde(item, "mileage")) if item else None
+    if jaar is not None and not (1950 <= jaar <= nu + 1):
+        jaar = None
+    if jaar is None:  # jaartal uit de titel
+        jaren = {int(j) for j in re.findall(r"\b(19[5-9]\d|20\d\d)\b", titel or "")}
+        jaren = {j for j in jaren if j <= nu + 1}
+        if len(jaren) == 1:
+            jaar = jaren.pop()
+    if jaar is None:  # omschrijving: alleen met een signaalwoord ervoor ('nieuwe banden 2023' telt niet)
+        jaren = {int(j) for j in BOUWJAAR_PATROON.findall(beschrijving or "")}
+        jaren = {j for j in jaren if 1950 <= j <= nu + 1}
+        if len(jaren) == 1:
+            jaar = jaren.pop()
+    if km is None:
+        kandidaten = set()
+        for m in KM_PATROON.finditer(f"{titel or ''} {beschrijving or ''}"):
+            waarde = naar_int(m.group(1) or m.group(2))
+            if waarde is not None and waarde < 400000:
+                kandidaten.add(waarde)
+        if len(kandidaten) == 1:
+            km = kandidaten.pop()
+    return jaar, km
+
+
 # ── Verkopertype ─────────────────────────────────────────────────────────────
-def is_particulier(traits, seller_name, description):
+def is_particulier(traits, seller_name, description, advertiser=None):
+    # 2dehands geeft zelf aan of de adverteerder een bedrijf is.
+    if (advertiser or "").strip().lower() == "bedrijf":
+        return False
     if set(traits or []) & BUSINESS_TRAITS:
         return False
     naam = (seller_name or "").lower()
@@ -123,10 +191,12 @@ def map_listing(item):
     if not ad_id or not titel:
         return None  # zonder id/titel is de mapping mislukt
 
+    # Elk bedrag dat 2dehands meegeeft is de prijs van de verkoper: vaste prijs
+    # (FIXED/RESERVED) én "bieden vanaf" (MIN_BID, ~40% van de advertenties).
+    # Alleen "bieden" zonder bedrag (FAST_BID, 0 cent) blijft n.o.t.k.
     price_info = item.get("priceInfo", {}) or {}
-    price_type = price_info.get("priceType", "")
     cents = price_info.get("priceCents", 0) or 0
-    prijs = cents // 100 if price_type in ("FIXED", "RESERVED") and cents > 0 else None
+    prijs = cents // 100 if cents > 0 else None
 
     loc = item.get("location", {}) or {}
     seller = item.get("sellerInformation", {}) or {}
@@ -142,6 +212,7 @@ def map_listing(item):
 
     vip = item.get("vipUrl") or ""
     url = (SITE_BASE + vip) if vip.startswith("/") else (vip or f"https://link.2dehands.be/{ad_id}")
+    bouwjaar, km = bouwjaar_en_km(item, titel, beschrijving)
 
     return {
         "ad_id": str(ad_id),
@@ -152,12 +223,16 @@ def map_listing(item):
         "land": loc.get("countryName") or loc.get("countryAbbreviation"),
         "verkoper_id": str(seller.get("sellerId")) if seller.get("sellerId") is not None else None,
         "verkoper_naam": seller.get("sellerName"),
-        "is_particulier": is_particulier(traits, seller.get("sellerName"), beschrijving),
+        "is_particulier": is_particulier(traits, seller.get("sellerName"), beschrijving,
+                                         attr_waarde(item, "advertiser")),
+        "bouwjaar": bouwjaar,
+        "km": km,
         "url": url,
         "foto_url": foto or None,
         "bron": BRON,
         "advertentie_datum": parse_datum(item.get("date")),
         "status": "nieuw",
+        "velden_ververst": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -253,6 +328,263 @@ def insert_leads(leads):
     )
     if r.status_code >= 300:
         fail(f"Insert mislukt ({r.status_code}): {r.text[:500]}")
+
+
+def haal_bewaar_dagen():
+    """Leest het aantal bewaar-dagen uit de instellingen-tabel (door de admin
+    in te stellen: 's winters minder kijken dan in het voorjaar). Valt terug op
+    de env-default RADAR_BEWAAR_DAGEN als de kolom/rij ontbreekt."""
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/instellingen",
+            params={"select": "inkoop_bewaar_dagen", "id": "eq.1"},
+            headers=sb_headers(), timeout=30,
+        )
+        if r.status_code < 300:
+            rijen = r.json()
+            if rijen and rijen[0].get("inkoop_bewaar_dagen") is not None:
+                return int(rijen[0]["inkoop_bewaar_dagen"])
+    except (requests.RequestException, ValueError, KeyError) as e:
+        log(f"WAARSCHUWING: bewaar-dagen lezen mislukt, val terug op default: {e}")
+    return BEWAAR_DAGEN
+
+
+def ruim_oude_leads_op():
+    """Verwijdert leads die langer dan de ingestelde bewaar-dagen geleden zijn
+    gevonden, zodat de inkoop-tab alleen verse advertenties toont en niet de
+    hele maand volloopt. Leads die de gebruiker naar de inkoop heeft gezet
+    ('naar_inkoop') blijven altijd bewaard. Geeft het aantal verwijderde rijen terug."""
+    dagen = haal_bewaar_dagen()
+    if dagen <= 0:
+        return 0
+    grens = (datetime.now(timezone.utc) - timedelta(days=dagen)).isoformat()
+    try:
+        r = requests.delete(
+            f"{SUPABASE_URL}/rest/v1/inkoop_leads",
+            params={"gevonden_op": f"lt.{grens}", "status": "neq.naar_inkoop"},
+            headers=sb_headers({"Prefer": "return=representation"}),
+            timeout=60,
+        )
+        if r.status_code >= 300:
+            log(f"WAARSCHUWING: opruimen mislukt ({r.status_code}): {r.text[:300]}")
+            return 0
+        aantal = len(r.json()) if r.text.strip().startswith("[") else 0
+        log(f"{aantal} lead(s) ouder dan {dagen} dagen opgeruimd.")
+        return aantal
+    except requests.RequestException as e:
+        log(f"WAARSCHUWING: opruimen mislukt: {e}")
+        return 0
+
+
+# ── Bestaande leads verversen (eenmalig) ─────────────────────────────────────
+VERVERS_MAX = int(os.environ.get("RADAR_VERVERS_MAX", "100"))  # opzoekingen per run
+
+
+def venster_filter():
+    """PostgREST-filter: binnen de bewaartermijn, of naar de inkoop gezet (= wat de app toont)."""
+    grens = (datetime.now(timezone.utc) - timedelta(days=max(1, haal_bewaar_dagen()))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f'(gevonden_op.gte."{grens}",status.eq.naar_inkoop)'
+
+
+def zoek_advertentie(lead):
+    """Zoekt één bestaande advertentie terug via de zoek-API (op titel)."""
+    r = requests.get(SEARCH_URL, headers=HEADERS, timeout=30, params={
+        "l1CategoryId": L1_CATEGORY, "query": lead["titel"], "limit": "100", "offset": "0",
+        "searchInTitleAndDescription": "true", "viewOptions": "list-view",
+        "sortBy": "SORT_INDEX", "sortOrder": "DECREASING"})
+    r.raise_for_status()
+    return next((x for x in r.json().get("listings") or [] if str(x.get("itemId")) == lead["ad_id"]), None)
+
+
+def ververs_oude_leads(schrijf=True, uitvoer=log):
+    """Leads die zijn opgeslagen vóór de prijs-fix missen vaak de prijs ("bieden
+    vanaf") en bouwjaar/km. Die zoeken we één keer opnieuw op — populaire leads
+    eerst. Geeft {ad_id: bijgewerkte velden} terug (handig voor een droogtest)."""
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
+        "select": "ad_id,titel,beschrijving,prijs,bouwjaar,km",
+        "velden_ververst": "is.null", "status": "neq.genegeerd", "or": venster_filter(),
+        "order": "gevonden_op.desc", "limit": "1000"})
+    r.raise_for_status()
+    populair = haal_populair()
+
+    def is_pop(lead):
+        return populaire_term(lead, populair) is not None
+
+    nodig = [l for l in r.json()
+             if l.get("prijs") is None or (is_pop(l) and (l.get("bouwjaar") is None or l.get("km") is None))]
+    nodig.sort(key=lambda l: not is_pop(l))  # populair eerst
+
+    updates = {}
+    for i, lead in enumerate(nodig[:VERVERS_MAX]):
+        if i:
+            time.sleep(1.0)  # niet hameren
+        try:
+            hit = zoek_advertentie(lead)
+        except (requests.RequestException, ValueError) as e:
+            uitvoer(f"  {lead['titel'][:50]!r}: opzoeken mislukt ({e}) — volgende run opnieuw")
+            continue
+        velden = {"velden_ververst": datetime.now(timezone.utc).isoformat()}
+        m = map_listing(hit) if hit else None
+        if m:
+            for k in ("prijs", "bouwjaar", "km"):
+                if m[k] is not None:
+                    velden[k] = m[k]
+            velden["is_particulier"] = m["is_particulier"]
+            if is_pop(lead):
+                velden["mo_bijgewerkt"] = None  # opnieuw prijzen met de aangevulde gegevens
+        uitvoer(f"  {lead['titel'][:50]!r}: " + (
+            f"prijs={velden.get('prijs')} bouwjaar={velden.get('bouwjaar')} km={velden.get('km')}"
+            if m else "niet meer gevonden (verkocht/verwijderd?)"))
+        if schrijf:
+            p = requests.patch(f"{SUPABASE_URL}/rest/v1/inkoop_leads", params={"ad_id": f"eq.{lead['ad_id']}"},
+                               headers=sb_headers({"Prefer": "return=minimal"}), data=json.dumps(velden), timeout=30)
+            if p.status_code >= 300:
+                uitvoer(f"WAARSCHUWING: verversen opslaan mislukt ({p.status_code}): {p.text[:200]}")
+                continue
+        updates[lead["ad_id"]] = velden
+    if nodig:
+        uitvoer(f"Verversen: {len(updates)} van {len(nodig)} oude lead(s) bijgewerkt"
+                f"{' (rest volgende run)' if len(nodig) > VERVERS_MAX else ''}.")
+    return updates
+
+
+# ── Inkoopprijzen (Motoroccasion) ────────────────────────────────────────────
+def haal_populair():
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_populair",
+                     params={"select": "term,rang", "order": "rang.asc"}, headers=sb_headers(), timeout=30)
+    r.raise_for_status()
+    return [p for p in r.json() if (p.get("term") or "").strip()]
+
+
+def populaire_term(lead, populair):
+    """Zelfde match als de app (term in titel/omschrijving); bij meerdere de
+    meest specifieke (langste) term, zodat 'Z900 RS' wint van 'Z900'."""
+    hooi = f"{lead.get('titel') or ''} {lead.get('beschrijving') or ''}".lower()
+    hits = [p for p in populair if p["term"].strip().lower() in hooi]
+    if not hits:
+        return None
+    return max(hits, key=lambda p: (len(p["term"].strip()), -p["rang"]))["term"].strip()
+
+
+def moet_prijzen(lead):
+    if not lead.get("mo_bijgewerkt") or lead.get("mo_status") == "fout":
+        return True
+    try:
+        gedaan = datetime.fromisoformat(lead["mo_bijgewerkt"].replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - gedaan > timedelta(days=MO_VERVERS_DAGEN)
+
+
+def merk_label(term, merk):
+    eerste = (term.split() or [""])[0]
+    return eerste if mo.norm(eerste) == mo.norm(merk) else merk.replace("-", " ").title()
+
+
+def prijs_lead(lead, term, cache):
+    """Bepaalt de mo_*-velden voor één lead. cache deelt zoekresultaten tussen
+    leads van hetzelfde model + bouwjaar (één verzoek per combinatie)."""
+    nu = datetime.now(timezone.utc).isoformat()
+    velden = {"mo_bijgewerkt": nu, "mo_model": term, "mo_verkoopdoel": None, "mo_aantal": 0,
+              "mo_vergelijkers": None, "mo_url": None, "mo_toelichting": None}
+
+    # Oudere leads (van vóór de bouwjaar/km-velden): proberen uit de tekst.
+    jaar, km = lead.get("bouwjaar"), lead.get("km")
+    if jaar is None or km is None:
+        j2, k2 = bouwjaar_en_km({}, lead.get("titel"), lead.get("beschrijving"))
+        if jaar is None and j2:
+            jaar = velden["bouwjaar"] = j2
+        if km is None and k2 is not None:
+            km = velden["km"] = k2
+
+    merk = mo.merk_uit_lead(lead.get("url"), term)
+    model = mo.model_uit_term(term, merk) if merk else ""
+    if not merk or not model:
+        return {**velden, "mo_status": "fout", "mo_toelichting": "merk/model niet te bepalen uit de zoekterm"}
+    if not jaar or km is None:
+        return {**velden, "mo_status": "te_weinig_data",
+                "mo_toelichting": "bouwjaar of km-stand onbekend in de advertentie"}
+
+    # Meest specifieke Motoroccasion-type uit de titel (Z900RS ≠ Z900).
+    gekozen = mo.kies_type(lead.get("titel"), model, mo.types_voor_merk(merk))
+    type_key, type_naam = gekozen if gekozen else (mo.slug(model), model)
+    if mo.norm(type_naam) != mo.norm(model):
+        velden["mo_model"] = f"{merk_label(term, merk)} {mo.mooi(type_naam)}"
+
+    sleutel = (merk, type_key, jaar)
+    if sleutel not in cache:
+        if cache.get("_verzoeken", 0) >= MO_MAX_VERZOEKEN:
+            return None  # limiet bereikt: volgende run verder
+        cache["_verzoeken"] = cache.get("_verzoeken", 0) + 1
+        try:
+            aanbod, url = mo.zoek_aanbod(merk, type_key, jaar)
+            cache[sleutel] = {"aanbod": aanbod, "url": url}
+        except mo.MoFout as e:
+            cache[sleutel] = {"fout": str(e), "systemisch": e.systemisch}
+        except requests.RequestException as e:
+            cache[sleutel] = {"fout": f"Motoroccasion niet bereikbaar: {e}", "systemisch": True}
+    res = cache[sleutel]
+    if "fout" in res:
+        return {**velden, "mo_status": "fout", "mo_toelichting": res["fout"][:300]}
+
+    doel, vgl, toelichting = bepaal_verkoopdoel(res["aanbod"], jaar, km)
+    return {**velden,
+            "mo_status": "ok" if doel else "te_weinig_data",
+            "mo_verkoopdoel": doel,
+            "mo_aantal": len(vgl),
+            "mo_vergelijkers": [{k: a.get(k) for k in ("prijs", "bouwjaar", "km", "url", "titel", "dealer")}
+                                for a in vgl] or None,
+            "mo_url": res["url"],
+            "mo_toelichting": toelichting}
+
+
+def bereken_inkoopprijzen(schrijf=True, uitvoer=log, overrides=None):
+    """Verkoopdoel voor particuliere leads van een populair model. Geeft een
+    waarschuwing (str) terug als Motoroccasion structureel niet werkt.
+    overrides: {ad_id: velden} die (nog) niet in de database staan (droogtest)."""
+    populair = haal_populair()
+    if not populair:
+        uitvoer("Geen populaire modellen ingesteld — prijsvergelijking overgeslagen.")
+        return None
+    # Alleen wat de app toont: binnen de bewaartermijn, of naar de inkoop gezet.
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
+        "select": "ad_id,titel,beschrijving,url,prijs,bouwjaar,km,status,mo_status,mo_bijgewerkt",
+        "is_particulier": "eq.true", "status": "neq.genegeerd", "or": venster_filter(),
+        "order": "gevonden_op.desc", "limit": "500"})
+    r.raise_for_status()
+
+    cache, bijgewerkt, systeemfouten = {}, 0, set()
+    for lead in r.json():
+        lead.update((overrides or {}).get(lead["ad_id"], {}))
+        if lead.get("is_particulier") is False:
+            continue
+        term = populaire_term(lead, populair)
+        if not term or not moet_prijzen(lead):
+            continue
+        velden = prijs_lead(lead, term, cache)
+        if velden is None:
+            uitvoer(f"Limiet van {MO_MAX_VERZOEKEN} Motoroccasion-verzoeken bereikt; rest volgt bij de volgende run.")
+            break
+        doel = f"€ {velden['mo_verkoopdoel']}" if velden["mo_verkoopdoel"] else velden["mo_status"]
+        uitvoer(f"  {lead['titel'][:50]!r} → {velden['mo_model']} {lead.get('bouwjaar') or velden.get('bouwjaar')}"
+                f"/{lead.get('km') if lead.get('km') is not None else velden.get('km')} km: {doel}"
+                f" ({velden['mo_aantal']} vgl){' — ' + velden['mo_toelichting'] if velden['mo_toelichting'] else ''}")
+        if schrijf:
+            p = requests.patch(f"{SUPABASE_URL}/rest/v1/inkoop_leads", params={"ad_id": f"eq.{lead['ad_id']}"},
+                               headers=sb_headers({"Prefer": "return=minimal"}), data=json.dumps(velden), timeout=30)
+            if p.status_code >= 300:
+                uitvoer(f"WAARSCHUWING: prijs opslaan mislukt ({p.status_code}): {p.text[:200]}")
+                continue
+        bijgewerkt += 1
+
+    for res in cache.values():
+        if isinstance(res, dict) and res.get("systemisch"):
+            systeemfouten.add(res["fout"])
+    uitvoer(f"Prijsvergelijking: {bijgewerkt} lead(s) bijgewerkt, "
+            f"{cache.get('_verzoeken', 0)} Motoroccasion-zoekverzoek(en).")
+    if systeemfouten:
+        return "Motoroccasion-prijsvergelijking: " + "; ".join(sorted(systeemfouten))[:400]
+    return None
 
 
 def update_status(http_ok, gevonden, gemapt, nieuw, waarschuwing):
@@ -381,10 +713,48 @@ def main():
         insert_leads(nieuw)
         nieuwe_particulier = [m for m in nieuw if m["is_particulier"]]
 
-    update_status(http_ok, len(listings), gemapt, nieuw_count, waarschuwing)
+    # Oude leads opruimen (verse tab). Alleen als de run gezond was, zodat een
+    # mislukte API-aanroep niet per ongeluk de hele lijst leegveegt.
+    if http_ok and not waarschuwing:
+        ruim_oude_leads_op()
+
+    # Oude leads aanvullen + verkoopdoel via Motoroccasion voor populaire
+    # particuliere leads. Na het opruimen: geen verzoeken voor leads die toch
+    # verdwijnen.
+    mo_waarschuwing = verrijk_en_prijs()
+
+    update_status(http_ok, len(listings), gemapt, nieuw_count,
+                  "; ".join(w for w in (waarschuwing, mo_waarschuwing) if w) or None)
     stuur_digest(nieuwe_particulier)
     log("Klaar.")
 
 
+def verrijk_en_prijs():
+    """Oude leads aanvullen (prijs/bouwjaar/km) en daarna verkoopdoelen bepalen.
+    Een fout hier mag nooit de rest van de job (leads, digest) tegenhouden."""
+    try:
+        ververs_oude_leads()
+    except Exception as e:  # noqa: BLE001 — bewust breed, zie docstring
+        log(f"WAARSCHUWING: oude leads verversen mislukt: {e}")
+    try:
+        return bereken_inkoopprijzen()
+    except Exception as e:  # noqa: BLE001
+        melding = f"Motoroccasion-prijsvergelijking mislukt: {e}"
+        log("WAARSCHUWING: " + melding)
+        return melding
+
+
+def alleen_prijzen():
+    """Workflow-modus 'alleen-prijzen': geen nieuwe advertenties ophalen, niets
+    opruimen, geen mail — alleen oude leads aanvullen en verkoopdoelen bepalen.
+    Handig direct na het toevoegen van een populair model."""
+    if not (SUPABASE_URL and SERVICE_KEY):
+        fail("SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY zijn verplicht.")
+    w = verrijk_en_prijs()
+    if w:
+        log("WAARSCHUWING: " + w)
+    log("Klaar (alleen prijzen).")
+
+
 if __name__ == "__main__":
-    main()
+    alleen_prijzen() if "--alleen-prijzen" in sys.argv else main()

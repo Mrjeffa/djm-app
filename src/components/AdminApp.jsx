@@ -3702,7 +3702,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{}}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -3725,6 +3725,15 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
+
+  // Inkoop-radar: bewaar-dagen + populaire modellen
+  const [dagen,setDagen]=useState(inkoopBewaarDagen);
+  const [dagenOk,setDagenOk]=useState(false);
+  useEffect(()=>setDagen(inkoopBewaarDagen),[inkoopBewaarDagen]);
+  const [nieuwTerm,setNieuwTerm]=useState("");
+  const [termBezig,setTermBezig]=useState(false);
+  const slaDagenOp=async()=>{ const n=await onSaveInkoopDagen(dagen); if(n) setDagen(n); setDagenOk(true); setTimeout(()=>setDagenOk(false),2000); };
+  const voegTermToe=async()=>{ const t=nieuwTerm.trim(); if(!t) return; setTermBezig(true); try{ await onAddPopulair(t); setNieuwTerm(""); } finally { setTermBezig(false); } };
 
   const exporteerKlanten = async () => {
     const {utils,writeFile} = await import("xlsx");
@@ -4045,6 +4054,52 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
         </button>
       </div>
 
+      {/* Inkoop-radar */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={s.sectionLabel}>Inkoop-radar</div>
+
+        {/* Bewaar-dagen */}
+        <div style={{marginBottom:22,paddingBottom:22,borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:6,color:T.text}}>Advertenties bewaren</div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+            Advertenties ouder dan dit aantal dagen verdwijnen automatisch uit de inkoop-tab. In de winter kun je dit lager zetten dan in het voorjaar.
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input style={{...s.input,width:80,textAlign:"center"}} type="number" min="1" max="60"
+              value={dagen} onChange={e=>setDagen(e.target.value)}/>
+            <span style={{fontSize:13,color:T.muted}}>dagen</span>
+            <button style={{...s.btn,width:"auto",padding:"9px 18px",background:dagenOk?T.green:T.accent,marginLeft:4}} onClick={slaDagenOp}>
+              {dagenOk?"✓ Opgeslagen":"Opslaan"}
+            </button>
+          </div>
+        </div>
+
+        {/* Populaire modellen */}
+        <div>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:6,color:T.text}}>🔥 Populaire modellen</div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+            Vul de modellen in die op motoroccasion.nl bovenaan "Meest getoond in deze maand" staan — merk + model of los trefwoord (bijv. "Kawasaki Z900", "MT-07"). Leads met dat woord in de titel/omschrijving komen in de inkoop-tab bovenaan met een 🔥-badge. Er is geen limiet; check dit maandelijks even.
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            <input style={{...s.input,flex:1,minWidth:180}} value={nieuwTerm} onChange={e=>setNieuwTerm(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&voegTermToe()} placeholder="bijv. Kawasaki Z900"/>
+            <button onClick={voegTermToe} disabled={termBezig||!nieuwTerm.trim()} style={{...s.btn,width:"auto",padding:"9px 18px",opacity:(termBezig||!nieuwTerm.trim())?0.5:1}}>Toevoegen</button>
+          </div>
+          {inkoopPopulair.length===0
+            ? <div style={{fontSize:12,color:T.muted}}>Nog geen populaire modellen ingesteld.</div>
+            : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {inkoopPopulair.map((p,i)=>(
+                  <span key={p.id} style={{display:"inline-flex",alignItems:"center",gap:7,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 12px",fontSize:13,color:T.text}}>
+                    <span style={{color:T.muted,fontSize:11,fontWeight:700}}>{i+1}.</span>
+                    {p.term}
+                    <button onClick={()=>onDeletePopulair(p.id)} title="Verwijderen"
+                      style={{border:"none",background:"transparent",color:T.muted,cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>
+                  </span>
+                ))}
+              </div>}
+        </div>
+      </div>
+
       {/* Gegevens exporteren / importeren */}
       <div style={{...s.card,marginTop:16}}>
         <div style={s.sectionLabel}>Gegevens exporteren / importeren</div>
@@ -4092,7 +4147,121 @@ const LEAD_STATUS = {
   naar_inkoop: { label:"Naar inkoop", kleur:"#16A34A" },
 };
 
-function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefresh=async()=>{}}){
+// Bepaalt of een lead "van vandaag" is (voor de NIEUW-badge): de advertentie-
+// datum als die bekend is, anders wanneer de radar hem vond. Alles ouder dan
+// vandaag is niet meer nieuw.
+function isVandaag(l){
+  const iso=l.advertentie_datum||l.gevonden_op;
+  if(!iso) return false;
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return false;
+  return d.toDateString()===new Date().toDateString();
+}
+
+// ── Inkoopadvies (populaire modellen, alleen particulier) ──
+// Het verkoopdoel (gemiddelde van max. 3 goedkoopste vergelijkbare op
+// Motoroccasion) berekent de ophaal-job; zie inkoop-radar/prijzen.py.
+const OPENINGSBOD_ONDER_DOEL = 1500;
+const MAX_ONDER_DOEL = 1000;
+const GEEL_BOVEN_MAX = 1000;
+const afrondOp50 = (n) => Math.round(n/50)*50;
+const euro = (n) => `€${Math.round(n).toLocaleString("nl-NL")}`;
+
+function inkoopAdvies(l){
+  if(!l.mo_verkoopdoel) return null;
+  const doel=l.mo_verkoopdoel;
+  const openingsbod=afrondOp50(doel-OPENINGSBOD_ONDER_DOEL);
+  const max=doel-MAX_ONDER_DOEL;
+  const vraag=l.prijs;
+  const kleur = vraag==null ? "grijs" : vraag<=max ? "groen" : vraag<=max+GEEL_BOVEN_MAX ? "geel" : "grijs";
+  // Vraagt de verkoper al minder dan ons openingsbod: bied € 500 onder zijn vraagprijs.
+  const bod = (vraag!=null && vraag<openingsbod) ? vraag-500 : openingsbod;
+  return {doel, openingsbod, max, kleur, bod};
+}
+
+function bodTekst(l, model, bod){
+  return `Hoi, ik heb interesse in je ${model} (${l.bouwjaar}, ${Number(l.km).toLocaleString("nl-NL")} km). `
+    + `Ik bied je ${euro(bod)}. Als dat bespreekbaar is, kom ik hem graag bekijken.\n`
+    + `Groet, Jeffrey – De Jonge Motoren, Tholen`;
+}
+
+async function kopieerNaarKlembord(tekst){
+  try{ await navigator.clipboard.writeText(tekst); return true; }
+  catch{
+    // Fallback voor browsers/webviews zonder Clipboard-API
+    const ta=document.createElement("textarea");
+    ta.value=tekst; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand("copy"); }catch{}
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+function InkoopPrijsBlok({lead, model}){
+  const [gekopieerd,setGekopieerd]=useState(false);
+  const advies=inkoopAdvies(lead);
+  const kleurCode={groen:T.green, geel:T.yellow, grijs:T.muted}[advies?.kleur||"grijs"];
+  const vergelijkers=Array.isArray(lead.mo_vergelijkers)?lead.mo_vergelijkers:[];
+  const kopieer=async()=>{
+    if(await kopieerNaarKlembord(bodTekst(lead, model, advies.bod))){
+      setGekopieerd(true); setTimeout(()=>setGekopieerd(false),2000);
+    }
+  };
+  const kolom=(label,waarde,sub)=>(
+    <div style={{minWidth:0}}>
+      <div style={{fontSize:10,color:T.muted,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+      <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:16,color:T.text,lineHeight:1.2}}>{waarde}</div>
+      {sub&&<div style={{fontSize:11,color:T.muted}}>{sub}</div>}
+    </div>
+  );
+
+  return(
+    <div style={{marginTop:4,padding:"10px 12px",borderRadius:6,border:`1px solid ${kleurCode}55`,background:`${kleurCode}12`}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,alignItems:"start"}}>
+        {kolom("Vraagprijs", lead.prijs!=null?euro(lead.prijs):"n.o.t.k.",
+          lead.bouwjaar||lead.km!=null?[lead.bouwjaar, lead.km!=null?`${Number(lead.km).toLocaleString("nl-NL")} km`:null].filter(Boolean).join(" · "):null)}
+        {advies
+          ? kolom("Verkoopdoel MO", euro(advies.doel), `${lead.mo_aantal} vergelijker${lead.mo_aantal===1?"":"s"}`)
+          : kolom("Verkoopdoel MO", <span style={{fontSize:14,color:T.muted}}>{lead.mo_status==="te_weinig_data"?"te weinig data":lead.mo_status==="fout"?"niet gelukt":"volgt bij volgende run"}</span>,
+              lead.mo_toelichting||null)}
+        {advies&&kolom("Inkoop", `${euro(advies.openingsbod)} – ${euro(advies.max)}`, "openingsbod – max")}
+      </div>
+      {!advies&&lead.mo_url&&(
+        <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:8,fontSize:12,color:T.muted}}>
+          Zelf bekijken op Motoroccasion ↗
+        </a>
+      )}
+      {advies&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={kopieer}
+            style={{...s.btn,padding:"7px 14px",fontSize:13,background:gekopieerd?T.green:T.accent}}>
+            {gekopieerd?"✓ Gekopieerd":`Kopieer bod (${euro(advies.bod)})`}
+          </button>
+          {lead.mo_url&&(
+            <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.muted}}>
+              Motoroccasion ↗
+            </a>
+          )}
+          {vergelijkers.length>0&&(
+            <details style={{fontSize:12,color:T.muted}}>
+              <summary style={{cursor:"pointer"}}>Vergelijkers bekijken</summary>
+              <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
+                {vergelijkers.map((v,i)=>(
+                  <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                    {euro(v.prijs)} · {v.bouwjaar} · {Number(v.km).toLocaleString("nl-NL")} km{v.titel?` · ${v.titel}`:""} ↗
+                  </a>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onUpdateStatus=()=>{}, onRefresh=async()=>{}}){
   const mob=useIsMobile();
   const [verversen,setVerversen]=useState(false);
   const ververs=async()=>{ setVerversen(true); try{ await onRefresh(); } finally { setVerversen(false); } };
@@ -4102,18 +4271,49 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefres
   const [plaats,setPlaats]=useState("");
   const [toonDealers,setToonDealers]=useState(false);
   const [toonGenegeerd,setToonGenegeerd]=useState(false);
+  const [alleenPopulair,setAlleenPopulair]=useState(false);
 
   const fmt=(iso)=>{ if(!iso) return ""; const d=new Date(iso); return isNaN(d.getTime())?"":d.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}); };
   const fmtDT=(iso)=>{ if(!iso) return "—"; const d=new Date(iso); return isNaN(d.getTime())?"—":d.toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); };
 
+  // Vangnet: leads ouder dan de ingestelde bewaar-dagen verbergen (de job ruimt
+  // ze ook echt op). bewaarDagen wordt op de Instellingen-pagina beheerd.
+  const verseGrens=Date.now()-(bewaarDagen>0?bewaarDagen:5)*86400000;
+
+  // Best matchende populaire term (laagste rang wint), of null.
+  const populairMatch=(l)=>{
+    const hooi=((l.titel||"")+" "+(l.beschrijving||"")).toLowerCase();
+    let best=null;
+    for(const p of populair){
+      const t=(p.term||"").trim().toLowerCase();
+      if(t && hooi.includes(t) && (best==null||p.rang<best.rang)) best=p;
+    }
+    return best;
+  };
+  const populairRang=(l)=>populairMatch(l)?.rang ?? null;
+
   const zichtbaar=leads.filter(l=>{
     if(!toonDealers && l.is_particulier===false) return false;
     if(!toonGenegeerd && l.status==="genegeerd") return false;
+    // Wat naar de inkoop is gezet blijft altijd zichtbaar.
+    if(l.status!=="naar_inkoop" && l.gevonden_op){
+      const t=new Date(l.gevonden_op).getTime();
+      if(!isNaN(t) && t<verseGrens) return false;
+    }
+    if(alleenPopulair && populairRang(l)==null) return false;
     if(prijsMin && (l.prijs==null || l.prijs<parseInt(prijsMin))) return false;
     if(prijsMax && (l.prijs==null || l.prijs>parseInt(prijsMax))) return false;
     if(zoek.trim()){ const q=zoek.toLowerCase(); if(!((l.titel||"").toLowerCase().includes(q)||(l.beschrijving||"").toLowerCase().includes(q))) return false; }
     if(plaats.trim() && !((l.plaats||"").toLowerCase().includes(plaats.toLowerCase()))) return false;
     return true;
+  }).sort((a,b)=>{
+    // Populaire modellen bovenaan (op rang); daarbinnen de bestaande volgorde
+    // (gevonden_op aflopend) behouden dankzij stabiele sort.
+    const ra=populairRang(a), rb=populairRang(b);
+    if(ra==null && rb==null) return 0;
+    if(ra==null) return 1;
+    if(rb==null) return -1;
+    return ra-rb;
   });
 
   const statusKnop=(lead,key)=>{
@@ -4141,12 +4341,18 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefres
       {/* Statusregel */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <div style={{fontSize:12,color:T.muted}}>
-          {leads.filter(l=>l.status==="nieuw").length} nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
+          {leads.filter(l=>l.status==="nieuw"&&isVandaag(l)).length} vandaag nieuw · {zichtbaar.length} getoond · laatst bijgewerkt {fmtDT(status?.laatste_run)}
         </div>
-        <button onClick={ververs} disabled={verversen} style={{...s.btnGhost,opacity:verversen?0.6:1,display:"flex",alignItems:"center",gap:7}}>
-          <span style={{display:"inline-block",animation:verversen?"spin 0.8s linear infinite":"none"}}>↻</span>
-          {verversen?"Verversen…":"Ververs leads"}
-        </button>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>setAlleenPopulair(v=>!v)}
+            style={{padding:"7px 12px",borderRadius:6,border:`1px solid ${alleenPopulair?T.accent:T.border}`,background:alleenPopulair?`${T.accent}18`:"transparent",color:alleenPopulair?T.accent:T.muted,cursor:"pointer",fontSize:13,fontWeight:alleenPopulair?700:500,fontFamily:"Barlow, sans-serif",display:"flex",alignItems:"center",gap:6}}>
+            🔥 {alleenPopulair?"Alleen populair aan":"Alleen populair"}
+          </button>
+          <button onClick={ververs} disabled={verversen} style={{...s.btnGhost,opacity:verversen?0.6:1,display:"flex",alignItems:"center",gap:7}}>
+            <span style={{display:"inline-block",animation:verversen?"spin 0.8s linear infinite":"none"}}>↻</span>
+            {verversen?"Verversen…":"Ververs leads"}
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -4189,6 +4395,9 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefres
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {zichtbaar.map(l=>{
           const st=LEAD_STATUS[l.status]||LEAD_STATUS.nieuw;
+          const match=populairMatch(l);
+          const pop=match!=null;
+          const nieuwVandaag=l.status==="nieuw"&&isVandaag(l);
           return(
             <div key={l.ad_id} style={{...s.card,padding:0,overflow:"hidden",display:"flex",gap:0,opacity:l.status==="genegeerd"?0.55:1}}>
               <div style={{width:mob?96:140,flexShrink:0,background:T.surf2,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -4199,10 +4408,17 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefres
               <div style={{flex:1,padding:"12px 14px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
                   <a href={l.url} target="_blank" rel="noopener noreferrer"
-                    style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none"}}>
+                    style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none",minWidth:0,overflowWrap:"anywhere"}}>
                     {l.titel} ↗
                   </a>
-                  <span style={{...s.badge(st.kleur),flexShrink:0}}>{st.label}</span>
+                  <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:mob?96:"none"}}>
+                    {pop&&<span style={{...s.badge(T.accent),flexShrink:0}}>🔥 Populair</span>}
+                    {/* NIEUW alleen voor onbehandelde leads van vandaag; overige
+                        statussen (bekeken/genegeerd/naar inkoop) tonen hun label. */}
+                    {l.status==="nieuw"
+                      ? (nieuwVandaag&&<span style={{...s.badge(T.red),flexShrink:0}}>NIEUW</span>)
+                      : <span style={{...s.badge(st.kleur),flexShrink:0}}>{st.label}</span>}
+                  </div>
                 </div>
                 <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:T.muted}}>
                   <span style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:16,color:T.accent}}>
@@ -4213,6 +4429,7 @@ function InkoopRadarPage({leads=[], status=null, onUpdateStatus=()=>{}, onRefres
                   {!l.is_particulier&&<span style={{...s.badge(T.muted),fontSize:10}}>Dealer</span>}
                   <span>Gevonden {fmt(l.gevonden_op)}</span>
                 </div>
+                {pop&&l.is_particulier!==false&&<InkoopPrijsBlok lead={l} model={l.mo_model||match.term}/>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
                   {["bekeken","genegeerd","naar_inkoop"].map(k=>statusKnop(l,k))}
                 </div>
@@ -4246,6 +4463,7 @@ export default function AdminApp(){
   const [klussen,setKlussen]=useState([]);
   const [inkoopLeads,setInkoopLeads]=useState([]);
   const [inkoopStatus,setInkoopStatus]=useState(null);
+  const [inkoopPopulair,setInkoopPopulair]=useState([]);
   const [laden,setLaden]=useState(true);
 
   // ── Opruimen van verlopen records (30 dagen na verkoop/verwijdering) ──
@@ -4288,7 +4506,7 @@ export default function AdminApp(){
         // Verkochte motoren blijven 30 dagen zichtbaar — op basis van verkocht_op,
         // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
         const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
@@ -4299,9 +4517,11 @@ export default function AdminApp(){
           sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"), // aparte tabel: alleen admin leesbaar
           sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
           sb.from("inkoop_radar_status").select("*").maybeSingle(),
+          sb.from("inkoop_populair").select("*").order("rang",{ascending:true}),
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
+        setInkoopPopulair(inkoopPopulairRes.data||[]);
         const chassisMap = Object.fromEntries((chassisData.data||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
@@ -4352,7 +4572,7 @@ export default function AdminApp(){
         }));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
@@ -4360,6 +4580,7 @@ export default function AdminApp(){
         if(inst.data?.afspraak_soorten?.length) setAfspraakSoorten(inst.data.afspraak_soorten);
         if(inst.data?.medewerkers) setMedewerkers(inst.data.medewerkers);
         if(inst.data?.afspraak_categorieen) setAfspraakCategorieen(inst.data.afspraak_categorieen);
+        if(inst.data?.inkoop_bewaar_dagen != null) setInkoopBewaarDagen(inst.data.inkoop_bewaar_dagen);
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -4379,12 +4600,14 @@ export default function AdminApp(){
   // op — dat doet de GitHub Actions-job.
   const herlaadInkoop = async () => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const [leadsRes, statusRes] = await Promise.all([
+    const [leadsRes, statusRes, populairRes] = await Promise.all([
       sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
       sb.from("inkoop_radar_status").select("*").maybeSingle(),
+      sb.from("inkoop_populair").select("*").order("rang",{ascending:true}),
     ]);
     setInkoopLeads(leadsRes.data||[]);
     setInkoopStatus(statusRes.data||null);
+    setInkoopPopulair(populairRes.data||[]);
   };
 
   const updateLeadStatus = async (adId, nieuweStatus) => {
@@ -4392,6 +4615,23 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     const {error} = await sb.from("inkoop_leads").update({status:nieuweStatus}).eq("ad_id",adId);
     if(error) console.error("Lead-status bijwerken mislukt:", error);
+  };
+
+  // Populaire modellen (handmatige top-lijst). Nieuwe term krijgt de hoogste
+  // rang zodat de volgorde van toevoegen bewaard blijft.
+  const addPopulair = async (term) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const rang = inkoopPopulair.reduce((m,p)=>Math.max(m,p.rang),0)+1;
+    const {data,error} = await sb.from("inkoop_populair").insert({term,rang}).select().single();
+    if(error){ console.error("Populair toevoegen mislukt:", error); return; }
+    setInkoopPopulair(p=>[...p,data]);
+  };
+
+  const deletePopulair = async (id) => {
+    setInkoopPopulair(p=>p.filter(x=>x.id!==id)); // optimistisch
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {error} = await sb.from("inkoop_populair").delete().eq("id",id);
+    if(error) console.error("Populair verwijderen mislukt:", error);
   };
 
   const addKlant = async (f) => {
@@ -5045,6 +5285,15 @@ export default function AdminApp(){
   const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [medewerkers, setMedewerkers] = useState([]);
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
+  const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
+
+  const slaInkoopDagenOp = async (dagen) => {
+    const n = Math.max(1, Math.min(60, parseInt(dagen)||5));
+    const sb = (await import("../lib/supabase.js")).supabase;
+    await sb.from("instellingen").update({ inkoop_bewaar_dagen: n }).eq("id", 1);
+    setInkoopBewaarDagen(n);
+    return n;
+  };
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
@@ -5191,7 +5440,6 @@ export default function AdminApp(){
     {id:"inkoop",icon:"⌖",label:"Inkoop"},
     {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
-  const inkoopNieuw = inkoopLeads.filter(l=>l.status==="nieuw").length;
 
   if(laden) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100dvh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
@@ -5207,8 +5455,8 @@ export default function AdminApp(){
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
-      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData}/>}
+      {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 
@@ -5244,9 +5492,6 @@ export default function AdminApp(){
             <button key={n.id} onClick={()=>setPage(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${page===n.id?T.accent:"transparent"}`,color:page===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:page===n.id?600:400}}>
               <span style={{fontSize:15}}>{n.icon}</span>
               <span>{n.label}</span>
-              {n.id==="inkoop"&&inkoopNieuw>0&&(
-                <span style={{position:"absolute",top:4,right:"50%",marginRight:-18,background:T.accent,color:"#fff",borderRadius:8,fontSize:9,fontWeight:700,padding:"0 5px",minWidth:14,textAlign:"center"}}>{inkoopNieuw}</span>
-              )}
             </button>
           ))}
         </div>
@@ -5266,9 +5511,6 @@ export default function AdminApp(){
             <div key={n.id} style={s.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
               <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
               <span>{n.label}</span>
-              {n.id==="inkoop"&&inkoopNieuw>0&&(
-                <span style={{marginLeft:"auto",background:T.accent,color:"#fff",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 7px",minWidth:16,textAlign:"center"}}>{inkoopNieuw}</span>
-              )}
             </div>
           ))}
         </nav>
