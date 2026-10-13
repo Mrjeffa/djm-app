@@ -176,20 +176,86 @@ def dump_js(url, patroon=r"sort|order|price|prijs|page"):
             break
 
 
+def mo_json(url):
+    try:
+        r = requests.get(url, headers={**HEADERS, "Accept": "application/json"}, timeout=30)
+        return r, r.json()
+    except (requests.RequestException, ValueError) as e:
+        print(f"FOUT {url}: {e}")
+        return None, None
+
+
+def samenvatting(url):
+    """Kern van een modelpagina: totaal, welk model geselecteerd is, eerste items."""
+    r, d = mo_json(url)
+    if d is None:
+        return
+    meta = d.get("metadata") or {}
+    inv = d.get("inventories") or []
+    paren = {}
+    for it in inv:
+        k = f"{it.get('brand')}/{it.get('type')}"
+        paren[k] = paren.get(k, 0) + 1
+    eerste = [(it.get("legacyId"), (it.get("attributesByKey") or {}).get("price", {}).get("amount"),
+               it.get("manufactureYear")) for it in inv[:4]]
+    print(f"{url}\n   status={r.status_code} final={r.url} totaal={meta.get('totalCount')} "
+          f"paginas={meta.get('totalPages')} pagina={meta.get('page')} canonical={d.get('canonicalUrl')}")
+    print(f"   type={d.get('type')} selectedTypes={[t.get('name') for t in d.get('selectedTypes') or []]} "
+          f"brands={[b.get('name') for b in d.get('selectedBrands') or []]}")
+    print(f"   filters={kort(json.dumps(d.get('activeFiltersList'), ensure_ascii=False), 400)}")
+    print(f"   merk/type in items: {paren}")
+    print(f"   eerste (legacyId, prijs, jaar): {eerste}")
+    return d
+
+
 def diagnose_motoroccasion():
     kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
     s = slug(TEST_MODEL)
-    basis = f"https://www.motoroccasion.nl/motoren/{s}"
 
-    # 1) Zelfde modelpagina als HTML (wat een browser ziet) en als JSON
-    dump_pagina_html(basis)
-    dump_json(basis)
-    # 2) Varianten die mogelijk sorteren/pagineren (zonder ?filters=, robots.txt)
-    for variant in [f"{basis}?sort=price-asc", f"{basis}?page=2"]:
-        dump_json(variant)
-    # 3) De zoek-/filter-scripts: hoe worden sortering en paginering doorgegeven?
-    dump_js("https://www.motoroccasion.nl/min/js/inventory_filters.js")
-    dump_js("https://www.motoroccasion.nl/min/js/search-form.js")
+    kop("1) Welke slugs leveren welk model op (en wat doet een onbekend model?)")
+    basis = None
+    for sl in [s, "kawasaki-z-900", "kawasaki-z-900-rs", "yamaha-mt-07", "mt-07", "kawasaki-bestaatniet-xyz"]:
+        d = samenvatting(f"https://www.motoroccasion.nl/motoren/{sl}")
+        if sl == s:
+            basis = d
+
+    kop("2) Pagineringslinks uit paginationHtml")
+    if basis:
+        hrefs = re.findall(r'href="([^"]+)"', basis.get("paginationHtml") or "")
+        print(f"hrefs: {hrefs[:12]}")
+
+    kop("3) Sorteerkeuze op de HTML-pagina")
+    try:
+        r = requests.get(f"https://www.motoroccasion.nl/motoren/{s}", headers={**HEADERS, "Accept": "text/html"}, timeout=30)
+        soup = BeautifulSoup(r.text, "html.parser")
+        print(f"status={r.status_code} len={len(r.text)} type={r.headers.get('content-type')}")
+        for blok in soup.select(".list-navigation__sort")[:2]:
+            print(f"SORT-BLOK: {kort(str(blok), 2500)}")
+        for sel in soup.find_all("select"):
+            attrs = {k: v for k, v in sel.attrs.items() if k.startswith("data") or k in ("name", "id")}
+            opts = [f"{o.get('value')}={kort(o.get_text(), 40)}" for o in sel.find_all("option")[:15]]
+            print(f"SELECT {attrs} :: {opts}")
+    except requests.RequestException as e:
+        print(f"FOUT: {e}")
+
+    kop("4) Kandidaat-URL's voor pagina 2 en prijs-sortering")
+    for kand in [f"{s}/pagina-2", f"{s}/2", f"{s}?p=2", f"{s}?pagina=2",
+                 f"{s}?sort=prijs-oplopend", f"{s}?sortering=prijs-oplopend", f"{s}?order=price_asc",
+                 f"{s}/prijs-oplopend"]:
+        samenvatting(f"https://www.motoroccasion.nl/motoren/{kand}")
+
+    kop("5) Detail-URL van een advertentie")
+    if basis and basis.get("inventories"):
+        it = basis["inventories"][0]
+        for u in [f"https://www.motoroccasion.nl/motoren/{it.get('slug')}",
+                  f"https://www.motoroccasion.nl/motoren/{it.get('slug')}-m{it.get('legacyId')}.html",
+                  f"https://www.motoroccasion.nl/motoren/x-m{it.get('legacyId')}.html"]:
+            try:
+                r = requests.get(u, headers={**HEADERS, "Accept": "text/html"}, timeout=30, allow_redirects=True)
+                titel = BeautifulSoup(r.text, "html.parser").title
+                print(f"{u}\n   status={r.status_code} final={r.url} title={kort(titel.string if titel else '', 120)}")
+            except requests.RequestException as e:
+                print(f"FOUT {u}: {e}")
 
 
 def dump_pagina_html(url):
