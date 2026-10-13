@@ -62,4 +62,5 @@ jobs:
         if: ${{ github.event.inputs.modus == 'diagnose' }}
         env:
           TEST_MODEL: ${{ github.event.inputs.test_model }}
+          DIAGNOSE_2DEHANDS: "0"
         run: python inkoop-radar/diagnose.py

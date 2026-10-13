@@ -111,21 +111,119 @@ def dump_pagina(url, kaarten=2):
     return soup
 
 
+def structuur(obj, pad="$", diepte=0, max_diepte=4):
+    """Print de vorm van een JSON-object (sleutels, types, lijstlengtes)."""
+    if diepte > max_diepte:
+        return
+    if isinstance(obj, dict):
+        print(f"{'  ' * diepte}{pad}: dict({len(obj)}) sleutels={list(obj.keys())[:40]}")
+        for k, v in list(obj.items())[:40]:
+            if isinstance(v, (dict, list)):
+                structuur(v, f"{pad}.{k}", diepte + 1, max_diepte)
+    elif isinstance(obj, list):
+        print(f"{'  ' * diepte}{pad}: list({len(obj)})")
+        if obj and isinstance(obj[0], (dict, list)):
+            structuur(obj[0], f"{pad}[0]", diepte + 1, max_diepte)
+
+
+def dump_json(url):
+    kop(f"GET (JSON) {url}")
+    try:
+        r = requests.get(url, headers={**HEADERS, "Accept": "application/json"}, timeout=30)
+        print(f"status={r.status_code} final={r.url} len={len(r.text)} type={r.headers.get('content-type')}")
+        data = r.json()
+    except (requests.RequestException, ValueError) as e:
+        print(f"FOUT: {e}")
+        return None
+    structuur(data)
+    # Zoek de eerste lijst met dicts die op advertenties lijkt en toon 2 items volledig.
+    def vind(o):
+        if isinstance(o, list) and o and isinstance(o[0], dict) and len(o) >= 3:
+            return o
+        if isinstance(o, dict):
+            for v in o.values():
+                x = vind(v)
+                if x:
+                    return x
+        return None
+    items = vind(data)
+    if items:
+        print(f"EERSTE ITEMLIJST: {len(items)} items")
+        for it in items[:2]:
+            print(f"ITEM: {kort(json.dumps(it, ensure_ascii=False), 3000)}")
+    # Ook alles wat naar paginering/sortering/totaal ruikt
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if re.search(r"page|total|count|sort|order|meta|pagination|links", k, re.I):
+                print(f"META {k}: {kort(json.dumps(v, ensure_ascii=False), 800)}")
+    return data
+
+
+def dump_js(url, patroon=r"sort|order|price|prijs|page"):
+    kop(f"JS {url}")
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=30)
+    except requests.RequestException as e:
+        print(f"FOUT: {e}")
+        return
+    print(f"status={r.status_code} len={len(r.text)}")
+    gezien = 0
+    for m in re.finditer(patroon, r.text, re.I):
+        s = max(0, m.start() - 120)
+        print(f"…{kort(r.text[s:m.end() + 160], 300)}…")
+        gezien += 1
+        if gezien >= 25:
+            break
+
+
 def diagnose_motoroccasion():
     kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
-    try:
-        r = requests.get("https://www.motoroccasion.nl/robots.txt", headers=HEADERS, timeout=20)
-        print("robots.txt:", kort(r.text, 1200))
-    except requests.RequestException as e:
-        print(f"robots.txt FOUT: {e}")
-
     s = slug(TEST_MODEL)
-    for url in [
-        f"https://www.motoroccasion.nl/motoren/{s}",
-        "https://www.motoroccasion.nl/motoren/kawasaki-z-900-b24-tg1129.html",
-        "https://www.motoroccasion.nl/",
-    ]:
-        dump_pagina(url)
+    basis = f"https://www.motoroccasion.nl/motoren/{s}"
+
+    # 1) Zelfde modelpagina als HTML (wat een browser ziet) en als JSON
+    dump_pagina_html(basis)
+    dump_json(basis)
+    # 2) Varianten die mogelijk sorteren/pagineren (zonder ?filters=, robots.txt)
+    for variant in [f"{basis}?sort=price-asc", f"{basis}?page=2"]:
+        dump_json(variant)
+    # 3) De zoek-/filter-scripts: hoe worden sortering en paginering doorgegeven?
+    dump_js("https://www.motoroccasion.nl/min/js/inventory_filters.js")
+    dump_js("https://www.motoroccasion.nl/min/js/search-form.js")
+
+
+def dump_pagina_html(url):
+    """Als dump_pagina, maar dwingt HTML af en toont tegels/paginering/sortering."""
+    kop(f"GET (HTML) {url}")
+    try:
+        r = requests.get(url, headers={**HEADERS, "Accept": "text/html"}, timeout=30)
+    except requests.RequestException as e:
+        print(f"FOUT: {e}")
+        return
+    print(f"status={r.status_code} final={r.url} len={len(r.text)} type={r.headers.get('content-type')}")
+    soup = BeautifulSoup(r.text, "html.parser")
+    print(f"title: {kort(soup.title.string if soup.title else '', 200)}")
+    klassen = {}
+    for art in soup.find_all("article"):
+        k = " ".join(art.get("class") or [])
+        klassen[k] = klassen.get(k, 0) + 1
+    print(f"ARTICLE-klassen: {klassen}")
+    for sel in soup.find_all("select"):
+        opts = [f"{o.get('value')}={kort(o.get_text(), 30)}" for o in sel.find_all("option")[:15]]
+        print(f"SELECT name={sel.get('name')} id={sel.get('id')} :: {opts}")
+    for el in soup.find_all(attrs={"data-sort": True})[:10]:
+        print(f"DATA-SORT: {kort(str(el), 300)}")
+    for a in soup.find_all("a", href=True):
+        if re.search(r"page|pagina|sort|[?&]p=", a["href"], re.I):
+            print(f"LINK {kort(a.get_text(), 30)} -> {a['href']}")
+    tegels = [a for a in soup.find_all("article") if a.find("a", href=re.compile(r"-m\d+\.html"))]
+    print(f"TEGELS met advertentielink: {len(tegels)}")
+    for t in tegels[:2]:
+        print(f"TEGEL-HTML: {kort(str(t), 2500)}")
+    # totaal/teller-tekst
+    m = re.search(r"(\d[\d.]*)\s+(?:nieuwe en gebruikte|motoren|resultaten)", soup.get_text(" "), re.I)
+    if m:
+        print(f"TELLER: {m.group(0)}")
 
 
 # ── 2dehands ─────────────────────────────────────────────────────────────────
@@ -156,6 +254,7 @@ def diagnose_2dehands():
 
 
 if __name__ == "__main__":
-    diagnose_2dehands()
+    if os.environ.get("DIAGNOSE_2DEHANDS", "1") == "1":
+        diagnose_2dehands()
     diagnose_motoroccasion()
     print("\nKlaar (dry-run, niets weggeschreven).")
