@@ -280,6 +280,50 @@ def diagnose_filter_url():
         print(f"   (jaar, prijs, km, nieuw, btw): {items_kort(d, 12)}")
 
 
+def diagnose_sortering():
+    """Hoe komt 'prijs laag→hoog' in de filter-URL (of sessie)?"""
+    basis = "https://www.motoroccasion.nl/motoren/kawasaki-z900?filters=bouwjaar-vanaf-2019/bouwjaar-tot-2021"
+
+    kop("S1) Sorteerlogica in de site-scripts")
+    for js_url in ["https://www.motoroccasion.nl/min/js/site.js"]:
+        try:
+            js = requests.get(js_url, headers=HEADERS, timeout=30).text
+            print(f"{js_url} len={len(js)}")
+            n = 0
+            for m in re.finditer(r"#order|\[name=.?order|sorteer|volgorde|prijsoplopend|filters=|pagina-", js):
+                st = max(0, m.start() - 300)
+                print(f"…{kort(js[st:m.end() + 300], 620)}…")
+                n += 1
+                if n >= 10:
+                    break
+        except requests.RequestException as e:
+            print(f"FOUT: {e}")
+
+    kop("S2) Sortering via sessie (formulier met order, dan doorverwijzing volgen)")
+    try:
+        sessie = requests.Session()
+        sessie.headers.update(HEADERS)
+        r = sessie.post("https://www.motoroccasion.nl/motoren", timeout=30, allow_redirects=False, data={
+            "motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900",
+            "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"})
+        print(f"POST status={r.status_code} Location={r.headers.get('Location')} cookies={list(sessie.cookies.keys())}")
+        r2 = sessie.get(basis, headers={"Accept": "application/json"}, timeout=30)
+        d = r2.json()
+        print(f"GET met sessie: prijzen={[x[1] for x in items_kort(d, 12)]}")
+    except (requests.RequestException, ValueError) as e:
+        print(f"FOUT: {e}")
+
+    kop("S3) Sortering als extra filter-segment")
+    for kand in [basis + "/prijsoplopend", basis + "/sorteer-prijsoplopend", basis + "/order-prijsoplopend",
+                 basis + "/sortering-prijsoplopend", basis + "&order=prijsoplopend"]:
+        r, d = mo_json(kand)
+        if d is None:
+            continue
+        keys = [f.get("key") for f in d.get("activeFiltersList") or []]
+        print(f"{kand}\n   totaal={(d.get('metadata') or {}).get('totalCount')} filterkeys={keys} "
+              f"prijzen={[x[1] for x in items_kort(d, 12)]}")
+
+
 def diagnose_motoroccasion():
     kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
     s = slug(TEST_MODEL)
@@ -394,5 +438,5 @@ def diagnose_2dehands():
 if __name__ == "__main__":
     if os.environ.get("DIAGNOSE_2DEHANDS", "1") == "1":
         diagnose_2dehands()
-    diagnose_filter_url()
+    diagnose_sortering()
     print("\nKlaar (dry-run, niets weggeschreven).")
