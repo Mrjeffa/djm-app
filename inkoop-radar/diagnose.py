@@ -208,6 +208,33 @@ def samenvatting(url):
     return d
 
 
+def diagnose_filters():
+    """Hoe bouwt de site filter-URL's op (sortering, bouwjaar, paginering)?"""
+    s = slug(TEST_MODEL)
+    kop("A) Slugs: welk model levert welke pagina op")
+    for sl in [s, "kawasaki-z-900", "kawasaki-z-900-rs", "yamaha-mt-07", "mt-07", "kawasaki-bestaatniet-xyz"]:
+        samenvatting(f"https://www.motoroccasion.nl/motoren/{sl}")
+
+    kop("B) Filter-opbouw in de scripts")
+    try:
+        js = requests.get("https://www.motoroccasion.nl/min/js/search-form.js", headers=HEADERS, timeout=30).text
+        gezien = 0
+        for m in re.finditer(r"pagina-|filters=|prijsoplopend|bouwjaar_vanaf|\.join\(`/`\)|\.join\(\"/\"\)", js):
+            st = max(0, m.start() - 250)
+            print(f"…{kort(js[st:m.end() + 250], 520)}…")
+            gezien += 1
+            if gezien >= 14:
+                break
+        inv = requests.get("https://www.motoroccasion.nl/min/js/inventory_filters.js", headers=HEADERS, timeout=30).text
+        print(f"inventory_filters.js: {kort(inv, 5800)}")
+    except requests.RequestException as e:
+        print(f"FOUT: {e}")
+
+    # Alleen URL's zonder ?filters= (die vraagt robots.txt niet automatisch op te halen).
+    kop("C) Sorteren zonder ?filters=")
+    samenvatting(f"https://www.motoroccasion.nl/motoren/{s}?order=prijsoplopend")
+
+
 def diagnose_motoroccasion():
     kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
     s = slug(TEST_MODEL)
@@ -322,5 +349,5 @@ def diagnose_2dehands():
 if __name__ == "__main__":
     if os.environ.get("DIAGNOSE_2DEHANDS", "1") == "1":
         diagnose_2dehands()
-    diagnose_motoroccasion()
+    diagnose_filters()
     print("\nKlaar (dry-run, niets weggeschreven).")
