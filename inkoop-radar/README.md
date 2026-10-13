@@ -48,7 +48,12 @@ filter-URL's automatisch op te halen, en dit is het afgesproken minimum.
 Testen zonder iets op te slaan: Run workflow → modus **diagnose** met een
 model/bouwjaar/km. De log toont de gebruikte URL, de advertenties, het
 verkoopdoel, en wat de job voor de huidige populaire leads zou berekenen.
-Lokale tests (zonder netwerk): `python test_prijzen.py`, `python test_motoroccasion.py`.
+Lokale tests (zonder netwerk): `python test_prijzen.py`, `python test_motoroccasion.py`,
+`python test_mapping.py`.
+
+Direct prijzen laten berekenen (bv. na het toevoegen van een populair model):
+Run workflow → modus **alleen-prijzen**. Haalt geen nieuwe advertenties op,
+ruimt niets op en stuurt geen mail.
 
 ## Eenmalige setup
 

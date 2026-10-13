@@ -18,10 +18,10 @@ on:
         required: false
         default: "150"
       modus:
-        description: "normaal = echte run; diagnose = dry-run die alleen logt (niets opslaan, geen mail)"
+        description: "normaal = echte run; alleen-prijzen = oude leads aanvullen + verkoopdoelen (niet ophalen/opruimen/mailen); diagnose = dry-run die alleen logt"
         required: false
         type: choice
-        options: [normaal, diagnose]
+        options: [normaal, alleen-prijzen, diagnose]
         default: normaal
       test_model:
         description: "Prijstest: model als 'Merk Model' (bijv. Kawasaki Z900)"
@@ -50,7 +50,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r inkoop-radar/requirements.txt
       - name: Run inkoop-radar
-        if: ${{ github.event.inputs.modus != 'diagnose' }}
+        if: ${{ github.event.inputs.modus != 'diagnose' && github.event.inputs.modus != 'alleen-prijzen' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -67,6 +67,16 @@ jobs:
           RADAR_BRON: ${{ vars.RADAR_BRON || '2dehands' }}
           RADAR_MO_MAX: ${{ vars.RADAR_MO_MAX || '40' }}
         run: python inkoop-radar/fetch_leads.py
+      - name: Alleen prijzen (oude leads aanvullen + verkoopdoelen; geen ophalen/opruimen/mail)
+        if: ${{ github.event.inputs.modus == 'alleen-prijzen' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RADAR_L1_CATEGORY: ${{ vars.RADAR_L1_CATEGORY || '678' }}
+          RADAR_SEARCH_URL: ${{ vars.RADAR_SEARCH_URL || 'https://www.2dehands.be/lrp/api/search' }}
+          RADAR_BRON: ${{ vars.RADAR_BRON || '2dehands' }}
+          RADAR_MO_MAX: ${{ vars.RADAR_MO_MAX || '40' }}
+        run: python inkoop-radar/fetch_leads.py --alleen-prijzen
       - name: Diagnose (dry-run — schrijft niets weg, stuurt geen mail)
         if: ${{ github.event.inputs.modus == 'diagnose' }}
         env:

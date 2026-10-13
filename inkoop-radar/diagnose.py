@@ -130,7 +130,8 @@ def droog_op_leads():
         print("Geen Supabase-gegevens in deze run — overgeslagen.")
         return
     try:
-        w = fl.bereken_inkoopprijzen(schrijf=False, uitvoer=print)
+        aangevuld = fl.ververs_oude_leads(schrijf=False, uitvoer=print)
+        w = fl.bereken_inkoopprijzen(schrijf=False, uitvoer=print, overrides=aangevuld)
         if w:
             print(f"WAARSCHUWING: {w}")
     except requests.RequestException as e:

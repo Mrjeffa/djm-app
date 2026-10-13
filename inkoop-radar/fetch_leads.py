@@ -182,10 +182,12 @@ def map_listing(item):
     if not ad_id or not titel:
         return None  # zonder id/titel is de mapping mislukt
 
+    # Elk bedrag dat 2dehands meegeeft is de prijs van de verkoper: vaste prijs
+    # (FIXED/RESERVED) én "bieden vanaf" (MIN_BID, ~40% van de advertenties).
+    # Alleen "bieden" zonder bedrag (FAST_BID, 0 cent) blijft n.o.t.k.
     price_info = item.get("priceInfo", {}) or {}
-    price_type = price_info.get("priceType", "")
     cents = price_info.get("priceCents", 0) or 0
-    prijs = cents // 100 if price_type in ("FIXED", "RESERVED") and cents > 0 else None
+    prijs = cents // 100 if cents > 0 else None
 
     loc = item.get("location", {}) or {}
     seller = item.get("sellerInformation", {}) or {}
@@ -221,6 +223,7 @@ def map_listing(item):
         "bron": BRON,
         "advertentie_datum": parse_datum(item.get("date")),
         "status": "nieuw",
+        "velden_ververst": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -364,6 +367,78 @@ def ruim_oude_leads_op():
         return 0
 
 
+# ── Bestaande leads verversen (eenmalig) ─────────────────────────────────────
+VERVERS_MAX = int(os.environ.get("RADAR_VERVERS_MAX", "50"))  # opzoekingen per run
+
+
+def venster_filter():
+    """PostgREST-filter: binnen de bewaartermijn, of naar de inkoop gezet (= wat de app toont)."""
+    grens = (datetime.now(timezone.utc) - timedelta(days=max(1, haal_bewaar_dagen()))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f'(gevonden_op.gte."{grens}",status.eq.naar_inkoop)'
+
+
+def zoek_advertentie(lead):
+    """Zoekt één bestaande advertentie terug via de zoek-API (op titel)."""
+    r = requests.get(SEARCH_URL, headers=HEADERS, timeout=30, params={
+        "l1CategoryId": L1_CATEGORY, "query": lead["titel"], "limit": "100", "offset": "0",
+        "searchInTitleAndDescription": "true", "viewOptions": "list-view",
+        "sortBy": "SORT_INDEX", "sortOrder": "DECREASING"})
+    r.raise_for_status()
+    return next((x for x in r.json().get("listings") or [] if str(x.get("itemId")) == lead["ad_id"]), None)
+
+
+def ververs_oude_leads(schrijf=True, uitvoer=log):
+    """Leads die zijn opgeslagen vóór de prijs-fix missen vaak de prijs ("bieden
+    vanaf") en bouwjaar/km. Die zoeken we één keer opnieuw op — populaire leads
+    eerst. Geeft {ad_id: bijgewerkte velden} terug (handig voor een droogtest)."""
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
+        "select": "ad_id,titel,beschrijving,prijs,bouwjaar,km",
+        "velden_ververst": "is.null", "status": "neq.genegeerd", "or": venster_filter(),
+        "order": "gevonden_op.desc", "limit": "1000"})
+    r.raise_for_status()
+    populair = haal_populair()
+
+    def is_pop(lead):
+        return populaire_term(lead, populair) is not None
+
+    nodig = [l for l in r.json()
+             if l.get("prijs") is None or (is_pop(l) and (l.get("bouwjaar") is None or l.get("km") is None))]
+    nodig.sort(key=lambda l: not is_pop(l))  # populair eerst
+
+    updates = {}
+    for i, lead in enumerate(nodig[:VERVERS_MAX]):
+        if i:
+            time.sleep(1.0)  # niet hameren
+        try:
+            hit = zoek_advertentie(lead)
+        except (requests.RequestException, ValueError) as e:
+            uitvoer(f"  {lead['titel'][:50]!r}: opzoeken mislukt ({e}) — volgende run opnieuw")
+            continue
+        velden = {"velden_ververst": datetime.now(timezone.utc).isoformat()}
+        m = map_listing(hit) if hit else None
+        if m:
+            for k in ("prijs", "bouwjaar", "km"):
+                if m[k] is not None:
+                    velden[k] = m[k]
+            velden["is_particulier"] = m["is_particulier"]
+            if is_pop(lead):
+                velden["mo_bijgewerkt"] = None  # opnieuw prijzen met de aangevulde gegevens
+        uitvoer(f"  {lead['titel'][:50]!r}: " + (
+            f"prijs={velden.get('prijs')} bouwjaar={velden.get('bouwjaar')} km={velden.get('km')}"
+            if m else "niet meer gevonden (verkocht/verwijderd?)"))
+        if schrijf:
+            p = requests.patch(f"{SUPABASE_URL}/rest/v1/inkoop_leads", params={"ad_id": f"eq.{lead['ad_id']}"},
+                               headers=sb_headers({"Prefer": "return=minimal"}), data=json.dumps(velden), timeout=30)
+            if p.status_code >= 300:
+                uitvoer(f"WAARSCHUWING: verversen opslaan mislukt ({p.status_code}): {p.text[:200]}")
+                continue
+        updates[lead["ad_id"]] = velden
+    if nodig:
+        uitvoer(f"Verversen: {len(updates)} van {len(nodig)} oude lead(s) bijgewerkt"
+                f"{' (rest volgende run)' if len(nodig) > VERVERS_MAX else ''}.")
+    return updates
+
+
 # ── Inkoopprijzen (Motoroccasion) ────────────────────────────────────────────
 def haal_populair():
     r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_populair",
@@ -454,24 +529,26 @@ def prijs_lead(lead, term, cache):
             "mo_toelichting": toelichting}
 
 
-def bereken_inkoopprijzen(schrijf=True, uitvoer=log):
+def bereken_inkoopprijzen(schrijf=True, uitvoer=log, overrides=None):
     """Verkoopdoel voor particuliere leads van een populair model. Geeft een
-    waarschuwing (str) terug als Motoroccasion structureel niet werkt."""
+    waarschuwing (str) terug als Motoroccasion structureel niet werkt.
+    overrides: {ad_id: velden} die (nog) niet in de database staan (droogtest)."""
     populair = haal_populair()
     if not populair:
         uitvoer("Geen populaire modellen ingesteld — prijsvergelijking overgeslagen.")
         return None
     # Alleen wat de app toont: binnen de bewaartermijn, of naar de inkoop gezet.
-    grens = (datetime.now(timezone.utc) - timedelta(days=max(1, haal_bewaar_dagen()))).strftime("%Y-%m-%dT%H:%M:%SZ")
     r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
         "select": "ad_id,titel,beschrijving,url,prijs,bouwjaar,km,status,mo_status,mo_bijgewerkt",
-        "is_particulier": "eq.true", "status": "neq.genegeerd",
-        "or": f'(gevonden_op.gte."{grens}",status.eq.naar_inkoop)',
+        "is_particulier": "eq.true", "status": "neq.genegeerd", "or": venster_filter(),
         "order": "gevonden_op.desc", "limit": "500"})
     r.raise_for_status()
 
     cache, bijgewerkt, systeemfouten = {}, 0, set()
     for lead in r.json():
+        lead.update((overrides or {}).get(lead["ad_id"], {}))
+        if lead.get("is_particulier") is False:
+            continue
         term = populaire_term(lead, populair)
         if not term or not moet_prijzen(lead):
             continue
@@ -632,15 +709,10 @@ def main():
     if http_ok and not waarschuwing:
         ruim_oude_leads_op()
 
-    # Verkoopdoel via Motoroccasion voor populaire particuliere leads. Na het
-    # opruimen (geen verzoeken voor leads die toch verdwijnen) en zo dat een fout
-    # hier nooit de leads of de digest-mail tegenhoudt.
-    mo_waarschuwing = None
-    try:
-        mo_waarschuwing = bereken_inkoopprijzen()
-    except Exception as e:  # noqa: BLE001 — bewust breed, zie hierboven
-        mo_waarschuwing = f"Motoroccasion-prijsvergelijking mislukt: {e}"
-        log("WAARSCHUWING: " + mo_waarschuwing)
+    # Oude leads aanvullen + verkoopdoel via Motoroccasion voor populaire
+    # particuliere leads. Na het opruimen: geen verzoeken voor leads die toch
+    # verdwijnen.
+    mo_waarschuwing = verrijk_en_prijs()
 
     update_status(http_ok, len(listings), gemapt, nieuw_count,
                   "; ".join(w for w in (waarschuwing, mo_waarschuwing) if w) or None)
@@ -648,5 +720,32 @@ def main():
     log("Klaar.")
 
 
+def verrijk_en_prijs():
+    """Oude leads aanvullen (prijs/bouwjaar/km) en daarna verkoopdoelen bepalen.
+    Een fout hier mag nooit de rest van de job (leads, digest) tegenhouden."""
+    try:
+        ververs_oude_leads()
+    except Exception as e:  # noqa: BLE001 — bewust breed, zie docstring
+        log(f"WAARSCHUWING: oude leads verversen mislukt: {e}")
+    try:
+        return bereken_inkoopprijzen()
+    except Exception as e:  # noqa: BLE001
+        melding = f"Motoroccasion-prijsvergelijking mislukt: {e}"
+        log("WAARSCHUWING: " + melding)
+        return melding
+
+
+def alleen_prijzen():
+    """Workflow-modus 'alleen-prijzen': geen nieuwe advertenties ophalen, niets
+    opruimen, geen mail — alleen oude leads aanvullen en verkoopdoelen bepalen.
+    Handig direct na het toevoegen van een populair model."""
+    if not (SUPABASE_URL and SERVICE_KEY):
+        fail("SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY zijn verplicht.")
+    w = verrijk_en_prijs()
+    if w:
+        log("WAARSCHUWING: " + w)
+    log("Klaar (alleen prijzen).")
+
+
 if __name__ == "__main__":
-    main()
+    alleen_prijzen() if "--alleen-prijzen" in sys.argv else main()

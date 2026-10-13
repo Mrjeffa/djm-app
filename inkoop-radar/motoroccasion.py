@@ -213,9 +213,12 @@ def zoek_aanbod(merk, type_key, bouwjaar):
     items = data.get("inventories") or []
     aanbod = [naar_aanbod(it) for it in items]
     # Alleen pagina 1: dat is pas betrouwbaar als die echt op prijs gesorteerd is.
+    # Motoroccasion sorteert niet 100% strikt (soms staat €6.495 vóór €6.290),
+    # dus pas alarm bij duidelijk ongesorteerd: >25% dalingen tussen buren.
     totaal = (data.get("metadata") or {}).get("totalCount") or len(items)
     prijzen = [a["prijs"] for a in aanbod if a["prijs"]]
-    if totaal > len(items) and ("sorting" not in filters or prijzen != sorted(prijzen)):
+    dalingen = sum(1 for a, b in zip(prijzen, prijzen[1:]) if b < a)
+    if totaal > len(items) and ("sorting" not in filters or dalingen > len(prijzen) // 4):
         raise MoFout("sortering op prijs niet toegepast — URL-opbouw van Motoroccasion gewijzigd?", systemisch=True)
     if not _types_per_merk.get(merk):
         _types_per_merk[merk] = types_uit(data)
