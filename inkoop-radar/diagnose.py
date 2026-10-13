@@ -235,6 +235,51 @@ def diagnose_filters():
     samenvatting(f"https://www.motoroccasion.nl/motoren/{s}?order=prijsoplopend")
 
 
+def items_kort(d, n=10):
+    out = []
+    for it in (d.get("inventories") or [])[:n]:
+        a = it.get("attributesByKey") or {}
+        out.append((it.get("manufactureYear"), (a.get("price") or {}).get("amount"),
+                    (a.get("odometer") or {}).get("value"), "N" if a.get("new") else "", "BTW" if a.get("vat_deductible") else ""))
+    return out
+
+
+def diagnose_filter_url():
+    """Hoe ziet de filter-URL voor merk+type+bouwjaar+prijs-oplopend eruit?
+    Zoals een browser: zoekformulier POSTen en de doorverwijzing aflezen."""
+    kop("FILTER-URL via het zoekformulier (zoals de browser)")
+    pogingen = [
+        {"motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900",
+         "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"},
+        {"motorcycle_brand[]": "kawasaki", "motorcycle_type[]": "z900", "availability": "occasions",
+         "motorcycle_build_year_from": "2019", "motorcycle_build_year_to": "2021", "order": "prijsoplopend"},
+    ]
+    locaties = []
+    for data in pogingen:
+        try:
+            r = requests.post("https://www.motoroccasion.nl/motoren", data=data, headers=HEADERS,
+                              timeout=30, allow_redirects=False)
+            loc = r.headers.get("Location")
+            print(f"POST {data}\n   status={r.status_code} Location={loc} len={len(r.text)}")
+            if not loc and r.text:
+                m = re.search(r"https?://www\.motoroccasion\.nl/motoren/[^\"'\s<>]+|/motoren/[^\"'\s<>]*filters=[^\"'\s<>]+", r.text)
+                print(f"   (geen Location; URL in body: {m.group(0) if m else '—'}) body: {kort(r.text, 400)}")
+                loc = m.group(0) if m else None
+            if loc:
+                locaties.append(loc if loc.startswith("http") else "https://www.motoroccasion.nl" + loc)
+        except requests.RequestException as e:
+            print(f"FOUT: {e}")
+
+    for loc in locaties:
+        r, d = mo_json(loc)
+        if d is None:
+            continue
+        meta = d.get("metadata") or {}
+        print(f"\nGET {loc}\n   totaal={meta.get('totalCount')} paginas={meta.get('totalPages')}")
+        print(f"   filters={kort(json.dumps(d.get('activeFiltersList'), ensure_ascii=False), 700)}")
+        print(f"   (jaar, prijs, km, nieuw, btw): {items_kort(d, 12)}")
+
+
 def diagnose_motoroccasion():
     kop(f"MOTOROCCASION — testmodel '{TEST_MODEL}'")
     s = slug(TEST_MODEL)
@@ -349,5 +394,5 @@ def diagnose_2dehands():
 if __name__ == "__main__":
     if os.environ.get("DIAGNOSE_2DEHANDS", "1") == "1":
         diagnose_2dehands()
-    diagnose_filters()
+    diagnose_filter_url()
     print("\nKlaar (dry-run, niets weggeschreven).")
