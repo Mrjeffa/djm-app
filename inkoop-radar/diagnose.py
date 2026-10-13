@@ -15,6 +15,7 @@ welk verkoopdoel de radar voor een model/bouwjaar/km zou bepalen.
 
 Env: TEST_MODEL (default "Kawasaki Z900"), TEST_BOUWJAAR (2020), TEST_KM (20000)
 """
+import json
 import os
 
 import requests
@@ -51,6 +52,45 @@ def check_2dehands():
           f"particulier {sum(1 for m in motoren if m['is_particulier'])}")
     for m in motoren[:5]:
         print(f"  {m['titel'][:55]!r}: bouwjaar={m['bouwjaar']} km={m['km']} particulier={m['is_particulier']}")
+
+
+def check_prijstypes():
+    kop("1b) 2dehands — prijstypes (waarom 'n.o.t.k.'?)")
+    params = {"l1CategoryId": fl.L1_CATEGORY, "limit": "100", "offset": "0", "viewOptions": "list-view",
+              "searchInTitleAndDescription": "true", "sortBy": "SORT_INDEX", "sortOrder": "DECREASING"}
+    try:
+        listings = requests.get(fl.SEARCH_URL, params=params, headers=fl.HEADERS, timeout=30).json().get("listings") or []
+    except (requests.RequestException, ValueError) as e:
+        print(f"FOUT: {e}")
+        return
+    tel, voorbeeld = {}, {}
+    for x in listings:
+        pi = x.get("priceInfo") or {}
+        sleutel = f"{pi.get('priceType')} (bedrag {'ja' if (pi.get('priceCents') or 0) > 0 else 'nee'})"
+        tel[sleutel] = tel.get(sleutel, 0) + 1
+        voorbeeld.setdefault(sleutel, []).append(f"{(x.get('title') or '')[:40]!r} {json.dumps(pi, ensure_ascii=False)}")
+    for k, n in sorted(tel.items(), key=lambda kv: -kv[1]):
+        print(f"{n:3}× {k}: " + " | ".join(voorbeeld[k][:2]))
+
+    if not (fl.SUPABASE_URL and fl.SERVICE_KEY):
+        return
+    r = requests.get(f"{fl.SUPABASE_URL}/rest/v1/inkoop_leads", headers=fl.sb_headers(), timeout=30, params={
+        "select": "ad_id,titel,url", "prijs": "is.null", "is_particulier": "eq.true",
+        "order": "gevonden_op.desc", "limit": "6"})
+    for lead in r.json() if r.ok else []:
+        print(f"\nLead zonder prijs: {lead['titel']!r} ({lead['ad_id']})")
+        try:
+            gevonden = requests.get(fl.SEARCH_URL, headers=fl.HEADERS, timeout=30, params={
+                "l1CategoryId": fl.L1_CATEGORY, "query": lead["titel"], "limit": "100", "offset": "0",
+                "searchInTitleAndDescription": "true", "viewOptions": "list-view",
+                "sortBy": "SORT_INDEX", "sortOrder": "DECREASING"}).json().get("listings") or []
+            hit = next((x for x in gevonden if str(x.get("itemId")) == lead["ad_id"]), None)
+            print(f"   zoeken op titel: {len(gevonden)} resultaten, advertentie {'GEVONDEN' if hit else 'niet gevonden'}")
+            if hit:
+                print(f"   priceInfo={json.dumps(hit.get('priceInfo'), ensure_ascii=False)} "
+                      f"attributes={json.dumps(hit.get('attributes'), ensure_ascii=False)}")
+        except (requests.RequestException, ValueError) as e:
+            print(f"   FOUT zoeken: {e}")
 
 
 def prijstest():
@@ -99,6 +139,7 @@ def droog_op_leads():
 
 if __name__ == "__main__":
     check_2dehands()
+    check_prijstypes()
     prijstest()
     droog_op_leads()
     print("\nKlaar (dry-run, niets weggeschreven).")
