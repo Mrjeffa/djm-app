@@ -17,6 +17,16 @@ on:
         description: "Max. aantal advertenties"
         required: false
         default: "150"
+      modus:
+        description: "normaal = echte run; diagnose = dry-run die alleen logt (niets opslaan, geen mail)"
+        required: false
+        type: choice
+        options: [normaal, diagnose]
+        default: normaal
+      test_model:
+        description: "Model voor de diagnose/prijstest (bijv. Kawasaki Z900)"
+        required: false
+        default: "Kawasaki Z900"
 
 concurrency:
   group: inkoop-radar
@@ -32,6 +42,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r inkoop-radar/requirements.txt
       - name: Run inkoop-radar
+        if: ${{ github.event.inputs.modus != 'diagnose' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -47,3 +58,8 @@ jobs:
           RADAR_SEARCH_URL: ${{ vars.RADAR_SEARCH_URL || 'https://www.2dehands.be/lrp/api/search' }}
           RADAR_BRON: ${{ vars.RADAR_BRON || '2dehands' }}
         run: python inkoop-radar/fetch_leads.py
+      - name: Diagnose (dry-run — schrijft niets weg, stuurt geen mail)
+        if: ${{ github.event.inputs.modus == 'diagnose' }}
+        env:
+          TEST_MODEL: ${{ github.event.inputs.test_model }}
+        run: python inkoop-radar/diagnose.py
