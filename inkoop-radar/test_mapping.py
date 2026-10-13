@@ -22,6 +22,14 @@ def test_bouwjaar_en_km():
     assert bouwjaar_en_km({}, "Yamaha MT-07 2019", "onderhoud bij 30.000 km, nu 42.000 km") == (2019, None)
 
 
+def test_bouwjaar_uit_omschrijving_alleen_met_signaalwoord():
+    assert bouwjaar_en_km({}, "Kawasaki z800e", "Kawasaki z800e de 2016 avec 44000 km")[0] == 2016
+    assert bouwjaar_en_km({}, "Suzuki VZ800", "mooie motor, bouwjaar: 2010")[0] == 2010
+    assert bouwjaar_en_km({}, "Honda CB500F", "bj. 2019, altijd binnen gestaan")[0] == 2019
+    assert bouwjaar_en_km({}, "Yamaha MT-07", "nieuwe banden 2023, gekeurd in 2025")[0] is None
+    assert bouwjaar_en_km({}, "BMW F800", "van 2008, onderhoud uit 2023")[0] is None   # twee kandidaten → niet gokken
+
+
 def test_adverteerder_bedrijf_is_geen_particulier():
     assert is_particulier([], "Jan", "", "Bedrijf") is False
     assert is_particulier([], "Jan", "", "Particulier") is True

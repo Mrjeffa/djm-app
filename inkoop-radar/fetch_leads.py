@@ -120,6 +120,10 @@ KM_PATROON = re.compile(
 )
 
 
+BOUWJAAR_PATROON = re.compile(
+    r"\b(?:bouwjaar|bj|van|uit|de|année|annee|year|modèle|modele)\s*[:.]?\s*((?:19|20)\d\d)\b", re.I)
+
+
 def bouwjaar_en_km(item, titel, beschrijving):
     """Bouwjaar en km-stand. Eerst de gestructureerde 2dehands-velden; anders een
     voorzichtige fallback uit de tekst (alleen als er precies één kandidaat is,
@@ -129,9 +133,14 @@ def bouwjaar_en_km(item, titel, beschrijving):
     km = naar_int(attr_waarde(item, "mileage")) if item else None
     if jaar is not None and not (1950 <= jaar <= nu + 1):
         jaar = None
-    if jaar is None:  # jaartal alleen uit de titel — beschrijvingen noemen te vaak andere jaren
+    if jaar is None:  # jaartal uit de titel
         jaren = {int(j) for j in re.findall(r"\b(19[5-9]\d|20\d\d)\b", titel or "")}
         jaren = {j for j in jaren if j <= nu + 1}
+        if len(jaren) == 1:
+            jaar = jaren.pop()
+    if jaar is None:  # omschrijving: alleen met een signaalwoord ervoor ('nieuwe banden 2023' telt niet)
+        jaren = {int(j) for j in BOUWJAAR_PATROON.findall(beschrijving or "")}
+        jaren = {j for j in jaren if 1950 <= j <= nu + 1}
         if len(jaren) == 1:
             jaar = jaren.pop()
     if km is None:
@@ -368,7 +377,7 @@ def ruim_oude_leads_op():
 
 
 # ── Bestaande leads verversen (eenmalig) ─────────────────────────────────────
-VERVERS_MAX = int(os.environ.get("RADAR_VERVERS_MAX", "50"))  # opzoekingen per run
+VERVERS_MAX = int(os.environ.get("RADAR_VERVERS_MAX", "100"))  # opzoekingen per run
 
 
 def venster_filter():
