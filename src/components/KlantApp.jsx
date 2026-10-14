@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase, uitloggen } from "../lib/supabase.js";
 import { JuridischModal, CookieBanner } from "./Juridisch.jsx";
+import { naarBedrag } from "../lib/getal.js";
 
 const useIsMobile = () => {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -2255,13 +2256,13 @@ export default function KlantApp({ userId }) {
       aankoopdatum: data.aankoopdatum || null,
     }).select().single();
     if (error) return error.message;
-    if (nieuw && data.beginkm && parseInt(data.beginkm) > 0) {
+    const beginkm = naarBedrag(data.beginkm) || 0;
+    if (nieuw && beginkm > 0) {
       await supabase.from("km_historie").insert({
-        motor_id: nieuw.id, km: parseInt(data.beginkm),
+        motor_id: nieuw.id, km: beginkm,
         datum: data.aankoopdatum || TODAY,
       });
     }
-    const beginkm = data.beginkm ? parseInt(data.beginkm) : 0;
     setMotoren(prev => [...prev, {
       ...nieuw,
       kmHistory: beginkm > 0 ? [{ datum: data.aankoopdatum || TODAY, km: beginkm }] : [],
@@ -2285,7 +2286,7 @@ export default function KlantApp({ userId }) {
   };
 
   const voegEigenServiceToe = async (motorId, data) => {
-    const km = data.km ? parseInt(data.km) : null;
+    const km = naarBedrag(data.km) || null;
     const intervalGereset = data.interval_gereset || false;
     const { data: inserted, error } = await supabase.from("service_beurten").insert({
       motor_id: motorId,
@@ -2308,7 +2309,7 @@ export default function KlantApp({ userId }) {
   };
 
   const wijzigEigenService = async (motorId, svcId, data) => {
-    const km = data.km ? parseInt(data.km) : null;
+    const km = naarBedrag(data.km) || null;
     const { error } = await supabase.from("service_beurten").update({
       datum: data.datum,
       omschrijving: data.omschrijving,

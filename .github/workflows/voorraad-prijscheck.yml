@@ -1,0 +1,33 @@
+name: Voorraad-prijscheck
+
+# Elke maandagochtend: vergelijkt de vraagprijs van alle beschikbare voorraad met
+# Motoroccasion (via de Supabase edge function voorraad-prijscheck) en mailt
+# ALLEEN als er iets te doen is. De uitkomst staat ook bij de motor in de app.
+# Handmatig draaien kan via "Run workflow".
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # maandag ~08:00 NL (zomertijd) / 07:00 (winter); na de inkoop-radar van 05:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: motoroccasion   # gedeeld: inkoop-radar en voorraad-prijscheck nooit tegelijk
+  cancel-in-progress: false
+
+jobs:
+  prijscheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r inkoop-radar/requirements.txt
+      - name: Prijscheck voorraad
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+        run: python inkoop-radar/voorraad_check.py

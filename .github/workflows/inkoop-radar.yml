@@ -21,7 +21,7 @@ on:
         description: "normaal = echte run; alleen-prijzen = oude leads aanvullen + verkoopdoelen (niet ophalen/opruimen/mailen); diagnose = dry-run die alleen logt"
         required: false
         type: choice
-        options: [normaal, alleen-prijzen, diagnose]
+        options: [normaal, alleen-prijzen, diagnose, diagnose-voorraad]
         default: normaal
       test_model:
         description: "Prijstest: model als 'Merk Model' (bijv. Kawasaki Z900)"
@@ -37,7 +37,7 @@ on:
         default: "20000"
 
 concurrency:
-  group: inkoop-radar
+  group: motoroccasion   # gedeeld: inkoop-radar en voorraad-prijscheck nooit tegelijk
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +50,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r inkoop-radar/requirements.txt
       - name: Run inkoop-radar
-        if: ${{ github.event.inputs.modus != 'diagnose' && github.event.inputs.modus != 'alleen-prijzen' }}
+        if: ${{ !startsWith(github.event.inputs.modus, 'diagnose') && github.event.inputs.modus != 'alleen-prijzen' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -78,7 +78,7 @@ jobs:
           RADAR_MO_MAX: ${{ vars.RADAR_MO_MAX || '40' }}
         run: python inkoop-radar/fetch_leads.py --alleen-prijzen
       - name: Diagnose (dry-run — schrijft niets weg, stuurt geen mail)
-        if: ${{ github.event.inputs.modus == 'diagnose' }}
+        if: ${{ startsWith(github.event.inputs.modus, 'diagnose') }}
         env:
           # Alleen om leads te LEZEN voor de droogtest; diagnose.py schrijft niets.
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -86,4 +86,5 @@ jobs:
           TEST_MODEL: ${{ github.event.inputs.test_model }}
           TEST_BOUWJAAR: ${{ github.event.inputs.test_bouwjaar }}
           TEST_KM: ${{ github.event.inputs.test_km }}
+          ALLEEN_VOORRAAD: ${{ github.event.inputs.modus == 'diagnose-voorraad' && '1' || '0' }}
         run: python inkoop-radar/diagnose.py

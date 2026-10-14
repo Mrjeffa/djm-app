@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { openOnderdelen, larssonZoekFallback, preloadLarsson } from "../lib/larsson.js";
 import { openAutoScout } from "../lib/autoscout.js";
+// Zelfde beoordeling als de wekelijkse prijscheck-mail (gedeeld met de edge function)
+import { beoordeel, MIN_MARGE } from "../../supabase/functions/voorraad-prijscheck/logica.ts";
+import { naarBedrag } from "../lib/getal.js";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -355,7 +358,7 @@ function KlantModal({onSave, onClose, voorraad=[]}){
     if(motorKeuze==="voorraad" && geselecteerdeVoorraad) {
       motor = {...geselecteerdeVoorraad, aankoopdatum: TODAY};
     } else if(motorKeuze==="nieuw" && normK(kenteken)) {
-      motor = {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:parseInt(motorF.km)||0};
+      motor = {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:naarBedrag(motorF.km)||0};
     }
     // Eerst wachten tot de klant echt is opgeslagen, pas dan de uitnodigingsflow tonen
     await onSave({...f, motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
@@ -566,7 +569,7 @@ function AdvertentieVelden({f,setF}){
 
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",inkoopprijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:""});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoItems,setFotoItems]=useState([]); // [{preview,file}]
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
@@ -656,6 +659,7 @@ function VoorraadModal({onSave,onClose}){
         <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
         <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
         <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
+        <Field label="Inkoopprijs (€) — alleen voor jou"><input style={s.input} value={f.inkoopprijs} onChange={set("inkoopprijs")} placeholder="6500"/></Field>
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
       <Field label="Chassisnummer (optioneel)"><input style={{...s.input,fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}} value={f.chassis_nummer} onChange={set("chassis_nummer")} placeholder="WB10309C4ZP123456"/></Field>
@@ -724,7 +728,7 @@ function VoorraadModal({onSave,onClose}){
 function VoorraadEditModal({motor, onSave, onClose}){
   const [f,setF]=useState({
     merk:motor.merk||"", model:motor.model||"", bouwjaar:motor.bouwjaar||"",
-    km:motor.km||"", prijs:motor.prijs||"", datum_in:motor.datum_in||TODAY,
+    km:motor.km||"", prijs:motor.prijs||"", inkoopprijs:motor.inkoopprijs??"", datum_in:motor.datum_in||TODAY,
     chassis_nummer:motor.chassis_nummer||"",
     voorband_datum:motor.voorband_datum||"", achterband_datum:motor.achterband_datum||"",
     voorband_maat:motor.voorband_maat||"", achterband_maat:motor.achterband_maat||"",
@@ -780,6 +784,7 @@ function VoorraadEditModal({motor, onSave, onClose}){
         <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
         <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
         <Field label="Vraagprijs (€)"><input style={s.input} value={f.prijs} onChange={set("prijs")} placeholder="8500"/></Field>
+        <Field label="Inkoopprijs (€) — alleen voor jou"><input style={s.input} value={f.inkoopprijs} onChange={set("inkoopprijs")} placeholder="6500"/></Field>
         <Field label="Datum binnenkomst"><input style={s.input} type="date" value={f.datum_in} onChange={set("datum_in")}/></Field>
       </Grid2>
       <Field label="Chassisnummer">
@@ -2319,7 +2324,72 @@ function ProductModal({categorie, product=null, onSave, onClose}){
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,onTerugkopen=()=>{},afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht,afspraakSoorten=[],klussen=[],onAddKlus=async()=>{},medewerkers=[],afspraakCategorieen=[]}){
+// ── Prijscheck Motoroccasion (eigen voorraad) ────────────────────────────────
+// Laatste check staat in voorraad_prijscheck (alleen admin); status en advies
+// worden live berekend met de actuele vraagprijs en inkoopprijs.
+function PrijscheckBlok({motor:m, onCheck}){
+  const [bezig,setBezig]=useState(false);
+  const [fout,setFout]=useState(null);
+  const pc=m.prijscheck;
+  const b=beoordeel(m.prijs||null, m.inkoopprijs??null, pc?.status==="ok"?(pc.concurrenten||[]):null);
+  const kleur={groen:T.green,geel:T.yellow,rood:T.red,grijs:T.muted}[b.kleur];
+  const euro=(n)=>`€${Math.round(n).toLocaleString("nl-NL")}`;
+  const marge=m.inkoopprijs!=null&&m.prijs?m.prijs-m.inkoopprijs:null;
+  const datum=pc?.gecontroleerd_op?new Date(pc.gecontroleerd_op).toLocaleDateString("nl-NL",{day:"numeric",month:"short"}):null;
+  const check=async()=>{ setBezig(true); setFout(null); try{ await onCheck(m.id); }catch(e){ setFout(e.message); } finally{ setBezig(false); } };
+  const ok=pc?.status==="ok";
+  return(
+    <div style={{border:`1px solid ${ok?`${kleur}55`:T.border}`,background:ok?`${kleur}10`:"transparent",borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+        <span style={{fontSize:10,color:T.muted,letterSpacing:1,textTransform:"uppercase"}}>Prijscheck{datum?` · ${datum}`:""}</span>
+        <button onClick={check} disabled={bezig}
+          style={{padding:"3px 9px",background:"none",border:`1px solid ${T.border}`,borderRadius:3,color:T.text,cursor:bezig?"wait":"pointer",fontSize:11,fontFamily:"Barlow, sans-serif",flexShrink:0,opacity:bezig?0.6:1}}>
+          {bezig?"Bezig…":"↻ Check prijs"}
+        </button>
+      </div>
+      {!pc&&!bezig&&<div style={{color:T.muted}}>Nog niet gecontroleerd.</div>}
+      {pc?.status==="fout"&&<div style={{color:T.red}}>Check mislukt: {pc.toelichting}</div>}
+      {pc?.status==="geen_data"&&<div style={{color:T.muted}}>Niet te controleren: {pc.toelichting}</div>}
+      {ok&&(
+        <>
+          <div style={{fontWeight:600,color:T.text}}><span style={{color:kleur}}>●</span> {b.kop}</div>
+          {b.kleur==="geel"&&b.advies!=null&&(
+            <div>Goedkoopste worden: <strong>{euro(b.advies)}</strong>{b.minimum!=null?<span style={{color:T.muted}}> · jouw minimum {euro(b.minimum)}</span>:null}</div>
+          )}
+          {b.kleur==="rood"&&<div style={{color:T.red}}>Laagste zit op of onder jouw minimum ({euro(b.minimum)}) — niet volgen.</div>}
+          {b.kleur==="grijs"&&!(pc.concurrenten||[]).length&&pc.zelfde_bouwjaar>0&&(
+            <div style={{color:T.muted}}>{pc.zelfde_bouwjaar} advertentie{pc.zelfde_bouwjaar===1?"":"s"} uit {m.bouwjaar}, maar geen met ±10.000 km verschil.</div>
+          )}
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",color:T.muted}}>
+            {(pc.concurrenten||[]).length>0&&(
+              <details>
+                <summary style={{cursor:"pointer"}}>Vergelijkbare bekijken</summary>
+                <div style={{display:"flex",flexDirection:"column",gap:2,margin:"4px 0"}}>
+                  {pc.concurrenten.map((c,i)=>(
+                    <a key={i} href={c.url||pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:c.prijs<m.prijs?T.text:T.muted,textDecoration:"none"}}>
+                      {euro(c.prijs)} · {Number(c.km).toLocaleString("nl-NL")} km · {c.dealer||"onbekend"} ↗
+                    </a>
+                  ))}
+                </div>
+              </details>
+            )}
+            {pc.mo_url&&<a href={pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:T.muted}}>Motoroccasion ↗</a>}
+            {pc.mo_model&&<span>vergeleken met {pc.mo_model} {m.bouwjaar}</span>}
+          </div>
+        </>
+      )}
+      {marge!=null&&(
+        <div style={{color:marge<MIN_MARGE?T.red:T.muted}}>
+          Marge nu: {euro(marge)}{marge<MIN_MARGE?` — onder je minimum van ${euro(MIN_MARGE)}`:""}
+        </div>
+      )}
+      {m.inkoopprijs==null&&<div style={{color:T.muted}}>Vul de inkoopprijs in (Wijzigen) voor je minimumprijs.</div>}
+      {fout&&<div style={{color:T.red}}>{fout}</div>}
+    </div>
+  );
+}
+
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,onCheckPrijs=async()=>{},onTerugkopen=()=>{},afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht,afspraakSoorten=[],klussen=[],onAddKlus=async()=>{},medewerkers=[],afspraakCategorieen=[]}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
@@ -2441,6 +2511,8 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                       )}
                     </div>
                   )}
+
+                  {!m.verkocht_op&&<PrijscheckBlok motor={m} onCheck={onCheckPrijs}/>}
 
                   {/* Acties */}
                   <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -4506,7 +4578,7 @@ export default function AdminApp(){
         // Verkochte motoren blijven 30 dagen zichtbaar — op basis van verkocht_op,
         // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
         const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData] = await Promise.all([
           sb.from("klanten").select("*").order("naam"),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
@@ -4518,11 +4590,15 @@ export default function AdminApp(){
           sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
           sb.from("inkoop_radar_status").select("*").maybeSingle(),
           sb.from("inkoop_populair").select("*").order("rang",{ascending:true}),
+          sb.from("voorraad_inkoop").select("voorraad_id,inkoopprijs"),   // aparte tabel: alleen admin leesbaar
+          sb.from("voorraad_prijscheck").select("*"),                      // laatste Motoroccasion-check per motor
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
         setInkoopPopulair(inkoopPopulairRes.data||[]);
         const chassisMap = Object.fromEntries((chassisData.data||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
+        const vInkoopMap = Object.fromEntries((vInkoopData.data||[]).map(r=>[r.voorraad_id,r.inkoopprijs]));
+        const prijscheckMap = Object.fromEntries((prijscheckData.data||[]).map(r=>[r.voorraad_id,r]));
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
 
@@ -4559,7 +4635,9 @@ export default function AdminApp(){
         setKlanten(verrijkt);
         setKlussen(klusData.data||[]);
         const voorraadSvc = vsData.data||[];
-        setShowroom((v.data||[]).map(m=>({...m, chassis_nummer: chassisMap[m.id]||null, service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
+        setShowroom((v.data||[]).map(m=>({...m, chassis_nummer: chassisMap[m.id]||null,
+          inkoopprijs: vInkoopMap[m.id]??null, prijscheck: prijscheckMap[m.id]||null,
+          service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
         setProducten(pData.data||[]);
         setAfspraken((a.data||[]).map(x=>{
           const isProefrit=x.type==="proefrit";
@@ -4652,8 +4730,9 @@ export default function AdminApp(){
         source_voorraad_id:f.verwijderUitVoorraad||null,
       }).select().single();
       if(motor){
-        if(src.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(src.km),datum:TODAY}); }
-        motoren = [{...motor,kmHistory:src.km?[{datum:TODAY,km:parseInt(src.km)}]:[],service:[]}];
+        const beginKm = naarBedrag(src.km);
+        if(beginKm){ await sb.from("km_historie").insert({motor_id:motor.id,km:beginKm,datum:TODAY}); }
+        motoren = [{...motor,kmHistory:beginKm?[{datum:TODAY,km:beginKm}]:[],service:[]}];
         if(f.verwijderUitVoorraad){
           await sb.from("voorraad").update({verkocht_op:TODAY,verkocht_aan:klant.id}).eq("id",f.verwijderUitVoorraad);
           setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
@@ -4716,20 +4795,21 @@ export default function AdminApp(){
       source_voorraad_id:f.source_voorraad_id||null,
     }).select().single();
     if(!motor) return;
-    if(f.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:parseInt(f.km),datum:TODAY}); }
-    const nieuwMotor = {...motor,kmHistory:f.km?[{datum:TODAY,km:parseInt(f.km)}]:[],service:[]};
+    const beginKm = naarBedrag(f.km);
+    if(beginKm){ await sb.from("km_historie").insert({motor_id:motor.id,km:beginKm,datum:TODAY}); }
+    const nieuwMotor = {...motor,kmHistory:beginKm?[{datum:TODAY,km:beginKm}]:[],service:[]};
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,nieuwMotor]}:k));
   };
 
   const addService = async (klantId, motorId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
+    // Zonder km-stand geen interval-reset — anders wordt last_service_km ten onrechte 0
+    const kmVal = naarBedrag(f.km) || null;
     const {data:svc, error} = await sb.from("service_beurten").insert({
-      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null,
+      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:kmVal,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
     }).select().single();
     if(error||!svc){ alert("Service opslaan mislukt: "+(error?.message||"onbekende fout")); return; }
-    // Zonder km-stand geen interval-reset — anders wordt last_service_km ten onrechte 0
-    const kmVal = f.km ? parseInt(f.km) : null;
     if(kmVal){
       await Promise.all([
         sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId),
@@ -4768,7 +4848,7 @@ export default function AdminApp(){
 
   const updateService = async (klantId, motorId, svcId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const kmVal = f.km ? parseInt(f.km) : null;
+    const kmVal = naarBedrag(f.km) || null;
     await sb.from("service_beurten").update({
       datum:f.datum, omschrijving:f.omschrijving, km:kmVal,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
@@ -4817,12 +4897,35 @@ export default function AdminApp(){
     else await sb.from("voorraad_chassis").delete().eq("voorraad_id",voorraadId);
   };
 
+  // Inkoopprijs ook apart (publiek leesbare voorraad-tabel mag hem niet bevatten)
+  const naarInkoop = (v) => { const n=naarBedrag(v); return n!=null&&n>0 ? n : null; };
+  const bewaarInkoop = async (sb, voorraadId, inkoopprijs) => {
+    if(inkoopprijs!=null) await sb.from("voorraad_inkoop").upsert({voorraad_id:voorraadId, inkoopprijs});
+    else await sb.from("voorraad_inkoop").delete().eq("voorraad_id",voorraadId);
+  };
+
+  // Prijscheck tegen Motoroccasion voor één motor (knop op de voorraadkaart)
+  const checkVoorraadPrijs = async (voorraadId) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const {data, error} = await sb.functions.invoke("voorraad-prijscheck", {body:{voorraad_id:voorraadId}});
+    if(error){
+      // Toon de melding van de functie zelf (bv. "Geen toegang") i.p.v. de generieke fout
+      let melding = error.message||"Prijscheck mislukt";
+      try{ const b = await error.context?.json?.(); if(b?.fout) melding = b.fout; }catch{}
+      throw new Error(melding);
+    }
+    const r = (data?.resultaten||[])[0];
+    if(!r) throw new Error("Motor niet gevonden (al verkocht?)");
+    const {voorraad_id, gecontroleerd_op, status, mo_model, mo_url, concurrenten, zelfde_bouwjaar, toelichting} = r;
+    setShowroom(p=>p.map(m=>m.id===voorraadId?{...m, prijscheck:{voorraad_id, gecontroleerd_op, status, mo_model, mo_url, concurrenten, zelfde_bouwjaar, toelichting}}:m));
+  };
+
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
       kenteken:f.kenteken, merk:f.merk, model:f.model||"",
-      bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
-      prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
+      bouwjaar:parseInt(f.bouwjaar)||0, km:naarBedrag(f.km)||0,
+      prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       onderdelen_link:f.onderdelen_link||null,
@@ -4832,33 +4935,44 @@ export default function AdminApp(){
     }).select().single();
     if(v){
       if(f.chassis_nummer) await bewaarChassis(sb, v.id, f.chassis_nummer);
-      setShowroom(p=>[{...v, chassis_nummer:f.chassis_nummer||null},...p]);
+      const inkoopprijs = naarInkoop(f.inkoopprijs);
+      if(inkoopprijs!=null) await bewaarInkoop(sb, v.id, inkoopprijs);
+      setShowroom(p=>[{...v, chassis_nummer:f.chassis_nummer||null, inkoopprijs, prijscheck:null},...p]);
     }
   };
 
   const updateVoorraadMotor = async (id, f, behoudeFotos, nieuweUrls, verwijderdeUrls) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const alleFotos = [...behoudeFotos, ...nieuweUrls];
-    await sb.from("voorraad").update({
+    const huidig = showroom.find(m=>m.id===id);
+    // Eén keer uitrekenen: dezelfde waarden voor de database, de staat en de vergelijking.
+    const waarden = {
       merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
-      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
+      km:naarBedrag(f.km)||0, prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in,
       onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
       uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
-      fotos:alleFotos,
-    }).eq("id",id);
-    await bewaarChassis(sb, id, f.chassis_nummer||null);
+      fotos:[...behoudeFotos, ...nieuweUrls],
+    };
+    // Inkoopprijs alleen wegschrijven als hij echt gewijzigd is. Onleesbare invoer
+    // (bv. een typfout) of een niet geladen waarde wist nooit de opgeslagen prijs.
+    const oudeInkoop = huidig?.inkoopprijs ?? null;
+    const inkoopInvoer = String(f.inkoopprijs ?? "").trim();
+    const gelezenInkoop = naarInkoop(inkoopInvoer);
+    const inkoopprijs = inkoopInvoer && gelezenInkoop==null ? oudeInkoop : gelezenInkoop;
+    // Andere merk/model/bouwjaar/km: de vorige prijscheck klopt niet meer — ook
+    // als die pas ná het laden van de app is gemaakt (bv. door de maandagcheck).
+    const checkVerouderd = !huidig || ["merk","model","bouwjaar","km"].some(k=>String(huidig[k]??"")!==String(waarden[k]));
+    await Promise.all([
+      sb.from("voorraad").update(waarden).eq("id",id),
+      bewaarChassis(sb, id, f.chassis_nummer||null),
+      inkoopprijs!==oudeInkoop ? bewaarInkoop(sb, id, inkoopprijs) : null,
+      checkVerouderd ? sb.from("voorraad_prijscheck").delete().eq("voorraad_id",id) : null,
+    ]);
     setShowroom(p=>p.map(m=>m.id===id?{
-      ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
-      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
-      chassis_nummer:f.chassis_nummer||null, onderdelen_link:f.onderdelen_link||null,
-      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
-      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
-      kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
-      uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
-      fotos:alleFotos,
+      ...m, ...waarden, chassis_nummer:f.chassis_nummer||null, inkoopprijs,
+      prijscheck:checkVerouderd?null:m.prijscheck,
     }:m));
     if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
   };
@@ -4946,7 +5060,7 @@ export default function AdminApp(){
   const addProduct = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const { data } = await sb.from("producten").insert({
-      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?parseInt(f.prijs):null,
+      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?naarBedrag(f.prijs):null,
       fotos: f.fotos||[], categorie: f.categorie, actief: true,
     }).select().single();
     if (data) setProducten(p => [data, ...p]);
@@ -4955,7 +5069,7 @@ export default function AdminApp(){
   const updateProduct = async (id, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const { data } = await sb.from("producten").update({
-      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?parseInt(f.prijs):null,
+      naam: f.naam, omschrijving: f.omschrijving||null, prijs: f.prijs?naarBedrag(f.prijs):null,
       fotos: f.fotos||[], actief: f.actief !== false,
     }).eq("id", id).select().single();
     if (data) setProducten(p => p.map(x => x.id === id ? data : x));
@@ -5097,7 +5211,7 @@ export default function AdminApp(){
         motor_id: f.motorId,
         datum: f.datum,
         omschrijving: f.omschrijving,
-        km: f.km ? parseInt(f.km) : null,
+        km: naarBedrag(f.km) || null,
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
@@ -5128,7 +5242,7 @@ export default function AdminApp(){
         voorraad_motor_id: f.voorraadMotorId,
         datum: f.datum,
         omschrijving: f.omschrijving,
-        km: f.km ? parseInt(f.km) : null,
+        km: naarBedrag(f.km) || null,
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
@@ -5377,7 +5491,11 @@ export default function AdminApp(){
     ]);
     if(data){
       const cMap = Object.fromEntries((chassisData||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
-      setShowroom(data.map(m=>({...m, chassis_nummer:cMap[m.id]||null})));
+      // Inkoopprijs en prijscheck staan in eigen tabellen; behoud wat we al hadden.
+      setShowroom(p=>data.map(m=>{
+        const oud=p.find(x=>x.id===m.id);
+        return {...m, chassis_nummer:cMap[m.id]||null, inkoopprijs:oud?.inkoopprijs??null, prijscheck:oud?.prijscheck||null};
+      }));
     }
   };
 
@@ -5453,7 +5571,7 @@ export default function AdminApp(){
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
       {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
