@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { supabase, uitloggen } from "../lib/supabase.js";
 import { JuridischModal, CookieBanner } from "./Juridisch.jsx";
 import { naarBedrag } from "../lib/getal.js";
+import { verkleinFoto, uploadFoto as uploadNaarCloudinary } from "../lib/foto.js";
+import { kmTekst } from "../lib/kmstand.js";
 
 const useIsMobile = () => {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -713,36 +715,15 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
   const setFld = (key, val) => setF(prev => ({ ...prev, [key]: val }));
   const openView = (id) => { setView(id); setF({}); setWinOpts([]); setFotos([]); setOk(false); setFout(null); };
 
-  const compressImage = async (file) => {
-    if (file.size <= 1024 * 1024) return file;
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    try {
-      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Kan afbeelding niet laden")); img.src = url; });
-    } finally { URL.revokeObjectURL(url); }
-    const canvas = document.createElement('canvas');
-    const MAX = 1920;
-    let w = img.width, h = img.height;
-    if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    let q = 0.85, blob;
-    do { blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q)); q -= 0.1; } while (blob && blob.size > 1024 * 1024 && q > 0.1);
-    if (!blob) throw new Error("Afbeelding comprimeren mislukt");
-    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-  };
-
   const uploadFoto = async (file) => {
-    setFotoBezig(true);
+    setFotoBezig(true); setFout(null);
     try {
-      const compressed = await compressImage(file);
-      const form = new FormData();
-      form.append("file", compressed);
-      form.append("upload_preset", "Djm app");
-      const res = await fetch("https://api.cloudinary.com/v1_1/dkfdwnep4/image/upload", { method: "POST", body: form });
-      const data = await res.json();
-      if (data.secure_url) setFotos(prev => [...prev, data.secure_url]);
-    } catch(e) { console.error("Foto upload mislukt", e); }
+      const url = await uploadNaarCloudinary(await verkleinFoto(file));
+      setFotos(prev => [...prev, url]);
+    } catch (e) {
+      console.error("Foto upload mislukt", e);
+      setFout("Foto toevoegen mislukt: " + e.message);
+    }
     setFotoBezig(false);
   };
 
@@ -1768,7 +1749,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
           </div>
         </div>
         <div style={{ fontSize:12, color:T.muted, lineHeight:1.8 }}>
-          {motor.bouwjaar} · {motor.km?.toLocaleString()} km
+          {motor.bouwjaar} · {kmTekst(motor.km, motor.km_eenheid)}
         </div>
       </div>
     );
@@ -1806,7 +1787,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
     const isVerkocht = !!m.verkocht_op;
     const specs = [
       ["Bouwjaar", m.bouwjaar],
-      ["Kilometerstand", m.km ? `${m.km.toLocaleString()} km` : "—"],
+      [m.km_eenheid === "mijl" ? "Tellerstand" : "Kilometerstand", m.km ? kmTekst(m.km, m.km_eenheid) : "—"],
       ["Kenteken", m.kenteken],
       ...(m.datum_in ? [["In showroom", fmtDatum(m.datum_in)]] : []),
       ...(m.voorband_datum ? [["Voorband", m.voorband_datum]] : []),

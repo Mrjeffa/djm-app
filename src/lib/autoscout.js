@@ -8,6 +8,8 @@
 // AutoScout haalt techniek (kW, cc, gewicht, brandstof, bouwjaar) zelf uit de
 // RDW op basis van het kenteken; die velden geven we dus niet mee.
 
+import { kmTekst } from "./kmstand.js";
+
 const AS_START = "https://myarea.autoscout24.nl/vehicle/identification?moto=1";
 
 // Compacte gegevensset die het userscript/de extensie verwacht.
@@ -17,7 +19,8 @@ export const bouwPayload = (m) => ({
   model: m.model || "",
   uitvoering: m.uitvoering || "",
   bouwjaar: m.bouwjaar ? String(m.bouwjaar) : "",
-  km: (m.km ?? "") === "" ? "" : String(m.km),
+  km: (m.km ?? "") === "" ? "" : String(m.km),   // altijd in km (AutoScout vraagt km)
+  km_eenheid: m.km_eenheid === "mijl" ? "mijl" : "km",
   prijs: (m.prijs ?? "") === "" ? "" : String(m.prijs),
   kleur: m.kleur || "",
   carrosserietype: m.carrosserietype || "",
@@ -39,7 +42,7 @@ const leesbaar = (p) => [
   p.carrosserietype && `Carrosserietype: ${p.carrosserietype}`,
   p.kleur && `Kleur: ${p.kleur}`,
   p.bouwjaar && `Bouwjaar: ${p.bouwjaar}`,
-  p.km !== "" && `Kilometerstand: ${p.km} km`,
+  p.km !== "" && `Kilometerstand: ${kmTekst(p.km, p.km_eenheid)}${p.km_eenheid === "mijl" ? " — teller staat in mijl" : ""}`,
   p.prijs !== "" && `Prijs: € ${p.prijs}`,
   p.uitrusting.length && `Uitrusting: ${p.uitrusting.join(", ")}`,
   p.beschrijving && `\nBeschrijving:\n${p.beschrijving}`,
