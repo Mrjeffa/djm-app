@@ -41,8 +41,14 @@ filter-URL's automatisch op te halen, en dit is het afgesproken minimum.
 - **Vergelijkbaar**: zelfde bouwjaar of 1 ouder, max. 10.000 km verschil;
   minder dan 3 → ook 1 jaar jonger. Overgeslagen: nieuw/0 km, prijs op
   aanvraag, BTW-motoren.
-- **Verkoopdoel** = gemiddelde van de max. 3 goedkoopste vergelijkbare
-  (`prijzen.py`). Het openingsbod, max en de kleurcode rekent de app uit.
+- **Verkoopdoel** is een bandbreedte (`prijzen.py`):
+  - **lokprijs** (laag, waar we op inzetten): mediaan van dezelfde motoren
+    (bouwjaar ±1) met **20.000–30.000 km méér** — wij staan ertussen met een
+    motor met minder km voor ongeveer die prijs. Geen motoren in die band →
+    ruimer (15.000–40.000 km meer). Op €50 omlaag, nooit boven de marktprijs.
+  - **marktprijs** (hoog): gemiddelde van de max. 3 goedkoopste vergelijkbare.
+  - Openingsbod (lokprijs − €1.500) en max (lokprijs − €1.000) rekent de app
+    uit vanaf de lokprijs; zonder lokprijs vanaf de marktprijs.
 - Elke 3 dagen opnieuw bepaald; max. `RADAR_MO_MAX` (40) verzoeken per run.
 
 Testen zonder iets op te slaan: Run workflow → modus **diagnose** met een
@@ -108,10 +114,12 @@ Het omgekeerde van de inkoop-radar: staat je eigen vraagprijs nog goed?
 - **Minimum** = inkoopprijs + € 1.000. De inkoopprijs vul je in bij Voorraad
   (toevoegen/wijzigen) en staat in de aparte admin-tabel `voorraad_inkoop`,
   omdat `voorraad` publiek leesbaar is voor de website.
-- **Uitkomst** (bij de motor in de app): groen = jij bent het goedkoopst;
-  geel = goedkoper aangeboden, met advies om net onder de goedkoopste te gaan
-  zitten; rood = de goedkoopste zit onder je minimum (niet volgen);
-  grijs = geen vergelijkbare motor.
+- **Verkoopprijs** = lokprijs – marktprijs: lokprijs = mediaan van dezelfde
+  motoren (zelfde bouwjaar) met 20.000–30.000 km méér (anders 15.000–40.000),
+  marktprijs = gemiddelde van de 3 goedkoopste met vergelijkbare km (±10.000).
+- **Uitkomst** (bij de motor in de app): groen = je zit op lokprijs-niveau;
+  geel = te hoog om te lokken, advies = de lokprijs; rood = de lokprijs ligt
+  onder je minimum, zak hooguit naar je minimum; grijs = geen vergelijking.
 - **Knop "Check prijs"** op de voorraadkaart: direct resultaat.
 - **Wekelijks**: `.github/workflows/voorraad-prijscheck.yml` draait maandagochtend (06:00 UTC)
   `voorraad_check.py` en mailt alleen als er iets te doen is.

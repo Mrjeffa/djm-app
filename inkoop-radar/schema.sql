@@ -32,7 +32,9 @@ ALTER TABLE public.inkoop_leads
   ADD COLUMN IF NOT EXISTS bouwjaar         int,
   ADD COLUMN IF NOT EXISTS km               int,
   ADD COLUMN IF NOT EXISTS mo_model         text,         -- model zoals in de bodtekst
-  ADD COLUMN IF NOT EXISTS mo_verkoopdoel   int,          -- gem. van max. 3 goedkoopste vergelijkbare
+  ADD COLUMN IF NOT EXISTS mo_verkoopdoel   int,          -- marktprijs: gem. van max. 3 goedkoopste vergelijkbare
+  ADD COLUMN IF NOT EXISTS mo_lokprijs      int,          -- lokprijs: mediaan van dezelfde motoren met 20–30.000 km meer
+  ADD COLUMN IF NOT EXISTS mo_lok_aantal    int,          -- aantal in de lokgroep (NULL = nog niet berekend)
   ADD COLUMN IF NOT EXISTS mo_aantal        int,          -- aantal gebruikte vergelijkers (0–3)
   ADD COLUMN IF NOT EXISTS mo_status        text,         -- ok | te_weinig_data | fout
   ADD COLUMN IF NOT EXISTS mo_toelichting   text,

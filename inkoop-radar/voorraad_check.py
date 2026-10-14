@@ -74,14 +74,25 @@ def motor_html(r):
         regels.append(f'Niet te controleren: {escape(r.get("toelichting"))}')
     else:
         regels.append(f'<b style="color:{kleur}">●</b> <b>{escape(b.get("kop"))}</b>')
-        if b.get("advies"):
-            regels.append(f"Goedkoopste worden: <b>{euro(b['advies'])}</b>"
+        lok, markt = b.get("lokprijs"), b.get("markt")
+        if lok is not None and markt is not None and lok < markt:
+            regels.append(f"Verkoopprijs: <b>{euro(lok)} – {euro(markt)}</b> (lokprijs – markt)")
+        elif lok is not None or markt is not None:
+            regels.append(f"Verkoopprijs: <b>{euro(lok if lok is not None else markt)}</b>"
+                          f" ({'lokprijs' if lok is not None else 'markt'})")
+        if b.get("kleur") == "geel" and b.get("advies"):
+            regels.append(f"Advies: zak naar <b>{euro(b['advies'])}</b>"
                           + (f" · jouw minimum {euro(b['minimum'])}" if b.get("minimum") is not None else ""))
         elif b.get("kleur") == "rood":
-            regels.append(f'<span style="color:#DC2626">Laagste zit op of onder jouw minimum ({euro(b["minimum"])}) — niet volgen.</span>')
-        for c in (r.get("concurrenten") or [])[:3]:
-            link = f'<a href="{escape(c.get("url"))}" style="color:#111">{euro(c["prijs"])}</a>' if c.get("url") else euro(c["prijs"])
-            regels.append(f'<span style="color:#555">{link} · {getal(c["km"])} km · {escape(c.get("dealer"))}</span>')
+            regels.append(f'<span style="color:#DC2626">Lokprijs zit onder je minimum — zak hooguit naar '
+                          f'{euro(b["minimum"])}.</span>')
+        band = b.get("lokBand") or [20000, 30000]
+        for titel, lijst in ((f"{band[0] // 1000}–{band[1] // 1000}.000 km meer", b.get("lokgroep") or []),
+                             ("vergelijkbare km", b.get("vergelijkbaar") or [])):
+            for c in lijst[:3]:
+                link = f'<a href="{escape(c.get("url"))}" style="color:#111">{euro(c["prijs"])}</a>' if c.get("url") else euro(c["prijs"])
+                regels.append(f'<span style="color:#555">{link} · {getal(c["km"])} km · {escape(c.get("dealer"))}'
+                              f' <i>({titel})</i></span>')
     if b.get("margeTeLaag"):
         regels.append('<span style="color:#DC2626">Let op: je vraagprijs ligt onder je minimum (inkoop + € 1.000).</span>')
     zoek = (f'<div style="font-size:11px;margin-top:4px"><a href="{escape(r["mo_url"])}" style="color:#777">'

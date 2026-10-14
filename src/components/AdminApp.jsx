@@ -2325,19 +2325,24 @@ function ProductModal({categorie, product=null, onSave, onClose}){
 }
 
 // ── Prijscheck Motoroccasion (eigen voorraad) ────────────────────────────────
-// Laatste check staat in voorraad_prijscheck (alleen admin); status en advies
-// worden live berekend met de actuele vraagprijs en inkoopprijs.
+// Laatste check staat in voorraad_prijscheck (alleen admin): alle advertenties van
+// hetzelfde bouwjaar. Status en advies worden live berekend met de actuele
+// vraagprijs, km-stand en inkoopprijs. Doel = lokprijs: het prijsniveau van dezelfde
+// motoren met 20–30.000 km meer, zodat wij met minder km aantrekkelijker zijn.
 function PrijscheckBlok({motor:m, onCheck}){
   const [bezig,setBezig]=useState(false);
   const [fout,setFout]=useState(null);
   const pc=m.prijscheck;
-  const b=beoordeel(m.prijs||null, m.inkoopprijs??null, pc?.status==="ok"?(pc.concurrenten||[]):null);
+  const ok=pc?.status==="ok";
+  const b=beoordeel(m.prijs||null, m.inkoopprijs??null, ok?(pc.concurrenten||[]):null, m.km||null);
   const kleur={groen:T.green,geel:T.yellow,rood:T.red,grijs:T.muted}[b.kleur];
   const euro=(n)=>`€${Math.round(n).toLocaleString("nl-NL")}`;
+  const km=(n)=>`${Number(n).toLocaleString("nl-NL")} km`;
   const marge=m.inkoopprijs!=null&&m.prijs?m.prijs-m.inkoopprijs:null;
   const datum=pc?.gecontroleerd_op?new Date(pc.gecontroleerd_op).toLocaleDateString("nl-NL",{day:"numeric",month:"short"}):null;
   const check=async()=>{ setBezig(true); setFout(null); try{ await onCheck(m.id); }catch(e){ setFout(e.message); } finally{ setBezig(false); } };
-  const ok=pc?.status==="ok";
+  const bandTekst=b.lokBand?`${(b.lokBand[0]/1000)}–${(b.lokBand[1]/1000)}.000 km meer`:"20–30.000 km meer";
+  const groepen=[[`Lokprijs — ${bandTekst}`, b.lokgroep],["Markt — vergelijkbare km (±10.000)", b.vergelijkbaar]].filter(([,l])=>l.length);
   return(
     <div style={{border:`1px solid ${ok?`${kleur}55`:T.border}`,background:ok?`${kleur}10`:"transparent",borderRadius:4,padding:"8px 10px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
@@ -2353,24 +2358,34 @@ function PrijscheckBlok({motor:m, onCheck}){
       {ok&&(
         <>
           <div style={{fontWeight:600,color:T.text}}><span style={{color:kleur}}>●</span> {b.kop}</div>
-          {b.kleur==="geel"&&b.advies!=null&&(
-            <div>Goedkoopste worden: <strong>{euro(b.advies)}</strong>{b.minimum!=null?<span style={{color:T.muted}}> · jouw minimum {euro(b.minimum)}</span>:null}</div>
+          {(b.lokprijs!=null||b.markt!=null)&&(
+            <div>
+              Verkoopprijs: <strong>{b.lokprijs!=null&&b.markt!=null&&b.lokprijs<b.markt?`${euro(b.lokprijs)} – ${euro(b.markt)}`:euro(b.lokprijs??b.markt)}</strong>
+              <span style={{color:T.muted}}> {b.lokprijs!=null&&b.markt!=null?"(lokprijs – markt)":b.lokprijs!=null?"(lokprijs)":"(markt — geen motoren met meer km gevonden)"}</span>
+            </div>
           )}
-          {b.kleur==="rood"&&<div style={{color:T.red}}>Laagste zit op of onder jouw minimum ({euro(b.minimum)}) — niet volgen.</div>}
-          {b.kleur==="grijs"&&!(pc.concurrenten||[]).length&&pc.zelfde_bouwjaar>0&&(
-            <div style={{color:T.muted}}>{pc.zelfde_bouwjaar} advertentie{pc.zelfde_bouwjaar===1?"":"s"} uit {m.bouwjaar}, maar geen met ±10.000 km verschil.</div>
+          {b.kleur==="geel"&&b.advies!=null&&(
+            <div>Advies: zak naar <strong>{euro(b.advies)}</strong>{b.minimum!=null?<span style={{color:T.muted}}> · jouw minimum {euro(b.minimum)}</span>:null}</div>
+          )}
+          {b.kleur==="rood"&&<div style={{color:T.red}}>Zak hooguit naar je minimum: <strong>{euro(b.minimum)}</strong> (inkoop + {euro(MIN_MARGE)}).</div>}
+          {b.goedkoper>0&&<div style={{color:T.muted}}>{b.goedkoper} met vergelijkbare km goedkoper aangeboden.</div>}
+          {b.kleur==="grijs"&&!groepen.length&&pc.zelfde_bouwjaar>0&&(
+            <div style={{color:T.muted}}>{pc.zelfde_bouwjaar} advertentie{pc.zelfde_bouwjaar===1?"":"s"} uit {m.bouwjaar}, maar geen met een vergelijkbare of hogere km-stand.</div>
           )}
           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",color:T.muted}}>
-            {(pc.concurrenten||[]).length>0&&(
+            {groepen.length>0&&(
               <details>
-                <summary style={{cursor:"pointer"}}>Vergelijkbare bekijken</summary>
-                <div style={{display:"flex",flexDirection:"column",gap:2,margin:"4px 0"}}>
-                  {pc.concurrenten.map((c,i)=>(
-                    <a key={i} href={c.url||pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:c.prijs<m.prijs?T.text:T.muted,textDecoration:"none"}}>
-                      {euro(c.prijs)} · {Number(c.km).toLocaleString("nl-NL")} km · {c.dealer||"onbekend"} ↗
-                    </a>
-                  ))}
-                </div>
+                <summary style={{cursor:"pointer"}}>Motoren bekijken</summary>
+                {groepen.map(([titel,lijst])=>(
+                  <div key={titel} style={{display:"flex",flexDirection:"column",gap:2,margin:"4px 0"}}>
+                    <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{titel}</div>
+                    {lijst.map((c,i)=>(
+                      <a key={i} href={c.url||pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                        {euro(c.prijs)} · {km(c.km)} · {c.dealer||"onbekend"} ↗
+                      </a>
+                    ))}
+                  </div>
+                ))}
               </details>
             )}
             {pc.mo_url&&<a href={pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:T.muted}}>Motoroccasion ↗</a>}
@@ -4231,8 +4246,10 @@ function isVandaag(l){
 }
 
 // ── Inkoopadvies (populaire modellen, alleen particulier) ──
-// Het verkoopdoel (gemiddelde van max. 3 goedkoopste vergelijkbare op
-// Motoroccasion) berekent de ophaal-job; zie inkoop-radar/prijzen.py.
+// Het verkoopdoel is een bandbreedte die de ophaal-job berekent (zie
+// inkoop-radar/prijzen.py): lokprijs (mediaan van dezelfde motoren met
+// 20–30.000 km meer — daar zetten we op in) tot marktprijs (gem. van de 3
+// goedkoopste met vergelijkbare km). Bieden doen we vanaf de lokprijs.
 const OPENINGSBOD_ONDER_DOEL = 1500;
 const MAX_ONDER_DOEL = 1000;
 const GEEL_BOVEN_MAX = 1000;
@@ -4240,15 +4257,16 @@ const afrondOp50 = (n) => Math.round(n/50)*50;
 const euro = (n) => `€${Math.round(n).toLocaleString("nl-NL")}`;
 
 function inkoopAdvies(l){
-  if(!l.mo_verkoopdoel) return null;
-  const doel=l.mo_verkoopdoel;
+  const markt=l.mo_verkoopdoel||null, lok=l.mo_lokprijs||null;
+  const doel=lok??markt;   // lager verkopen = lager inkopen
+  if(!doel) return null;
   const openingsbod=afrondOp50(doel-OPENINGSBOD_ONDER_DOEL);
   const max=doel-MAX_ONDER_DOEL;
   const vraag=l.prijs;
   const kleur = vraag==null ? "grijs" : vraag<=max ? "groen" : vraag<=max+GEEL_BOVEN_MAX ? "geel" : "grijs";
   // Vraagt de verkoper al minder dan ons openingsbod: bied € 500 onder zijn vraagprijs.
   const bod = (vraag!=null && vraag<openingsbod) ? vraag-500 : openingsbod;
-  return {doel, openingsbod, max, kleur, bod};
+  return {doel, lok, markt, openingsbod, max, kleur, bod};
 }
 
 function bodTekst(l, model, bod){
@@ -4294,7 +4312,9 @@ function InkoopPrijsBlok({lead, model}){
         {kolom("Vraagprijs", lead.prijs!=null?euro(lead.prijs):"n.o.t.k.",
           lead.bouwjaar||lead.km!=null?[lead.bouwjaar, lead.km!=null?`${Number(lead.km).toLocaleString("nl-NL")} km`:null].filter(Boolean).join(" · "):null)}
         {advies
-          ? kolom("Verkoopdoel MO", euro(advies.doel), `${lead.mo_aantal} vergelijker${lead.mo_aantal===1?"":"s"}`)
+          ? kolom("Verkoopdoel MO",
+              advies.lok&&advies.markt&&advies.lok<advies.markt ? `${euro(advies.lok)} – ${euro(advies.markt)}` : euro(advies.doel),
+              advies.lok&&advies.markt ? "lokprijs – markt" : advies.lok ? "lokprijs" : "markt (geen lokprijs)")
           : kolom("Verkoopdoel MO", <span style={{fontSize:14,color:T.muted}}>{lead.mo_status==="te_weinig_data"?"te weinig data":lead.mo_status==="fout"?"niet gelukt":"volgt bij volgende run"}</span>,
               lead.mo_toelichting||null)}
         {advies&&kolom("Inkoop", `${euro(advies.openingsbod)} – ${euro(advies.max)}`, "openingsbod – max")}
@@ -4318,13 +4338,20 @@ function InkoopPrijsBlok({lead, model}){
           {vergelijkers.length>0&&(
             <details style={{fontSize:12,color:T.muted}}>
               <summary style={{cursor:"pointer"}}>Vergelijkers bekijken</summary>
-              <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
-                {vergelijkers.map((v,i)=>(
-                  <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
-                    {euro(v.prijs)} · {v.bouwjaar} · {Number(v.km).toLocaleString("nl-NL")} km{v.titel?` · ${v.titel}`:""} ↗
-                  </a>
-                ))}
-              </div>
+              {[["lok","Lokprijs — 20–30.000 km meer"],["markt","Markt — vergelijkbare km"]].map(([groep,titel])=>{
+                const lijst=vergelijkers.filter(v=>(v.groep||"markt")===groep);
+                if(!lijst.length) return null;
+                return(
+                  <div key={groep} style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
+                    <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{titel}</div>
+                    {lijst.map((v,i)=>(
+                      <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                        {euro(v.prijs)} · {v.bouwjaar} · {Number(v.km).toLocaleString("nl-NL")} km{v.titel?` · ${v.titel}`:""} ↗
+                      </a>
+                    ))}
+                  </div>
+                );
+              })}
             </details>
           )}
         </div>

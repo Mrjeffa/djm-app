@@ -1,7 +1,7 @@
 // Tests voor logica.ts. Draaien (vanuit de repo-root):
 //   npx esbuild supabase/functions/voorraad-prijscheck/logica.test.ts --bundle --platform=node --outfile=/tmp/t.mjs --format=esm && node /tmp/t.mjs
 import {
-  beoordeel, concurrentenUit, kiesType, kiesTypeVoorraad, mooi, naarBedrag, nietDuurderDan, zoekUrl, type Aanbod,
+  beoordeel, concurrentenUit, kiesType, kiesTypeVoorraad, lokprijsUit, marktAanbod, mooi, naarBedrag, zoekUrl, type Aanbod,
 } from "./logica.ts";
 
 let ok = 0;
@@ -51,23 +51,35 @@ const lijst = concurrentenUit([
 ], 2020, 20000);
 gelijk(lijst.map((c) => c.prijs), [7400, 7600], "concurrentenUit");
 
-// Beoordeling
-const c = (...prijzen: number[]) => prijzen.map((p) => ({ prijs: p, bouwjaar: 2020, km: 20000, dealer: "X", url: null }));
-gelijk(beoordeel(7500, 6000, c(7600, 7900)).kleur, "groen", "goedkoopst");
-gelijk(beoordeel(7500, 6000, []).kleur, "grijs", "geen vergelijking");
-const geel = beoordeel(7900, 6000, c(7495, 7800));
-gelijk([geel.kleur, geel.advies, geel.minimum, geel.actieNodig], ["geel", 7450, 7000, true], "goedkopere boven minimum");
-const rood = beoordeel(7900, 6900, c(7495));
-gelijk([rood.kleur, rood.advies, rood.minimum], ["rood", null, 7900], "goedkopere onder minimum");
-const zonderInkoop = beoordeel(7900, null, c(7495));
-gelijk([zonderInkoop.kleur, zonderInkoop.advies, zonderInkoop.minimum], ["geel", 7450, null], "zonder inkoopprijs");
-gelijk(beoordeel(6500, 6000, c(7000)).margeTeLaag, true, "marge te laag");
-gelijk(nietDuurderDan(7500), 7450, "nietDuurderDan 7500");
-gelijk(nietDuurderDan(7495), 7450, "nietDuurderDan 7495");
-// Minimum net onder de goedkoopste: nog te onderbieden → geel met advies = minimum (niet rood)
-const krap = beoordeel(7900, 6025, c(7040));
-gelijk([krap.kleur, krap.advies, krap.minimum], ["geel", 7025, 7025], "minimum net onder goedkoopste");
-gelijk(beoordeel(7900, 6040, c(7040)).kleur, "rood", "minimum gelijk aan goedkoopste");
+// marktAanbod: alle bruikbare van hetzelfde jaar (ook met veel meer km), goedkoopste eerst
+gelijk(marktAanbod([a(7000, 2020, 45000), a(7600, 2020, 21000), a(6900, 2019, 20000), a(5000, 2020, 0, { nieuw: true }),
+  a(6000, 2020, 50000, { dealer: "De Jonge Motoren" })], 2020).map((c) => c.prijs), [7000, 7600], "marktAanbod");
+
+// Lokprijs: mediaan van dezelfde motoren met 20–30.000 km meer (anders 15–40.000), op €50 omlaag
+const m = (prijs: number, km: number) => ({ prijs, bouwjaar: 2020, km, dealer: "X", url: null });
+const markt = [m(7400, 19000), m(7600, 21000), m(7800, 22000),          // vergelijkbare km (±10.000)
+               m(6200, 41000), m(6450, 45000), m(6900, 49000),          // 20–30.000 km meer
+               m(5000, 75000)];                                         // veel te veel km
+const lk = lokprijsUit(markt, 20000);
+gelijk([lk.lokprijs, lk.band, lk.groep.length], [6450, [20000, 30000], 3], "lokprijs mediaan");
+gelijk(lokprijsUit([m(6430, 37000), m(6170, 58000)], 20000).lokprijs, 6300, "lokprijs ruimere band");
+gelijk(lokprijsUit([m(7400, 21000)], 20000).lokprijs, null, "geen lokgroep");
+
+// Beoordeling: doel = lokprijs (nooit onder je minimum = inkoop + €1.000)
+const g = beoordeel(7900, 4000, markt, 20000);
+gelijk([g.kleur, g.advies, g.lokprijs, g.markt, g.goedkoper, g.actieNodig], ["geel", 6450, 6450, 7600, 3, true], "te hoog → lokprijs");
+gelijk(beoordeel(6450, 4000, markt, 20000).kleur, "groen", "op lokprijs");
+gelijk(beoordeel(6500, 4000, markt, 20000).kleur, "groen", "binnen €50 van lokprijs");
+const r = beoordeel(7900, 6000, markt, 20000);                          // minimum 7000 > lokprijs 6450
+gelijk([r.kleur, r.advies, r.minimum], ["rood", 7000, 7000], "lokprijs onder minimum → hooguit minimum");
+const zonder = beoordeel(7900, null, markt, 20000);
+gelijk([zonder.kleur, zonder.advies, zonder.minimum], ["geel", 6450, null], "zonder inkoopprijs");
+const geenLok = beoordeel(7900, 4000, [m(7400, 19000), m(7600, 21000)], 20000);   // geen lokgroep → markt
+gelijk([geenLok.kleur, geenLok.lokprijs, geenLok.markt, geenLok.advies], ["geel", null, 7500, 7500], "zonder lokgroep → markt");
+gelijk(beoordeel(7500, 4000, [], 20000).kleur, "grijs", "geen vergelijking");
+gelijk(beoordeel(null, 4000, markt, 20000).kleur, "grijs", "geen vraagprijs");
+gelijk(beoordeel(6500, 6000, markt, 20000).margeTeLaag, true, "marge te laag");
+gelijk(beoordeel(9000, 4000, [m(9500, 45000), m(7000, 20000)], 20000).lokprijs, 7000, "lokprijs nooit boven markt");
 
 // Voorraad-typekeuze: modelveld met extra woorden
 const YAMAHA: [string, string][] = [["mt-07", "MT 07"], ["mt-07-tracer", "MT 07 TRACER"], ["tracer-7", "TRACER 7"]];

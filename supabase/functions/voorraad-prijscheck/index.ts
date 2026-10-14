@@ -1,7 +1,8 @@
 // Edge function: voorraad-prijscheck
 //
 // Vergelijkt de vraagprijs van eigen voorraadmotoren met Motoroccasion.nl:
-// zelfde model + bouwjaar, ±10.000 km, goedkoopste eerst. Per motor precies één
+// zelfde model + bouwjaar; advies = lokprijs (prijsniveau van dezelfde motoren met
+// 20–30.000 km meer), nooit onder je minimum. Per motor precies één
 // zoekverzoek (pagina 1, prijs laag→hoog) + hooguit één merkpagina per merk —
 // zelfde afspraak als bij de inkoop-radar i.v.m. de robots.txt van Motoroccasion.
 //
@@ -15,7 +16,7 @@
 // Toegang: alleen admins (is_admin()) of de service-role key (wekelijkse job).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
-  beoordeel, concurrentenUit, kiesTypeVoorraad, MO_BASIS, mooi, naarAanbod, slug, typesUit, zoekUrl, type Concurrent,
+  beoordeel, kiesTypeVoorraad, marktAanbod, MO_BASIS, mooi, naarAanbod, slug, typesUit, zoekUrl, type Concurrent,
 } from "./logica.ts";
 
 const CORS = {
@@ -117,7 +118,9 @@ async function check(m: Motor): Promise<Uitkomst> {
   if (totaal > items.length && (!("sorting" in filters) || dalingen > Math.floor(prijzen.length / 4))) {
     throw new MoFout("sortering op prijs niet toegepast — URL-opbouw van Motoroccasion gewijzigd?");
   }
-  const concurrenten = concurrentenUit(aanbod, m.bouwjaar, m.km).slice(0, 10);
+  // Alle bruikbare advertenties van dit bouwjaar (ook met veel meer km): daaruit
+  // rekent beoordeel() de vergelijkbare km én de lokgroep.
+  const concurrenten = marktAanbod(aanbod, m.bouwjaar).slice(0, 30);
   return {
     status: "ok",
     mo_model: `${m.merk} ${mooi(typeNaam)}`,
@@ -150,7 +153,7 @@ Deno.serve(async (req) => {
     const t = body.test;
     try {
       const u = await check(t);
-      return json({ test: { ...u, beoordeling: beoordeel(t.prijs ?? null, t.inkoopprijs ?? null, u.concurrenten) } });
+      return json({ test: { ...u, beoordeling: beoordeel(t.prijs ?? null, t.inkoopprijs ?? null, u.concurrenten, t.km ?? null) } });
     } catch (e) {
       return json({ test: { status: "fout", toelichting: String((e as Error).message) } });
     }
@@ -183,7 +186,7 @@ Deno.serve(async (req) => {
     const inkoopprijs = inkoopVan.get(m.id) ?? null;
     resultaten.push({
       ...rij, merk: m.merk, model: m.model, bouwjaar: m.bouwjaar, km: m.km, prijs: m.prijs, inkoopprijs,
-      beoordeling: beoordeel(m.prijs, inkoopprijs, u.concurrenten),
+      beoordeling: beoordeel(m.prijs, inkoopprijs, u.concurrenten, m.km),
       ...(opslagFout ? { opslagfout: opslagFout.message } : {}),
     });
   }
