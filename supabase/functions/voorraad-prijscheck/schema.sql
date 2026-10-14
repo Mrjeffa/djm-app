@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS public.voorraad_prijscheck (
   status            text NOT NULL,           -- ok | geen_data | fout
   mo_model          text,                    -- welk Motoroccasion-type vergeleken is
   mo_url            text,                    -- de zoekopdracht (zelfde bouwjaar, prijs oplopend)
-  concurrenten      jsonb,                   -- vergelijkbare (±km), goedkoopste eerst: [{prijs,km,bouwjaar,dealer,url}]
+  concurrenten      jsonb,                   -- alle bruikbare advertenties van dit bouwjaar, goedkoopste eerst:
+                                             -- [{prijs,km,bouwjaar,dealer,url}]; de app leidt er lokgroep en markt uit af
   zelfde_bouwjaar   int,                     -- aantal advertenties met hetzelfde bouwjaar (context)
   toelichting       text
 );

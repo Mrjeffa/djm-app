@@ -1,5 +1,5 @@
 """Tests voor de prijsregels. Draaien: python inkoop-radar/test_prijzen.py"""
-from prijzen import bepaal_verkoopdoel, bruikbaar
+from prijzen import bepaal_lokprijs, bepaal_verkoopdoel, bruikbaar
 
 
 def mo(prijs, jaar, km, nieuw=False, btw=False):
@@ -46,6 +46,32 @@ def test_een_of_twee_vergelijkers_en_geen_data():
     assert doel is None and gekozen == [] and toel
     doel, _, toel = bepaal_verkoopdoel([mo(7000, 2020, 20000)], None, 20000)
     assert doel is None and "onbekend" in toel
+
+
+def test_lokprijs_mediaan_van_20_tot_30k_km_meer():
+    # Onze motor: 2020, 20.000 km → band 40.000–50.000 km
+    aanbod = [mo(7500, 2020, 21000),                                  # vergelijkbare km: telt niet mee
+              mo(6200, 2020, 41000), mo(6500, 2019, 45000), mo(6900, 2021, 49000),  # in de band
+              mo(5000, 2020, 70000),                                  # te veel km
+              mo(6000, 2018, 45000)]                                  # bouwjaar te oud
+    lok, groep, band = bepaal_lokprijs(aanbod, 2020, 20000)
+    assert band == (20000, 30000) and [a["prijs"] for a in groep] == [6200, 6500, 6900]
+    assert lok == 6500                                                # mediaan, op €50 omlaag
+
+
+def test_lokprijs_ruimere_band_en_afronding():
+    aanbod = [mo(6430, 2020, 37000), mo(6170, 2020, 58000)]           # 17.000 en 38.000 km meer
+    lok, groep, band = bepaal_lokprijs(aanbod, 2020, 20000)
+    assert band == (15000, 40000) and lok == 6300                     # mediaan 6300 → 6300
+    lok, _, _ = bepaal_lokprijs([mo(6449, 2020, 45000)], 2020, 20000)
+    assert lok == 6400                                                # 6449 → €50 omlaag
+
+
+def test_lokprijs_nooit_boven_markt_en_zonder_data():
+    lok, _, _ = bepaal_lokprijs([mo(9000, 2020, 45000)], 2020, 20000, marktprijs=8000)
+    assert lok == 8000
+    assert bepaal_lokprijs([mo(7000, 2020, 21000)], 2020, 20000) == (None, [], None)
+    assert bepaal_lokprijs([mo(7000, 2020, 45000)], 2020, None)[0] is None
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 import motoroccasion as mo
-from prijzen import bepaal_verkoopdoel
+from prijzen import bepaal_lokprijs, bepaal_verkoopdoel
 
 # ── Config ───────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -469,6 +469,8 @@ def populaire_term(lead, populair):
 def moet_prijzen(lead):
     if not lead.get("mo_bijgewerkt") or lead.get("mo_status") == "fout":
         return True
+    if lead.get("mo_status") == "ok" and lead.get("mo_lok_aantal") is None:
+        return True  # geprijsd vóór de lokprijs bestond
     try:
         gedaan = datetime.fromisoformat(lead["mo_bijgewerkt"].replace("Z", "+00:00"))
     except ValueError:
@@ -486,6 +488,7 @@ def prijs_lead(lead, term, cache):
     leads van hetzelfde model + bouwjaar (één verzoek per combinatie)."""
     nu = datetime.now(timezone.utc).isoformat()
     velden = {"mo_bijgewerkt": nu, "mo_model": term, "mo_verkoopdoel": None, "mo_aantal": 0,
+              "mo_lokprijs": None, "mo_lok_aantal": 0,
               "mo_vergelijkers": None, "mo_url": None, "mo_toelichting": None}
 
     # Oudere leads (van vóór de bouwjaar/km-velden): proberen uit de tekst.
@@ -533,13 +536,23 @@ def prijs_lead(lead, term, cache):
     if "fout" in res:
         return {**velden, "mo_status": "fout", "mo_toelichting": res["fout"][:300]}
 
+    # Marktprijs (hoge kant) en lokprijs (lage kant, waar we op inzetten).
     doel, vgl, toelichting = bepaal_verkoopdoel(res["aanbod"], jaar, km)
+    lok, lokgroep, band = bepaal_lokprijs(res["aanbod"], jaar, km, marktprijs=doel)
+    if lok is None and doel:
+        toelichting = "geen motoren met 15–40.000 km meer gevonden — verkoopdoel is de marktprijs"
+    elif band and band != (20_000, 30_000):
+        toelichting = "lokprijs op basis van 15–40.000 km meer (20–30.000 niet gevonden)"
+    veld = ("prijs", "bouwjaar", "km", "url", "titel", "dealer")
+    vergelijkers = ([{**{k: a.get(k) for k in veld}, "groep": "markt"} for a in vgl]
+                    + [{**{k: a.get(k) for k in veld}, "groep": "lok"} for a in lokgroep[:6]])
     return {**velden,
-            "mo_status": "ok" if doel else "te_weinig_data",
+            "mo_status": "ok" if (doel or lok) else "te_weinig_data",
             "mo_verkoopdoel": doel,
             "mo_aantal": len(vgl),
-            "mo_vergelijkers": [{k: a.get(k) for k in ("prijs", "bouwjaar", "km", "url", "titel", "dealer")}
-                                for a in vgl] or None,
+            "mo_lokprijs": lok,
+            "mo_lok_aantal": len(lokgroep),
+            "mo_vergelijkers": vergelijkers or None,
             "mo_url": res["url"],
             "mo_toelichting": toelichting}
 
@@ -554,7 +567,7 @@ def bereken_inkoopprijzen(schrijf=True, uitvoer=log, overrides=None):
         return None
     # Alleen wat de app toont: binnen de bewaartermijn, of naar de inkoop gezet.
     r = requests.get(f"{SUPABASE_URL}/rest/v1/inkoop_leads", headers=sb_headers(), timeout=30, params={
-        "select": "ad_id,titel,beschrijving,url,prijs,bouwjaar,km,status,mo_status,mo_bijgewerkt",
+        "select": "ad_id,titel,beschrijving,url,prijs,bouwjaar,km,status,mo_status,mo_bijgewerkt,mo_lok_aantal",
         "is_particulier": "eq.true", "status": "neq.genegeerd", "or": venster_filter(),
         "order": "gevonden_op.desc", "limit": "500"})
     r.raise_for_status()
@@ -571,7 +584,11 @@ def bereken_inkoopprijzen(schrijf=True, uitvoer=log, overrides=None):
         if velden is None:
             uitvoer(f"Limiet van {MO_MAX_VERZOEKEN} Motoroccasion-verzoeken bereikt; rest volgt bij de volgende run.")
             break
-        doel = f"€ {velden['mo_verkoopdoel']}" if velden["mo_verkoopdoel"] else velden["mo_status"]
+        if velden["mo_status"] == "ok":
+            lok, markt = velden["mo_lokprijs"], velden["mo_verkoopdoel"]
+            doel = " – ".join(f"{naam} € {w}" for naam, w in (("lok", lok), ("markt", markt)) if w is not None)
+        else:
+            doel = velden["mo_status"]
         uitvoer(f"  {lead['titel'][:50]!r} → {velden['mo_model']} {lead.get('bouwjaar') or velden.get('bouwjaar')}"
                 f"/{lead.get('km') if lead.get('km') is not None else velden.get('km')} km: {doel}"
                 f" ({velden['mo_aantal']} vgl){' — ' + velden['mo_toelichting'] if velden['mo_toelichting'] else ''}")

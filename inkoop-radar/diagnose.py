@@ -22,7 +22,7 @@ import requests
 
 import fetch_leads as fl
 import motoroccasion as mo
-from prijzen import bepaal_verkoopdoel
+from prijzen import bepaal_lokprijs, bepaal_verkoopdoel
 
 TEST_MODEL = (os.environ.get("TEST_MODEL") or "Kawasaki Z900").strip()
 TEST_BOUWJAAR = int(os.environ.get("TEST_BOUWJAAR") or 2020)
@@ -117,11 +117,17 @@ def prijstest():
                                                         ("BTW", a["btw"])) if j) + "]"
         print(f"  € {a['prijs']} · {a['bouwjaar']} · {a['km']} km · {a['dealer']}{reden}")
     doel, vgl, toel = bepaal_verkoopdoel(aanbod, TEST_BOUWJAAR, TEST_KM)
+    lok, lokgroep, band = bepaal_lokprijs(aanbod, TEST_BOUWJAAR, TEST_KM, marktprijs=doel)
     if doel:
-        print(f"VERKOOPDOEL: € {doel} op basis van {len(vgl)} vergelijker(s): "
+        print(f"MARKTPRIJS: € {doel} op basis van {len(vgl)} vergelijker(s): "
               + ", ".join(f"€ {a['prijs']} ({a['bouwjaar']}, {a['km']} km)" for a in vgl))
     else:
-        print(f"Te weinig data: {toel}")
+        print(f"Marktprijs: te weinig data ({toel})")
+    if lok is not None:
+        print(f"LOKPRIJS: € {lok} = mediaan van {len(lokgroep)} motor(en) met {band[0]:,}–{band[1]:,} km meer: ".replace(",", ".")
+              + ", ".join(f"€ {a['prijs']} ({a['bouwjaar']}, {a['km']} km)" for a in lokgroep))
+    else:
+        print("Lokprijs: geen motoren met 15.000–40.000 km meer op pagina 1")
 
 
 def droog_op_leads():
@@ -168,8 +174,9 @@ def check_voorraad_functie():
         print(f"   url={u.get('mo_url')}")
         for c in (u.get("concurrenten") or [])[:5]:
             print(f"   € {c['prijs']} · {c['km']} km · {c['dealer']}")
-        print(f"   → {b.get('kleur')}: {b.get('kop')} | advies={b.get('advies')} minimum={b.get('minimum')} "
-              f"marge te laag={b.get('margeTeLaag')} actie={b.get('actieNodig')}")
+        print(f"   → {b.get('kleur')}: {b.get('kop')} | lokprijs={b.get('lokprijs')} ({len(b.get('lokgroep') or [])} mot., "
+              f"band {b.get('lokBand')}) markt={b.get('markt')} advies={b.get('advies')} minimum={b.get('minimum')} "
+              f"actie={b.get('actieNodig')}")
 
     # Route van de wekelijkse job (voorraad_check.py), zonder iets op te slaan:
     # verkochte motoren worden door de functie overgeslagen.

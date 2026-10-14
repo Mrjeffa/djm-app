@@ -149,54 +149,91 @@ export function naarAanbod(it: any): Aanbod {
   };
 }
 
-/** Vergelijkbare concurrenten: zelfde bouwjaar, ±KM_MARGE km, met prijs, geen
- *  nieuw/0 km, geen BTW-motor, niet je eigen advertentie. Goedkoopste eerst. */
-export function concurrentenUit(aanbod: Aanbod[], bouwjaar: number, km: number, eigenDealer = EIGEN_DEALER): Concurrent[] {
+/** Bruikbaar aanbod van hetzelfde bouwjaar: met prijs, geen nieuw/0 km, geen
+ *  BTW-motor, niet je eigen advertentie. Goedkoopste eerst. Dit slaat de check
+ *  op; de app leidt er live de vergelijkbare km én de lokgroep uit af. */
+export function marktAanbod(aanbod: Aanbod[], bouwjaar: number, eigenDealer = EIGEN_DEALER): Concurrent[] {
   const eigen = norm(eigenDealer);
   return aanbod
     .filter((a) => a.prijs && a.prijs > 0 && !a.nieuw && a.km && !a.btw && a.bouwjaar === bouwjaar
-      && Math.abs((a.km as number) - km) <= KM_MARGE && !(eigen && norm(a.dealer).includes(eigen)))
+      && !(eigen && norm(a.dealer).includes(eigen)))
     .map((a) => ({ prijs: a.prijs as number, bouwjaar: a.bouwjaar as number, km: a.km as number, dealer: a.dealer, url: a.url }))
     .sort((x, y) => x.prijs - y.prijs);
+}
+
+/** Vergelijkbare km (±KM_MARGE), goedkoopste eerst. */
+export const metVergelijkbareKm = (lijst: Concurrent[], km: number) => lijst.filter((c) => Math.abs(c.km - km) <= KM_MARGE);
+
+/** Vergelijkbare concurrenten uit ruw aanbod (zelfde bouwjaar, ±KM_MARGE km). */
+export const concurrentenUit = (aanbod: Aanbod[], bouwjaar: number, km: number, eigenDealer = EIGEN_DEALER) =>
+  metVergelijkbareKm(marktAanbod(aanbod, bouwjaar, eigenDealer), km);
+
+// ── Lokprijs ──────────────────────────────────────────────────────────────────
+// We willen klanten lokken: onze motor kost ongeveer wat dezelfde motoren met
+// 20.000–30.000 km MEER kosten, maar heeft minder km. Lokprijs = mediaan van
+// die prijzen, op €50 omlaag. Geen motoren in die band → ruimer (15–40.000).
+// Zelfde regel als bepaal_lokprijs in inkoop-radar/prijzen.py.
+export const LOK_BANDEN: [number, number][] = [[20_000, 30_000], [15_000, 40_000]];
+const omlaag50 = (n: number) => Math.floor(n / 50) * 50;
+const mediaan = (xs: number[]) => {
+  const v = [...xs].sort((a, b) => a - b), m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+export function lokprijsUit(lijst: Concurrent[], km: number): { lokprijs: number | null; groep: Concurrent[]; band: [number, number] | null } {
+  for (const [laag, hoog] of LOK_BANDEN) {
+    const groep = lijst.filter((c) => c.km >= km + laag && c.km <= km + hoog);
+    if (groep.length) return { lokprijs: omlaag50(mediaan(groep.map((c) => c.prijs))), groep, band: [laag, hoog] };
+  }
+  return { lokprijs: null, groep: [], band: null };
 }
 
 // ── Beoordeling (gedeeld door app en wekelijkse mail) ─────────────────────────
 export type Beoordeling = {
   kleur: "groen" | "geel" | "rood" | "grijs";
   kop: string;
-  advies: number | null;          // prijs om de goedkoopste te worden (als dat boven je minimum blijft)
+  advies: number | null;          // zak naar deze prijs (lokprijs, maar nooit onder je minimum)
   minimum: number | null;         // inkoop + €1.000
   margeTeLaag: boolean;           // vraagprijs ligt nu al onder je minimum
   actieNodig: boolean;            // voor de mail
+  lokprijs: number | null;        // lage kant verkoopdoel (20–30.000 km meer)
+  markt: number | null;           // hoge kant: gem. 3 goedkoopste met vergelijkbare km
+  lokBand: [number, number] | null;
+  lokgroep: Concurrent[];         // motoren waar de lokprijs op gebaseerd is
+  vergelijkbaar: Concurrent[];    // vergelijkbare km (±10.000)
+  goedkoper: number;              // aantal met vergelijkbare km goedkoper dan jij
 };
 
-/** Net onder de goedkoopste concurrent, afgerond op €50 naar beneden. */
-export const nietDuurderDan = (prijs: number) => Math.floor((prijs - 1) / 50) * 50;
-
-export function beoordeel(vraagprijs: number | null, inkoopprijs: number | null, concurrenten: Concurrent[] | null): Beoordeling {
+/** Beoordeelt je vraagprijs. aanbod = alle bruikbare advertenties van hetzelfde
+ *  bouwjaar (marktAanbod); km = de km-stand van jouw motor. */
+export function beoordeel(vraagprijs: number | null, inkoopprijs: number | null,
+                          aanbod: Concurrent[] | null, km: number | null): Beoordeling {
   const minimum = inkoopprijs != null ? inkoopprijs + MIN_MARGE : null;
   const margeTeLaag = minimum != null && vraagprijs != null && vraagprijs < minimum;
-  const laagste = (concurrenten || [])[0];
+  const lijst = aanbod || [];
+  const vergelijkbaar = km ? metVergelijkbareKm(lijst, km) : [];
+  const top3 = vergelijkbaar.slice(0, 3);
+  const markt = top3.length ? Math.round(top3.reduce((t, c) => t + c.prijs, 0) / top3.length) : null;
+  const lok = km ? lokprijsUit(lijst, km) : { lokprijs: null, groep: [], band: null };
+  const lokprijs = lok.lokprijs != null && markt != null ? Math.min(lok.lokprijs, markt) : lok.lokprijs;
+  const goedkoper = vraagprijs ? vergelijkbaar.filter((c) => c.prijs < vraagprijs).length : 0;
+  const basis = { minimum, margeTeLaag, lokprijs, markt, lokBand: lok.band, lokgroep: lok.groep, vergelijkbaar, goedkoper };
   const euro = (n: number) => `€${n.toLocaleString("nl-NL")}`;
 
-  if (!vraagprijs) return { kleur: "grijs", kop: "Geen vraagprijs ingevuld", advies: null, minimum, margeTeLaag, actieNodig: false };
-  if (!laagste) {
-    return { kleur: "grijs", kop: "Geen vergelijkbare motor op Motoroccasion", advies: null, minimum, margeTeLaag, actieNodig: margeTeLaag };
+  if (!vraagprijs) return { ...basis, kleur: "grijs", kop: "Geen vraagprijs ingevuld", advies: null, actieNodig: false };
+  // Doel = lokprijs; zonder lokgroep valt het terug op de marktprijs.
+  const doel = lokprijs ?? (markt != null ? omlaag50(markt) : null);
+  if (doel == null) {
+    return { ...basis, kleur: "grijs", kop: "Geen vergelijkbare motor op Motoroccasion", advies: null, actieNodig: margeTeLaag };
   }
-  const n = concurrenten!.length;
-  if (laagste.prijs >= vraagprijs) {
-    const kop = laagste.prijs === vraagprijs
-      ? `Even duur als de goedkoopste (${n} vergelijkbaar)`
-      : `Jij bent het goedkoopst (${n} vergelijkbaar)`;
-    return { kleur: "groen", kop, advies: null, minimum, margeTeLaag, actieNodig: margeTeLaag };
+  const advies = minimum != null ? Math.max(doel, minimum) : doel;
+  if (vraagprijs <= advies + 50) {
+    const kop = lokprijs != null ? "Prijs zit goed: op lokprijs-niveau" : "Prijs zit goed: op marktniveau (geen lokprijs)";
+    return { ...basis, kleur: "groen", kop, advies: null, actieNodig: margeTeLaag };
   }
-  const goedkoper = concurrenten!.filter((c) => c.prijs < vraagprijs).length;
-  const kop = `${goedkoper} goedkoper aangeboden — laagste ${euro(laagste.prijs)}`;
-  // Onder de goedkoopste kan alleen als je minimum daar nog onder ligt.
-  if (minimum != null && minimum >= laagste.prijs) {
-    return { kleur: "rood", kop, advies: null, minimum, margeTeLaag, actieNodig: true };
+  if (minimum != null && doel < minimum) {
+    // Lokprijs niet haalbaar zonder onder je minimum te gaan: hooguit naar je minimum.
+    return { ...basis, kleur: "rood", kop: `Lokprijs ${euro(doel)} zit onder je minimum`, advies, actieNodig: true };
   }
-  // Net onder de goedkoopste (op €50), maar nooit onder je minimum.
-  const advies = minimum != null ? Math.max(nietDuurderDan(laagste.prijs), minimum) : nietDuurderDan(laagste.prijs);
-  return { kleur: "geel", kop, advies, minimum, margeTeLaag, actieNodig: true };
+  return { ...basis, kleur: "geel", kop: `Te hoog om te lokken — advies ${euro(advies)}`, advies, actieNodig: true };
 }
