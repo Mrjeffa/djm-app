@@ -1,0 +1,26 @@
+name: Beveiligingstest
+
+# Probeert als buitenstaander (publieke anon key) bij afgeschermde gegevens en
+# admin-functies te komen; faalt als dat lukt. Leest en wijzigt niets.
+on:
+  push:
+  schedule:
+    - cron: "17 5 * * 1"   # maandagochtend
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/beveiligingstest.py
+        env:
+          # Optioneel: repo-variable APP_URL (adres van de app op Cloudflare)
+          APP_URL: ${{ vars.APP_URL }}
