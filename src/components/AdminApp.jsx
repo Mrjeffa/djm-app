@@ -105,6 +105,25 @@ const uploadFoto = async (file) => {
 
 const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
+// Supabase geeft maximaal 1000 rijen per verzoek (API-instelling "Max rows").
+// Tabellen die met het aantal klanten meegroeien halen we daarom per pagina op.
+// maakQuery moet een vaste volgorde hebben (eindig met .order("id")).
+const PAGINA = 1000;
+const alleRijen = async (maakQuery) => {
+  const rijen = [];
+  for (let van = 0; ; van += PAGINA) {
+    const { data, error } = await maakQuery().range(van, van + PAGINA - 1);
+    if (error) return { data: rijen.length ? rijen : null, error };
+    rijen.push(...(data || []));
+    if (!data || data.length < PAGINA) return { data: rijen, error: null };
+  }
+};
+const groepeer = (rijen, sleutel) => {
+  const m = new Map();
+  for (const r of rijen) { const k = r[sleutel]; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+  return m;
+};
+
 // ── Onderdelen-bestellen link ────────────────────────────────────────────────
 // De juiste Larsson-deeplink (merk+model+bouwjaar) wordt opgezocht in larsson.js.
 // onderdelenZoekLink is de placeholder/fallback voor de invoervelden.
@@ -4606,13 +4625,13 @@ export default function AdminApp(){
         // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
         const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
         const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData] = await Promise.all([
-          sb.from("klanten").select("*").order("naam"),
+          alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id")),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
-          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum"),
+          alleRijen(()=>sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
           sb.from("voorraad").select("id,fotos,verkocht_aan").or(`fotos_bewaren_tot.lte.${TODAY},verkocht_op.lte.${grens30}`),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
-          sb.from("voorraad_service").select("*").order("datum",{ascending:false}),
-          sb.from("klussen").select("*").order("created_at",{ascending:false}),
+          alleRijen(()=>sb.from("voorraad_service").select("*").order("datum",{ascending:false}).order("id")),
+          alleRijen(()=>sb.from("klussen").select("*").order("created_at",{ascending:false}).order("id")),
           sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"), // aparte tabel: alleen admin leesbaar
           sb.from("inkoop_leads").select("*").order("gevonden_op",{ascending:false}).limit(500),
           sb.from("inkoop_radar_status").select("*").maybeSingle(),
@@ -4629,30 +4648,33 @@ export default function AdminApp(){
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
 
-        const klantIds = (k.data||[]).map(x=>x.id);
         let verrijkt = (k.data||[]).map(klant=>({...klant, motoren:[]}));
 
-        if(klantIds.length > 0){
-          // Gerichte kolomselecties: historie-tabellen groeien het hardst
+        if(verrijkt.length > 0){
+          // Gerichte kolomselecties: historie-tabellen groeien het hardst.
+          // Alle motoren in één keer (admin ziet alles) i.p.v. .in(klant_id, …):
+          // bij honderden klanten wordt die URL te lang voor de server.
           const [mot, km, svc] = await Promise.all([
-            sb.from("motoren").select("*").in("klant_id",klantIds),
-            sb.from("km_historie").select("motor_id,datum,km").order("datum"),
-            sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin").order("datum",{ascending:false}),
+            alleRijen(()=>sb.from("motoren").select("*").not("klant_id","is",null).order("created_at").order("id")),
+            alleRijen(()=>sb.from("km_historie").select("motor_id,datum,km").order("datum").order("id")),
+            alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin").order("datum",{ascending:false}).order("id")),
           ]);
-          const motoren = mot.data||[];
-          const kmHist = km.data||[];
-          const svcBeurten = svc.data||[];
+          // Eén keer groeperen i.p.v. per klant/motor door alle rijen te zoeken
+          const motorenPerKlant = groepeer(mot.data||[], "klant_id");
+          const kmPerMotor = groepeer(km.data||[], "motor_id");
+          const svcPerMotor = groepeer(svc.data||[], "motor_id");
+          const vrdSvcPerMotor = groepeer(vsData.data||[], "voorraad_motor_id");
           verrijkt = (k.data||[]).map(klant=>({
             ...klant,
-            motoren: motoren.filter(m=>m.klant_id===klant.id).map(m=>{
-              const klantSvc = svcBeurten.filter(x=>x.motor_id===m.id).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin}));
+            motoren: (motorenPerKlant.get(klant.id)||[]).map(m=>{
+              const klantSvc = (svcPerMotor.get(m.id)||[]).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin}));
               // Merge voorraad service history via source link, skip records already copied on sale
               const vrdSvc = m.source_voorraad_id
-                ? (vsData.data||[]).filter(x=>x.voorraad_motor_id===m.source_voorraad_id&&!klantSvc.some(ks=>ks.datum===x.datum&&ks.omschrijving===x.omschrijving&&String(ks.km)===String(x.km))).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true}))
+                ? (vrdSvcPerMotor.get(m.source_voorraad_id)||[]).filter(x=>!klantSvc.some(ks=>ks.datum===x.datum&&ks.omschrijving===x.omschrijving&&String(ks.km)===String(x.km))).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true}))
                 : [];
               return {
                 ...m,
-                kmHistory: kmHist.filter(x=>x.motor_id===m.id).map(x=>({datum:x.datum,km:x.km})),
+                kmHistory: (kmPerMotor.get(m.id)||[]).map(x=>({datum:x.datum,km:x.km})),
                 service: [...klantSvc,...vrdSvc].sort((a,b)=>(b.datum||"").localeCompare(a.datum||"")),
               };
             })
@@ -5488,7 +5510,7 @@ export default function AdminApp(){
         {onConflict:"id",ignoreDuplicates:true}
       );
     }
-    const {data} = await sb.from("klanten").select("*");
+    const {data} = await alleRijen(()=>sb.from("klanten").select("*").order("id"));
     if(data) setKlanten(prev=>{
       const map = new Map(prev.map(k=>[k.id,k]));
       return data.map(d=>({...(map.get(d.id)||{motoren:[]}), ...d}));

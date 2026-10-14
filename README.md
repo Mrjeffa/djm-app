@@ -1,26 +1,28 @@
 # De Jonge Motoren — App
 
-## Deployen naar Vercel
+React/Vite-app (PWA) met Supabase als database/login, gehost op **Cloudflare Pages**.
 
-### Stap 1 — GitHub repo aanmaken
-1. Ga naar github.com → maak gratis account
-2. Klik "New repository" → naam: `djm-app` → Public → Create
-3. Upload alle bestanden uit deze map
+## Deployen (Cloudflare Pages)
+Cloudflare Pages bouwt automatisch bij elke push naar `main`
+(build command `npm run build`, output `dist`).
+- `public/_redirects` — alle routes naar de app (nodig voor herladen).
+- `public/_headers` — beveiligingsheaders (CSP e.d.) en caching. Gebruikt de
+  app een nieuwe externe dienst, voeg het domein dan toe bij `connect-src`.
 
-### Stap 2 — Vercel koppelen
-1. Ga naar vercel.com → log in met GitHub
-2. Klik "Add New Project" → selecteer `djm-app`
-3. Klik "Deploy" — Vercel bouwt en deployt automatisch
+Supabase → Authentication → URL Configuration: Site URL en Redirect URLs
+moeten naar het Cloudflare-adres van de app wijzen.
 
-### Stap 3 — Supabase allowlist updaten
-Na deployment krijg je een URL zoals `djm-app.vercel.app`
-1. Ga naar Supabase → Settings → API Keys → Publishable keys
-2. Voeg je Vercel URL toe als allowed host
-
-### Stap 4 — Supabase redirect URL instellen
-1. Ga naar Supabase → Authentication → URL Configuration
-2. Zet Site URL op je Vercel URL (bijv. https://djm-app.vercel.app)
-3. Voeg toe aan Redirect URLs: https://djm-app.vercel.app/*
+## Beveiliging
+- **Wie wat mag** regelt de database (Row Level Security), niet de app: klanten
+  zien alleen hun eigen gegevens, admins staan in de tabel `admins`.
+  Stand van zaken: `supabase/beveiliging.sql`.
+- **Edge functions** (`supabase/functions/`) controleren zelf of de aanroeper
+  admin is — de publieke anon key is ook een geldige JWT, dus `verify_jwt`
+  alleen is niet genoeg.
+- **Controle**: `.github/workflows/beveiligingstest.yml` probeert wekelijks (en
+  bij elke push) als buitenstaander bij afgeschermde gegevens te komen en
+  faalt als dat lukt.
+- Na een databasewijziging: Supabase → Advisors (Security en Performance).
 
 ## Lokaal draaien (optioneel)
 ```

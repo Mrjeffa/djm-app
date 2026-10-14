@@ -1,9 +1,26 @@
-import { useState, useEffect, useRef, Component } from 'react'
+import { useState, useEffect, useRef, Component, lazy, Suspense } from 'react'
 import { supabase } from './lib/supabase.js'
-import AdminApp from './components/AdminApp.jsx'
-import KlantApp from './components/KlantApp.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
+
+// Apart geladen: klanten downloaden de beheercode niet (kleiner, sneller, en
+// de admin-functies staan niet in hun browser). Wie admin is, bepaalt de
+// database (tabel admins + RLS), niet deze splitsing.
+// Na een nieuwe versie kan een lang openstaand scherm nog naar verdwenen
+// bestanden wijzen: dan één keer herladen in plaats van een foutmelding.
+const HERLAAD_SLEUTEL = 'djm_herladen_na_update'
+const laadMetHerstel = (laad) => lazy(() => laad().then(
+  (mod) => { try { sessionStorage.removeItem(HERLAAD_SLEUTEL) } catch (_) {} return mod },
+  (fout) => {
+    let alGeprobeerd = true
+    try { alGeprobeerd = sessionStorage.getItem(HERLAAD_SLEUTEL) === '1'; sessionStorage.setItem(HERLAAD_SLEUTEL, '1') } catch (_) {}
+    if (alGeprobeerd) throw fout
+    window.location.reload()
+    return new Promise(() => {})
+  }
+))
+const AdminApp = laadMetHerstel(() => import('./components/AdminApp.jsx'))
+const KlantApp = laadMetHerstel(() => import('./components/KlantApp.jsx'))
 
 // ── Foutvangnet: onverwachte fout → nette herlaadpagina i.p.v. wit scherm ──
 class FoutVangnet extends Component {
@@ -156,21 +173,26 @@ function AppInner() {
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 
-  if (laden) {
-    const sysDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background: sysDark ? '#111111' : '#F8F8F8' }}>
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
-          <div style={{ width:32, height:32, border:'3px solid #E31E24', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-          <div style={{ color: sysDark ? '#8E8E93' : '#767676', fontSize:13, fontFamily:'Barlow, sans-serif' }}>Laden...</div>
-        </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    )
-  }
+  if (laden) return <Laadscherm />
 
   if (reset) return <WachtwoordInstellen onKlaar={() => { setReset(false); window.location.hash = ''; window.location.reload() }} />
   if (!sessie) return <LoginScreen />
-  if (admin) return <AdminApp />
-  return <KlantApp userId={sessie.user.id} />
+  return (
+    <Suspense fallback={<Laadscherm />}>
+      {admin ? <AdminApp /> : <KlantApp userId={sessie.user.id} />}
+    </Suspense>
+  )
+}
+
+function Laadscherm() {
+  const sysDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100dvh', background: sysDark ? '#111111' : '#F8F8F8' }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
+        <div style={{ width:32, height:32, border:'3px solid #E31E24', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+        <div style={{ color: sysDark ? '#8E8E93' : '#767676', fontSize:13, fontFamily:'Barlow, sans-serif' }}>Laden...</div>
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
 }

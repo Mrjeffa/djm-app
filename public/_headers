@@ -1,0 +1,16 @@
+# Beveiligingsheaders voor Cloudflare Pages (https://developers.cloudflare.com/pages/configuration/headers/)
+# Content-Security-Policy: de app mag alleen scripts van zichzelf laden en alleen
+# praten met Supabase, Cloudinary (foto-upload) en de RDW (kentekencheck).
+# Nieuwe externe dienst in de app? Voeg het domein hier toe bij connect-src.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://xftnovnldcdfohqlqgor.supabase.co wss://xftnovnldcdfohqlqgor.supabase.co https://api.cloudinary.com https://opendata.rdw.nl; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+# Bestanden met een hash in de naam veranderen nooit: lang cachen = sneller laden.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
