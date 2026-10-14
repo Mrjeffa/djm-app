@@ -566,6 +566,13 @@ function AdvertentieVelden({f,setF}){
   );
 }
 
+// Bedrag/aantal uit Nederlandse invoer: "6.500", "€ 6.500,-", "6500,00", "15 000" → 6500 / 15000.
+// (parseInt("6.500") zou 6 geven.) Punt/spatie = duizendtal, komma = decimalen.
+const naarBedrag = (v) => {
+  const n = parseInt(String(v ?? "").trim().replace(/,.*$/, "").replace(/[^\d]/g, ""), 10);
+  return Number.isFinite(n) ? n : null;
+};
+
 function VoorraadModal({onSave,onClose}){
   const [kenteken,setKenteken]=useState("");
   const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",prijs:"",inkoopprijs:"",datum_in:TODAY,chassis_nummer:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:""});
@@ -4895,7 +4902,7 @@ export default function AdminApp(){
   };
 
   // Inkoopprijs ook apart (publiek leesbare voorraad-tabel mag hem niet bevatten)
-  const naarInkoop = (v) => { const n=parseInt(v); return Number.isFinite(n)&&n>0 ? n : null; };
+  const naarInkoop = (v) => { const n=naarBedrag(v); return n!=null&&n>0 ? n : null; };
   const bewaarInkoop = async (sb, voorraadId, inkoopprijs) => {
     if(inkoopprijs!=null) await sb.from("voorraad_inkoop").upsert({voorraad_id:voorraadId, inkoopprijs});
     else await sb.from("voorraad_inkoop").delete().eq("voorraad_id",voorraadId);
@@ -4905,7 +4912,12 @@ export default function AdminApp(){
   const checkVoorraadPrijs = async (voorraadId) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data, error} = await sb.functions.invoke("voorraad-prijscheck", {body:{voorraad_id:voorraadId}});
-    if(error) throw new Error(error.message||"Prijscheck mislukt");
+    if(error){
+      // Toon de melding van de functie zelf (bv. "Geen toegang") i.p.v. de generieke fout
+      let melding = error.message||"Prijscheck mislukt";
+      try{ const b = await error.context?.json?.(); if(b?.fout) melding = b.fout; }catch{}
+      throw new Error(melding);
+    }
     const r = (data?.resultaten||[])[0];
     if(!r) throw new Error("Motor niet gevonden (al verkocht?)");
     const {voorraad_id, gecontroleerd_op, status, mo_model, mo_url, concurrenten, zelfde_bouwjaar, toelichting} = r;
@@ -4916,8 +4928,8 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     const {data:v} = await sb.from("voorraad").insert({
       kenteken:f.kenteken, merk:f.merk, model:f.model||"",
-      bouwjaar:parseInt(f.bouwjaar)||0, km:parseInt(f.km)||0,
-      prijs:parseInt(f.prijs)||0, datum_in:f.datum_in||TODAY,
+      bouwjaar:parseInt(f.bouwjaar)||0, km:naarBedrag(f.km)||0,
+      prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in||TODAY,
       fotos:f.fotos||[], voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       onderdelen_link:f.onderdelen_link||null,
@@ -4938,7 +4950,7 @@ export default function AdminApp(){
     const alleFotos = [...behoudeFotos, ...nieuweUrls];
     await sb.from("voorraad").update({
       merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
-      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
+      km:naarBedrag(f.km)||0, prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in,
       onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
@@ -4951,7 +4963,7 @@ export default function AdminApp(){
     await bewaarInkoop(sb, id, inkoopprijs);
     setShowroom(p=>p.map(m=>m.id===id?{
       ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
-      km:parseInt(f.km)||0, prijs:parseInt(f.prijs)||0, datum_in:f.datum_in,
+      km:naarBedrag(f.km)||0, prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in,
       chassis_nummer:f.chassis_nummer||null, inkoopprijs, onderdelen_link:f.onderdelen_link||null,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
