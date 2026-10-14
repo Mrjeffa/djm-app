@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: voorraad-prijscheck
+  group: motoroccasion   # gedeeld: inkoop-radar en voorraad-prijscheck nooit tegelijk
   cancel-in-progress: false
 
 jobs:

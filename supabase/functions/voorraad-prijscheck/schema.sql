@@ -1,4 +1,5 @@
 -- Referentie — reeds toegepast op Supabase (project xftnovnldcdfohqlqgor).
+-- Herhaalbaar: opnieuw draaien geeft geen fouten.
 -- Tabellen voor de voorraad-prijscheck. Beide alleen voor admins.
 
 -- Inkoopprijs per voorraadmotor. Bewust een APARTE tabel: public.voorraad is
@@ -9,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.voorraad_inkoop (
   inkoopprijs  int NOT NULL CHECK (inkoopprijs >= 0)
 );
 ALTER TABLE public.voorraad_inkoop ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS voorraad_inkoop_admin ON public.voorraad_inkoop;
 CREATE POLICY voorraad_inkoop_admin ON public.voorraad_inkoop
   FOR ALL USING (is_admin()) WITH CHECK (is_admin());
 
@@ -26,5 +28,6 @@ CREATE TABLE IF NOT EXISTS public.voorraad_prijscheck (
   toelichting       text
 );
 ALTER TABLE public.voorraad_prijscheck ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS voorraad_prijscheck_admin ON public.voorraad_prijscheck;
 CREATE POLICY voorraad_prijscheck_admin ON public.voorraad_prijscheck
   FOR ALL USING (is_admin()) WITH CHECK (is_admin());

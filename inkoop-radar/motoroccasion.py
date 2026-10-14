@@ -220,6 +220,6 @@ def zoek_aanbod(merk, type_key, bouwjaar):
     dalingen = sum(1 for a, b in zip(prijzen, prijzen[1:]) if b < a)
     if totaal > len(items) and ("sorting" not in filters or dalingen > len(prijzen) // 4):
         raise MoFout("sortering op prijs niet toegepast — URL-opbouw van Motoroccasion gewijzigd?", systemisch=True)
-    if not _types_per_merk.get(merk):
-        _types_per_merk[merk] = types_uit(data)
+    # Typelijst bewust niet uit dit (op bouwjaar gefilterde) antwoord halen:
+    # die kan onvolledig zijn. Alleen de merkpagina (types_voor_merk) telt.
     return aanbod, url

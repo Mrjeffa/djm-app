@@ -103,12 +103,17 @@ def maak_mail(resultaten, mislukt=0):
         return None
     volgorde = {"rood": 0, "geel": 1, "grijs": 2, "groen": 3}
     aandacht.sort(key=lambda r: (r.get("status") != "fout", volgorde.get((r.get("beoordeling") or {}).get("kleur"), 9)))
-    n, rest = len(aandacht), len(resultaten) - len(aandacht)
+    niet_gecheckt = [r for r in resultaten if r.get("status") == "geen_data"]
+    n, rest = len(aandacht), len(resultaten) - len(aandacht) - len(niet_gecheckt)
     if n:
         onderwerp = f"Prijscheck voorraad: {n} {'motor vraagt' if n == 1 else 'motoren vragen'} aandacht"
     else:
         onderwerp = "Prijscheck voorraad: check niet (volledig) gelukt"
     in_orde = "" if not rest else f"{rest} andere {'motor is' if rest == 1 else 'motoren zijn'} in orde."
+    if niet_gecheckt:
+        namen = ", ".join(escape(f"{r.get('merk')} {r.get('model')}") for r in niet_gecheckt[:5])
+        in_orde += (f" {len(niet_gecheckt)} niet te controleren (bouwjaar of km-stand ontbreekt): {namen}"
+                    f"{' …' if len(niet_gecheckt) > 5 else ''}.")
     if mislukt:
         in_orde += (f' <b style="color:#DC2626">{mislukt} motor{"en" if mislukt != 1 else ""} kon{"den" if mislukt != 1 else ""}'
                     ' niet gecontroleerd worden</b> — zie de GitHub Actions-log "Voorraad-prijscheck", of probeer'

@@ -37,7 +37,7 @@ on:
         default: "20000"
 
 concurrency:
-  group: inkoop-radar
+  group: motoroccasion   # gedeeld: inkoop-radar en voorraad-prijscheck nooit tegelijk
   cancel-in-progress: false
 
 jobs:

@@ -35,31 +35,44 @@ const json = (data: unknown, status = 200) =>
 
 class MoFout extends Error {}
 
-// Tijdslot reserveren vóór het wachten, zodat gelijktijdige aanroepen (meerdere
-// "Check prijs"-klikken) elkaar netjes opvolgen in plaats van samen te vuren.
-let volgendVerzoek = 0;
-async function moJson(url: string): Promise<any> {
-  const nu = Date.now();
-  const start = Math.max(nu, volgendVerzoek);
-  volgendVerzoek = start + PAUZE_MS;
-  if (start > nu) await new Promise((r) => setTimeout(r, start - nu));
+const isTimeout = (e: unknown) => ["TimeoutError", "AbortError"].includes((e as Error)?.name);
+
+async function haalJson(url: string): Promise<any> {
   let r: Response;
   try { r = await fetch(url, { headers: MO_HEADERS, signal: AbortSignal.timeout(20_000) }); }
-  catch (e) { throw new MoFout(`Motoroccasion niet bereikbaar: ${(e as Error).message}`); }
+  catch (e) { throw new MoFout(isTimeout(e) ? "Motoroccasion reageerde te traag" : `Motoroccasion niet bereikbaar: ${(e as Error).message}`); }
   if (!r.ok) throw new MoFout(`Motoroccasion gaf ${r.status}`);
-  try { return await r.json(); } catch { throw new MoFout("Motoroccasion gaf geen JSON (site gewijzigd?)"); }
+  try { return await r.json(); }
+  catch (e) { throw new MoFout(isTimeout(e) ? "Motoroccasion reageerde te traag" : "Motoroccasion gaf geen JSON (site gewijzigd?)"); }
 }
 
-// Typelijst per merk. Alleen een geslaagde lijst onthouden: na een storing
-// wordt het bij de volgende motor opnieuw geprobeerd.
+// Wachtrij: elk verzoek wacht tot het vorige klaar is, plus PAUZE_MS — ook als
+// er meerdere "Check prijs"-klikken tegelijk binnenkomen.
+let wachtrij: Promise<unknown> = Promise.resolve();
+let laatsteKlaar = 0;
+function moJson(url: string): Promise<any> {
+  const taak = wachtrij.then(async () => {
+    const wacht = laatsteKlaar + PAUZE_MS - Date.now();
+    if (wacht > 0) await new Promise((r) => setTimeout(r, wacht));
+    try { return await haalJson(url); } finally { laatsteKlaar = Date.now(); }
+  });
+  wachtrij = taak.catch(() => {});
+  return taak;
+}
+
+// Typelijst per merk, alleen van de gewone merkpagina. Een geslaagde lijst wordt
+// onthouden; na een storing hooguit één nieuwe poging per 10 minuten, zodat we
+// de merkpagina niet voor elke motor opnieuw opvragen.
 const typeCache = new Map<string, [string, string][]>();
+const typeFoutOp = new Map<string, number>();
 async function typesVoorMerk(merk: string): Promise<[string, string][]> {
   if (typeCache.get(merk)?.length) return typeCache.get(merk)!;
+  if (Date.now() - (typeFoutOp.get(merk) ?? 0) < 10 * 60_000) return [];
   try {
     const types = typesUit(await moJson(`${MO_BASIS}/motoren/${merk}`));
-    if (types.length) typeCache.set(merk, types);
+    if (types.length) typeCache.set(merk, types); else typeFoutOp.set(merk, Date.now());
     return types;
-  } catch { return []; }
+  } catch { typeFoutOp.set(merk, Date.now()); return []; }
 }
 
 type Motor = { merk: string | null; model: string | null; bouwjaar: number | null; km: number | null };
@@ -73,7 +86,8 @@ async function check(m: Motor): Promise<Uitkomst> {
   const merk = slug(m.merk), model = (m.model || "").trim();
   if (!merk || !model) return { status: "geen_data", ...leeg, toelichting: "merk of model ontbreekt" };
   // km 0 = niet ingevuld (de app slaat een leeg veld op als 0)
-  if (!m.bouwjaar || !m.km || m.km <= 0) return { status: "geen_data", ...leeg, toelichting: "bouwjaar of km-stand ontbreekt" };
+  if (!m.bouwjaar) return { status: "geen_data", ...leeg, toelichting: "bouwjaar ontbreekt" };
+  if (!m.km || m.km <= 0) return { status: "geen_data", ...leeg, toelichting: "km-stand ontbreekt (0 km)" };
 
   const gekozen = kiesTypeVoorraad(model, await typesVoorMerk(merk));
   const [typeKey, typeNaam] = gekozen ?? [slug(model), model];
@@ -98,9 +112,6 @@ async function check(m: Motor): Promise<Uitkomst> {
   if (totaal > items.length && (!("sorting" in filters) || dalingen > Math.floor(prijzen.length / 4))) {
     throw new MoFout("sortering op prijs niet toegepast — URL-opbouw van Motoroccasion gewijzigd?");
   }
-  const types = typesUit(data);
-  if (types.length && !typeCache.get(merk)?.length) typeCache.set(merk, types);
-
   const concurrenten = concurrentenUit(aanbod, m.bouwjaar, m.km).slice(0, 10);
   return {
     status: "ok",

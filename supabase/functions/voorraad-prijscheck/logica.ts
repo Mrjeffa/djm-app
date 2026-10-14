@@ -17,14 +17,16 @@ export type Aanbod = {
 export type Concurrent = { prijs: number; bouwjaar: number; km: number; dealer: string | null; url: string | null };
 
 /** Bedrag/aantal uit (Nederlandse) invoer → geheel getal, of null.
- *  "6.500", "€ 6.500,-", "15 000" → 6500 / 15000 (punt/spatie = duizendtal);
+ *  "6.500", "€ 8.500,--", "8500 euro", "15.000 km", "15 000" → 6500 / 8500 / 15000
+ *  (punt/spatie = duizendtal, tekst en tekens eromheen tellen niet mee);
  *  "6500,00", "7500.00", "7500,5" → 6500 / 7500 (1–2 cijfers na punt/komma = decimalen);
  *  "1,000" / "1.250.000" → 1000 / 1250000. (parseInt("6.500") zou 6 geven.) */
 export function naarBedrag(v: unknown): number | null {
-  let s = String(v ?? "").trim().replace(/[€\s]/g, "").replace(/[.,]-$/, "");
-  s = s.replace(/[.,]\d{1,2}$/, "");   // decimalen weg
-  s = s.replace(/[.,]/g, "");          // duizendtallen weg
-  if (!/^\d+$/.test(s)) return null;
+  let s = String(v ?? "").replace(/[^\d.,]/g, ""); // alleen cijfers en scheidingstekens
+  s = s.replace(/[.,]+$/, "");                      // "8.500," (van ",--") → "8.500"
+  s = s.replace(/[.,]\d{1,2}$/, "");                // decimalen weg
+  s = s.replace(/[.,]/g, "");                       // duizendtallen weg
+  if (!s) return null;
   const n = parseInt(s, 10);
   return Number.isFinite(n) ? n : null;
 }

@@ -83,6 +83,7 @@ gelijk(kiesV("Ninja 650", KAWASAKI), null, "voorraad onbekend model");
 // Bedragen in Nederlandse (en Engelse) notatie
 const bedragen: [unknown, number | null][] = [["6.500", 6500], ["€ 6.500,-", 6500], ["6500,00", 6500], ["7500.00", 7500],
   ["7500,5", 7500], ["1,000", 1000], ["1.250.000", 1250000], ["15 000", 15000], [7500.5, 7500], [6500, 6500],
+  ["€ 8.500,--", 8500], ["8.500,=", 8500], ["8500 euro", 8500], ["15.000 km", 15000], ["15000km", 15000],
   ["", null], [null, null], ["abc", null]];
 for (const [invoer, verwacht] of bedragen) gelijk(naarBedrag(invoer), verwacht, `naarBedrag(${JSON.stringify(invoer)})`);
 

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { openOnderdelen, larssonZoekFallback, preloadLarsson } from "../lib/larsson.js";
 import { openAutoScout } from "../lib/autoscout.js";
 // Zelfde beoordeling als de wekelijkse prijscheck-mail (gedeeld met de edge function)
-import { beoordeel, MIN_MARGE, naarBedrag } from "../../supabase/functions/voorraad-prijscheck/logica.ts";
+import { beoordeel, MIN_MARGE } from "../../supabase/functions/voorraad-prijscheck/logica.ts";
+import { naarBedrag } from "../lib/getal.js";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -4729,8 +4730,9 @@ export default function AdminApp(){
         source_voorraad_id:f.verwijderUitVoorraad||null,
       }).select().single();
       if(motor){
-        if(src.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:naarBedrag(src.km),datum:TODAY}); }
-        motoren = [{...motor,kmHistory:src.km?[{datum:TODAY,km:naarBedrag(src.km)}]:[],service:[]}];
+        const beginKm = naarBedrag(src.km);
+        if(beginKm){ await sb.from("km_historie").insert({motor_id:motor.id,km:beginKm,datum:TODAY}); }
+        motoren = [{...motor,kmHistory:beginKm?[{datum:TODAY,km:beginKm}]:[],service:[]}];
         if(f.verwijderUitVoorraad){
           await sb.from("voorraad").update({verkocht_op:TODAY,verkocht_aan:klant.id}).eq("id",f.verwijderUitVoorraad);
           setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
@@ -4793,20 +4795,21 @@ export default function AdminApp(){
       source_voorraad_id:f.source_voorraad_id||null,
     }).select().single();
     if(!motor) return;
-    if(f.km){ await sb.from("km_historie").insert({motor_id:motor.id,km:naarBedrag(f.km),datum:TODAY}); }
-    const nieuwMotor = {...motor,kmHistory:f.km?[{datum:TODAY,km:naarBedrag(f.km)}]:[],service:[]};
+    const beginKm = naarBedrag(f.km);
+    if(beginKm){ await sb.from("km_historie").insert({motor_id:motor.id,km:beginKm,datum:TODAY}); }
+    const nieuwMotor = {...motor,kmHistory:beginKm?[{datum:TODAY,km:beginKm}]:[],service:[]};
     setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,nieuwMotor]}:k));
   };
 
   const addService = async (klantId, motorId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
+    // Zonder km-stand geen interval-reset — anders wordt last_service_km ten onrechte 0
+    const kmVal = naarBedrag(f.km) || null;
     const {data:svc, error} = await sb.from("service_beurten").insert({
-      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:f.km||null,
+      motor_id:motorId, datum:f.datum, omschrijving:f.omschrijving, km:kmVal,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
     }).select().single();
     if(error||!svc){ alert("Service opslaan mislukt: "+(error?.message||"onbekende fout")); return; }
-    // Zonder km-stand geen interval-reset — anders wordt last_service_km ten onrechte 0
-    const kmVal = f.km ? naarBedrag(f.km) : null;
     if(kmVal){
       await Promise.all([
         sb.from("motoren").update({last_service_km:kmVal}).eq("id",motorId),
@@ -4845,7 +4848,7 @@ export default function AdminApp(){
 
   const updateService = async (klantId, motorId, svcId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const kmVal = f.km ? naarBedrag(f.km) : null;
+    const kmVal = naarBedrag(f.km) || null;
     await sb.from("service_beurten").update({
       datum:f.datum, omschrijving:f.omschrijving, km:kmVal,
       voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
@@ -4940,8 +4943,9 @@ export default function AdminApp(){
 
   const updateVoorraadMotor = async (id, f, behoudeFotos, nieuweUrls, verwijderdeUrls) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const alleFotos = [...behoudeFotos, ...nieuweUrls];
-    await sb.from("voorraad").update({
+    const huidig = showroom.find(m=>m.id===id);
+    // Eén keer uitrekenen: dezelfde waarden voor de database, de staat en de vergelijking.
+    const waarden = {
       merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
       km:naarBedrag(f.km)||0, prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in,
       onderdelen_link:f.onderdelen_link||null,
@@ -4949,28 +4953,26 @@ export default function AdminApp(){
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
       uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
-      fotos:alleFotos,
-    }).eq("id",id);
-    await bewaarChassis(sb, id, f.chassis_nummer||null);
-    const huidig = showroom.find(m=>m.id===id);
-    // Inkoopprijs alleen wegschrijven als hij echt gewijzigd is — anders zou een
-    // niet (goed) geladen waarde de opgeslagen inkoopprijs wissen.
-    const inkoopprijs = naarInkoop(f.inkoopprijs);
-    if(inkoopprijs !== (huidig?.inkoopprijs ?? null)) await bewaarInkoop(sb, id, inkoopprijs);
-    // Andere merk/model/bouwjaar/km: de vorige prijscheck klopt niet meer.
-    const nieuw = {merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0, km:naarBedrag(f.km)||0};
-    const checkVerouderd = !!huidig?.prijscheck && Object.keys(nieuw).some(k=>String(huidig[k]??"")!==String(nieuw[k]));
-    if(checkVerouderd) await sb.from("voorraad_prijscheck").delete().eq("voorraad_id",id);
+      fotos:[...behoudeFotos, ...nieuweUrls],
+    };
+    // Inkoopprijs alleen wegschrijven als hij echt gewijzigd is. Onleesbare invoer
+    // (bv. een typfout) of een niet geladen waarde wist nooit de opgeslagen prijs.
+    const oudeInkoop = huidig?.inkoopprijs ?? null;
+    const inkoopInvoer = String(f.inkoopprijs ?? "").trim();
+    const gelezenInkoop = naarInkoop(inkoopInvoer);
+    const inkoopprijs = inkoopInvoer && gelezenInkoop==null ? oudeInkoop : gelezenInkoop;
+    // Andere merk/model/bouwjaar/km: de vorige prijscheck klopt niet meer — ook
+    // als die pas ná het laden van de app is gemaakt (bv. door de maandagcheck).
+    const checkVerouderd = !huidig || ["merk","model","bouwjaar","km"].some(k=>String(huidig[k]??"")!==String(waarden[k]));
+    await Promise.all([
+      sb.from("voorraad").update(waarden).eq("id",id),
+      bewaarChassis(sb, id, f.chassis_nummer||null),
+      inkoopprijs!==oudeInkoop ? bewaarInkoop(sb, id, inkoopprijs) : null,
+      checkVerouderd ? sb.from("voorraad_prijscheck").delete().eq("voorraad_id",id) : null,
+    ]);
     setShowroom(p=>p.map(m=>m.id===id?{
-      ...m, merk:f.merk, model:f.model||"", bouwjaar:parseInt(f.bouwjaar)||0,
-      km:naarBedrag(f.km)||0, prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in,
-      chassis_nummer:f.chassis_nummer||null, inkoopprijs, prijscheck:checkVerouderd?null:m.prijscheck,
-      onderdelen_link:f.onderdelen_link||null,
-      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
-      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
-      kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
-      uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
-      fotos:alleFotos,
+      ...m, ...waarden, chassis_nummer:f.chassis_nummer||null, inkoopprijs,
+      prijscheck:checkVerouderd?null:m.prijscheck,
     }:m));
     if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
   };
@@ -5209,7 +5211,7 @@ export default function AdminApp(){
         motor_id: f.motorId,
         datum: f.datum,
         omschrijving: f.omschrijving,
-        km: f.km ? naarBedrag(f.km) : null,
+        km: naarBedrag(f.km) || null,
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
@@ -5240,7 +5242,7 @@ export default function AdminApp(){
         voorraad_motor_id: f.voorraadMotorId,
         datum: f.datum,
         omschrijving: f.omschrijving,
-        km: f.km ? naarBedrag(f.km) : null,
+        km: naarBedrag(f.km) || null,
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
