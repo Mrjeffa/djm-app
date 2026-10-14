@@ -89,7 +89,12 @@ async function check(m: Motor): Promise<Uitkomst> {
   if (!m.bouwjaar) return { status: "geen_data", ...leeg, toelichting: "bouwjaar ontbreekt" };
   if (!m.km || m.km <= 0) return { status: "geen_data", ...leeg, toelichting: "km-stand ontbreekt (0 km)" };
 
-  const gekozen = kiesTypeVoorraad(model, await typesVoorMerk(merk));
+  const types = await typesVoorMerk(merk);
+  const gekozen = kiesTypeVoorraad(model, types);
+  if (!gekozen && types.length) {
+    // Typelijst bekend maar geen passend type: geen overbodig zoekverzoek doen.
+    return { status: "fout", ...leeg, toelichting: `Motoroccasion kent "${m.merk} ${model}" niet — controleer de schrijfwijze van het model` };
+  }
   const [typeKey, typeNaam] = gekozen ?? [slug(model), model];
   const url = zoekUrl(merk, typeKey, m.bouwjaar);
   const data = await moJson(url);

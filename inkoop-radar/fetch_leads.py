@@ -506,7 +506,13 @@ def prijs_lead(lead, term, cache):
                 "mo_toelichting": "bouwjaar of km-stand onbekend in de advertentie"}
 
     # Meest specifieke Motoroccasion-type uit de titel (Z900RS ≠ Z900).
-    gekozen = mo.kies_type(lead.get("titel"), model, mo.types_voor_merk(merk))
+    types = mo.types_voor_merk(merk)
+    gekozen = mo.kies_type(lead.get("titel"), model, types)
+    if not gekozen and types:
+        # Typelijst bekend maar niets passends (bv. "V-Strom" zonder cc): niet gokken
+        # en geen overbodig zoekverzoek doen.
+        return {**velden, "mo_status": "te_weinig_data",
+                "mo_toelichting": "model niet eenduidig uit de titel te halen (bv. cilinderinhoud ontbreekt)"}
     type_key, type_naam = gekozen if gekozen else (mo.slug(model), model)
     if mo.norm(type_naam) != mo.norm(model):
         velden["mo_model"] = f"{merk_label(term, merk)} {mo.mooi(type_naam)}"
