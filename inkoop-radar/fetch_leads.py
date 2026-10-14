@@ -584,8 +584,11 @@ def bereken_inkoopprijzen(schrijf=True, uitvoer=log, overrides=None):
         if velden is None:
             uitvoer(f"Limiet van {MO_MAX_VERZOEKEN} Motoroccasion-verzoeken bereikt; rest volgt bij de volgende run.")
             break
-        doel = (f"lok € {velden['mo_lokprijs']} – markt € {velden['mo_verkoopdoel']}"
-                if velden["mo_status"] == "ok" else velden["mo_status"])
+        if velden["mo_status"] == "ok":
+            lok, markt = velden["mo_lokprijs"], velden["mo_verkoopdoel"]
+            doel = " – ".join(f"{naam} € {w}" for naam, w in (("lok", lok), ("markt", markt)) if w is not None)
+        else:
+            doel = velden["mo_status"]
         uitvoer(f"  {lead['titel'][:50]!r} → {velden['mo_model']} {lead.get('bouwjaar') or velden.get('bouwjaar')}"
                 f"/{lead.get('km') if lead.get('km') is not None else velden.get('km')} km: {doel}"
                 f" ({velden['mo_aantal']} vgl){' — ' + velden['mo_toelichting'] if velden['mo_toelichting'] else ''}")
