@@ -171,6 +171,19 @@ def check_voorraad_functie():
         print(f"   → {b.get('kleur')}: {b.get('kop')} | advies={b.get('advies')} minimum={b.get('minimum')} "
               f"marge te laag={b.get('margeTeLaag')} actie={b.get('actieNodig')}")
 
+    # Route van de wekelijkse job (voorraad_check.py), zonder iets op te slaan:
+    # verkochte motoren worden door de functie overgeslagen.
+    import voorraad_check as vc
+    try:
+        beschikbaar = vc.beschikbare_voorraad()
+        verkocht = requests.get(f"{fl.SUPABASE_URL}/rest/v1/voorraad", headers=fl.sb_headers(), timeout=30,
+                                params={"select": "id", "verkocht_op": "not.is.null", "limit": "5"}).json()
+        res = vc.check_portie([v["id"] for v in verkocht]) if verkocht else []
+        print(f"\nWekelijkse route: {len(beschikbaar)} beschikbare motor(en); portie met {len(verkocht)} verkochte "
+              f"→ {len(res)} resultaten (verwacht 0); mail nodig: {vc.maak_mail(res) is not None}")
+    except (requests.RequestException, ValueError) as e:
+        print(f"FOUT wekelijkse route: {e}")
+
 
 if __name__ == "__main__":
     if os.environ.get("ALLEEN_VOORRAAD") != "1":

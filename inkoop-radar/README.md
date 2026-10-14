@@ -96,3 +96,31 @@ categorie/subcategorie-id's opnieuw te bepalen).
 
 De filters (dealer-signalen, onderdelen-woorden, verkopertype-detectie) staan
 als aanpasbare constanten bovenin `fetch_leads.py`.
+
+## Voorraad-prijscheck (eigen motoren tegen Motoroccasion)
+
+Het omgekeerde van de inkoop-radar: staat je eigen vraagprijs nog goed?
+
+- **Vergelijking**: zelfde model en bouwjaar, max. 10.000 km verschil, prijs
+  laag → hoog. Overgeslagen: nieuw/0 km, prijs op aanvraag, BTW-motoren en je
+  eigen advertenties (dealernaam "De Jonge Motoren", zie `EIGEN_DEALER`).
+  Eén zoekverzoek per motor, plus hooguit één merkpagina per merk.
+- **Minimum** = inkoopprijs + € 1.000. De inkoopprijs vul je in bij Voorraad
+  (toevoegen/wijzigen) en staat in de aparte admin-tabel `voorraad_inkoop`,
+  omdat `voorraad` publiek leesbaar is voor de website.
+- **Uitkomst** (bij de motor in de app): groen = jij bent het goedkoopst;
+  geel = goedkoper aangeboden, met advies om net onder de goedkoopste te gaan
+  zitten; rood = de goedkoopste zit onder je minimum (niet volgen);
+  grijs = geen vergelijkbare motor.
+- **Knop "Check prijs"** op de voorraadkaart: direct resultaat.
+- **Wekelijks**: `.github/workflows/voorraad-prijscheck.yml` draait maandagochtend
+  `voorraad_check.py` en mailt alleen als er iets te doen is.
+
+Onderdelen:
+- `supabase/functions/voorraad-prijscheck/index.ts`: de Supabase edge function
+  (deploy via Supabase; alleen admins of de service-role key).
+- `supabase/functions/voorraad-prijscheck/logica.ts`: typekeuze (port van
+  `motoroccasion.py`) en de beoordeling. Wordt gedeeld door de functie en de app.
+  Tests: `npx esbuild supabase/functions/voorraad-prijscheck/logica.test.ts --bundle
+  --platform=node --format=esm --outfile=/tmp/t.mjs && node /tmp/t.mjs`.
+- Testen zonder op te slaan: Inkoop-radar → Run workflow → modus **diagnose-voorraad**.

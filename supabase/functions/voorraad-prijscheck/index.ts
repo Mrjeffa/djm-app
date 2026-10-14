@@ -7,7 +7,9 @@
 //
 // Aanroepen (POST, JSON):
 //   { "voorraad_id": "<uuid>" }  → één motor (knop "Check prijs" in de app)
-//   { "alle": true }             → alle beschikbare voorraad (wekelijkse check)
+//   { "voorraad_ids": [...] }    → een portie motoren (wekelijkse check, ≤15 per keer
+//                                  i.v.m. de maximale looptijd van een edge function)
+//   { "alle": true }             → alle beschikbare voorraad
 //   { "test": { merk, model, bouwjaar, km, prijs, inkoopprijs } } → rekenen zonder opslaan
 //
 // Toegang: alleen admins (is_admin()) of de service-role key (wekelijkse job).
@@ -121,8 +123,9 @@ Deno.serve(async (req) => {
 
   let q = db.from("voorraad").select("id,merk,model,bouwjaar,km,prijs,status").is("verkocht_op", null);
   if (body?.voorraad_id) q = q.eq("id", body.voorraad_id);
+  else if (Array.isArray(body?.voorraad_ids) && body.voorraad_ids.length) q = q.in("id", body.voorraad_ids.slice(0, 25));
   else if (body?.alle) q = q.eq("status", "beschikbaar");
-  else return json({ fout: "Geef voorraad_id, alle of test mee" }, 400);
+  else return json({ fout: "Geef voorraad_id, voorraad_ids, alle of test mee" }, 400);
   const { data: motoren, error } = await q;
   if (error) return json({ fout: error.message }, 500);
 
