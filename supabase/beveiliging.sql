@@ -1,5 +1,7 @@
--- Beveiliging & schaalbaarheid voor Supabase (project xftnovnldcdfohqlqgor),
--- migratie "beveiliging_hardening". Herhaalbaar: opnieuw draaien geeft geen fouten.
+-- Beveiliging & schaalbaarheid voor Supabase (project xftnovnldcdfohqlqgor).
+-- Herhaalbaar: opnieuw draaien geeft geen fouten.
+-- Stappen 4 en 5 zijn toegepast (migratie "beveiliging_rls_en_formulieren").
+-- Stappen 1–3 vragen handmatige goedkeuring: plak ze in Supabase → SQL Editor → Run.
 -- Controle achteraf: Supabase → Advisors (security/performance) en
 -- .github/workflows/beveiligingstest.yml.
 
