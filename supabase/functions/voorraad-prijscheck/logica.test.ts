@@ -1,6 +1,8 @@
 // Tests voor logica.ts. Draaien (vanuit de repo-root):
 //   npx esbuild supabase/functions/voorraad-prijscheck/logica.test.ts --bundle --platform=node --outfile=/tmp/t.mjs --format=esm && node /tmp/t.mjs
-import { beoordeel, concurrentenUit, kiesType, mooi, nietDuurderDan, zoekUrl, type Aanbod } from "./logica.ts";
+import {
+  beoordeel, concurrentenUit, kiesType, kiesTypeVoorraad, mooi, naarBedrag, nietDuurderDan, zoekUrl, type Aanbod,
+} from "./logica.ts";
 
 let ok = 0;
 function gelijk(echt: unknown, verwacht: unknown, wat: string) {
@@ -62,5 +64,26 @@ gelijk([zonderInkoop.kleur, zonderInkoop.advies, zonderInkoop.minimum], ["geel",
 gelijk(beoordeel(6500, 6000, c(7000)).margeTeLaag, true, "marge te laag");
 gelijk(nietDuurderDan(7500), 7450, "nietDuurderDan 7500");
 gelijk(nietDuurderDan(7495), 7450, "nietDuurderDan 7495");
+// Minimum net onder de goedkoopste: nog te onderbieden → geel met advies = minimum (niet rood)
+const krap = beoordeel(7900, 6025, c(7040));
+gelijk([krap.kleur, krap.advies, krap.minimum], ["geel", 7025, 7025], "minimum net onder goedkoopste");
+gelijk(beoordeel(7900, 6040, c(7040)).kleur, "rood", "minimum gelijk aan goedkoopste");
+
+// Voorraad-typekeuze: modelveld met extra woorden
+const YAMAHA: [string, string][] = [["mt-07", "MT 07"], ["mt-07-tracer", "MT 07 TRACER"], ["tracer-7", "TRACER 7"]];
+const kiesV = (m: string, types: [string, string][]) => kiesTypeVoorraad(m, types)?.[0] ?? null;
+gelijk(kiesV("Z900 ABS", KAWASAKI), "z-900", "voorraad Z900 ABS");
+gelijk(kiesV("Versys 650 Tourer", KAWASAKI), "versys-650", "voorraad Versys 650 Tourer");
+gelijk(kiesV("MT-07 ABS", YAMAHA), "mt-07", "voorraad MT-07 ABS");
+gelijk(kiesV("MT-07 Tracer", YAMAHA), "mt-07-tracer", "voorraad MT-07 Tracer");
+gelijk(kiesV("Z900RS Cafe", KAWASAKI), "z-900-rs-cafe", "voorraad Z900RS Cafe");
+gelijk(kiesV("Versis 650", KAWASAKI), "versys-650", "voorraad spelfout");
+gelijk(kiesV("Ninja 650", KAWASAKI), null, "voorraad onbekend model");
+
+// Bedragen in Nederlandse (en Engelse) notatie
+const bedragen: [unknown, number | null][] = [["6.500", 6500], ["€ 6.500,-", 6500], ["6500,00", 6500], ["7500.00", 7500],
+  ["7500,5", 7500], ["1,000", 1000], ["1.250.000", 1250000], ["15 000", 15000], [7500.5, 7500], [6500, 6500],
+  ["", null], [null, null], ["abc", null]];
+for (const [invoer, verwacht] of bedragen) gelijk(naarBedrag(invoer), verwacht, `naarBedrag(${JSON.stringify(invoer)})`);
 
 console.log(`${ok} tests geslaagd`);

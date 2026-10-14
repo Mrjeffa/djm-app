@@ -113,7 +113,7 @@ Het omgekeerde van de inkoop-radar: staat je eigen vraagprijs nog goed?
   zitten; rood = de goedkoopste zit onder je minimum (niet volgen);
   grijs = geen vergelijkbare motor.
 - **Knop "Check prijs"** op de voorraadkaart: direct resultaat.
-- **Wekelijks**: `.github/workflows/voorraad-prijscheck.yml` draait maandagochtend
+- **Wekelijks**: `.github/workflows/voorraad-prijscheck.yml` draait maandagochtend (06:00 UTC)
   `voorraad_check.py` en mailt alleen als er iets te doen is.
 
 Onderdelen:
@@ -124,3 +124,4 @@ Onderdelen:
   Tests: `npx esbuild supabase/functions/voorraad-prijscheck/logica.test.ts --bundle
   --platform=node --format=esm --outfile=/tmp/t.mjs && node /tmp/t.mjs`.
 - Testen zonder op te slaan: Inkoop-radar → Run workflow → modus **diagnose-voorraad**.
+- Databasetabellen: `supabase/functions/voorraad-prijscheck/schema.sql`.

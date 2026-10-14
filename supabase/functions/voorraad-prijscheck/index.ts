@@ -15,7 +15,7 @@
 // Toegang: alleen admins (is_admin()) of de service-role key (wekelijkse job).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
-  beoordeel, concurrentenUit, kiesType, MO_BASIS, mooi, naarAanbod, slug, typesUit, zoekUrl, type Concurrent,
+  beoordeel, concurrentenUit, kiesTypeVoorraad, MO_BASIS, mooi, naarAanbod, slug, typesUit, zoekUrl, type Concurrent,
 } from "./logica.ts";
 
 const CORS = {
@@ -35,23 +35,31 @@ const json = (data: unknown, status = 200) =>
 
 class MoFout extends Error {}
 
-let laatsteVerzoek = 0;
+// Tijdslot reserveren vóór het wachten, zodat gelijktijdige aanroepen (meerdere
+// "Check prijs"-klikken) elkaar netjes opvolgen in plaats van samen te vuren.
+let volgendVerzoek = 0;
 async function moJson(url: string): Promise<any> {
-  const wacht = PAUZE_MS - (Date.now() - laatsteVerzoek);
-  if (wacht > 0) await new Promise((r) => setTimeout(r, wacht));
-  laatsteVerzoek = Date.now();
-  const r = await fetch(url, { headers: MO_HEADERS });
+  const nu = Date.now();
+  const start = Math.max(nu, volgendVerzoek);
+  volgendVerzoek = start + PAUZE_MS;
+  if (start > nu) await new Promise((r) => setTimeout(r, start - nu));
+  let r: Response;
+  try { r = await fetch(url, { headers: MO_HEADERS, signal: AbortSignal.timeout(20_000) }); }
+  catch (e) { throw new MoFout(`Motoroccasion niet bereikbaar: ${(e as Error).message}`); }
   if (!r.ok) throw new MoFout(`Motoroccasion gaf ${r.status}`);
   try { return await r.json(); } catch { throw new MoFout("Motoroccasion gaf geen JSON (site gewijzigd?)"); }
 }
 
+// Typelijst per merk. Alleen een geslaagde lijst onthouden: na een storing
+// wordt het bij de volgende motor opnieuw geprobeerd.
 const typeCache = new Map<string, [string, string][]>();
-async function typesVoorMerk(merk: string) {
-  if (!typeCache.has(merk)) {
-    try { typeCache.set(merk, typesUit(await moJson(`${MO_BASIS}/motoren/${merk}`))); }
-    catch { typeCache.set(merk, []); }
-  }
-  return typeCache.get(merk)!;
+async function typesVoorMerk(merk: string): Promise<[string, string][]> {
+  if (typeCache.get(merk)?.length) return typeCache.get(merk)!;
+  try {
+    const types = typesUit(await moJson(`${MO_BASIS}/motoren/${merk}`));
+    if (types.length) typeCache.set(merk, types);
+    return types;
+  } catch { return []; }
 }
 
 type Motor = { merk: string | null; model: string | null; bouwjaar: number | null; km: number | null };
@@ -64,9 +72,10 @@ async function check(m: Motor): Promise<Uitkomst> {
   const leeg = { mo_model: null, mo_url: null, concurrenten: null, zelfde_bouwjaar: null };
   const merk = slug(m.merk), model = (m.model || "").trim();
   if (!merk || !model) return { status: "geen_data", ...leeg, toelichting: "merk of model ontbreekt" };
-  if (!m.bouwjaar || m.km == null) return { status: "geen_data", ...leeg, toelichting: "bouwjaar of km-stand ontbreekt" };
+  // km 0 = niet ingevuld (de app slaat een leeg veld op als 0)
+  if (!m.bouwjaar || !m.km || m.km <= 0) return { status: "geen_data", ...leeg, toelichting: "bouwjaar of km-stand ontbreekt" };
 
-  const gekozen = kiesType(model, model, await typesVoorMerk(merk));
+  const gekozen = kiesTypeVoorraad(model, await typesVoorMerk(merk));
   const [typeKey, typeNaam] = gekozen ?? [slug(model), model];
   const url = zoekUrl(merk, typeKey, m.bouwjaar);
   const data = await moJson(url);
@@ -76,12 +85,22 @@ async function check(m: Motor): Promise<Uitkomst> {
   if (filters.brand !== merk || !filters.type) {
     return { status: "fout", ...leeg, toelichting: `Motoroccasion kent "${m.merk} ${model}" niet — controleer de schrijfwijze van het model` };
   }
-  if (!("bouwjaar_vanaf" in filters) || !("sorting" in filters)) {
-    throw new MoFout("bouwjaarfilter of sortering niet toegepast — URL-opbouw van Motoroccasion gewijzigd?");
+  if (!("bouwjaar_vanaf" in filters) || !("bouwjaar_tot" in filters)) {
+    throw new MoFout("bouwjaarfilter niet toegepast — URL-opbouw van Motoroccasion gewijzigd?");
   }
-  if (!typeCache.get(merk)?.length) typeCache.set(merk, typesUit(data));
+  const items = data?.inventories || [];
+  const aanbod = items.map(naarAanbod);
+  // Alleen pagina 1: bij meer pagina's moet die echt op prijs gesorteerd zijn
+  // (zelfde controle als inkoop-radar/motoroccasion.py; kleine afwijkingen mogen).
+  const totaal = data?.metadata?.totalCount ?? items.length;
+  const prijzen = aanbod.map((a) => a.prijs).filter((p): p is number => !!p);
+  const dalingen = prijzen.slice(1).filter((p, i) => p < prijzen[i]).length;
+  if (totaal > items.length && (!("sorting" in filters) || dalingen > Math.floor(prijzen.length / 4))) {
+    throw new MoFout("sortering op prijs niet toegepast — URL-opbouw van Motoroccasion gewijzigd?");
+  }
+  const types = typesUit(data);
+  if (types.length && !typeCache.get(merk)?.length) typeCache.set(merk, types);
 
-  const aanbod = (data?.inventories || []).map(naarAanbod);
   const concurrenten = concurrentenUit(aanbod, m.bouwjaar, m.km).slice(0, 10);
   return {
     status: "ok",

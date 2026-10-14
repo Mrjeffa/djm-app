@@ -28,8 +28,13 @@ def log(msg):
     print(f"[voorraad-prijscheck] {msg}", flush=True)
 
 
+def getal(n):
+    """12345 → '12.345' (alleen het getal; nooit hele HTML-stukken vervangen)."""
+    return f"{int(n or 0):,}".replace(",", ".")
+
+
 def euro(n):
-    return f"€ {int(n):,}".replace(",", ".")
+    return f"€ {getal(n)}"
 
 
 def escape(s):
@@ -61,7 +66,7 @@ KLEUR = {"groen": "#16A34A", "geel": "#D97706", "rood": "#DC2626", "grijs": "#76
 def motor_html(r):
     b = r.get("beoordeling") or {}
     kleur = KLEUR.get(b.get("kleur"), "#767676")
-    titel = f"{escape(r.get('merk'))} {escape(r.get('model'))} · {r.get('bouwjaar')} · {int(r.get('km') or 0):,} km".replace(",", ".")
+    titel = f"{escape(r.get('merk'))} {escape(r.get('model'))} · {r.get('bouwjaar')} · {getal(r.get('km'))} km"
     regels = []
     if r.get("status") == "fout":
         regels.append(f'<span style="color:#DC2626">Check mislukt: {escape(r.get("toelichting"))}</span>')
@@ -73,10 +78,10 @@ def motor_html(r):
             regels.append(f"Goedkoopste worden: <b>{euro(b['advies'])}</b>"
                           + (f" · jouw minimum {euro(b['minimum'])}" if b.get("minimum") is not None else ""))
         elif b.get("kleur") == "rood":
-            regels.append(f'<span style="color:#DC2626">Laagste zit onder jouw minimum ({euro(b["minimum"])}) — niet volgen.</span>')
+            regels.append(f'<span style="color:#DC2626">Laagste zit op of onder jouw minimum ({euro(b["minimum"])}) — niet volgen.</span>')
         for c in (r.get("concurrenten") or [])[:3]:
             link = f'<a href="{escape(c.get("url"))}" style="color:#111">{euro(c["prijs"])}</a>' if c.get("url") else euro(c["prijs"])
-            regels.append(f'<span style="color:#555">{link} · {int(c["km"]):,} km · {escape(c.get("dealer"))}</span>'.replace(",", "."))
+            regels.append(f'<span style="color:#555">{link} · {getal(c["km"])} km · {escape(c.get("dealer"))}</span>')
     if b.get("margeTeLaag"):
         regels.append('<span style="color:#DC2626">Let op: je vraagprijs ligt onder je minimum (inkoop + € 1.000).</span>')
     zoek = (f'<div style="font-size:11px;margin-top:4px"><a href="{escape(r["mo_url"])}" style="color:#777">'
@@ -90,16 +95,24 @@ def motor_html(r):
       </td></tr>"""
 
 
-def maak_mail(resultaten):
-    """(onderwerp, html) voor de motoren die aandacht vragen, of None."""
+def maak_mail(resultaten, mislukt=0):
+    """(onderwerp, html) voor de motoren die aandacht vragen, of None.
+    mislukt: aantal motoren dat niet gecontroleerd kon worden (portie mislukt)."""
     aandacht = [r for r in resultaten if (r.get("beoordeling") or {}).get("actieNodig") or r.get("status") == "fout"]
-    if not aandacht:
+    if not aandacht and not mislukt:
         return None
     volgorde = {"rood": 0, "geel": 1, "grijs": 2, "groen": 3}
     aandacht.sort(key=lambda r: (r.get("status") != "fout", volgorde.get((r.get("beoordeling") or {}).get("kleur"), 9)))
     n, rest = len(aandacht), len(resultaten) - len(aandacht)
-    onderwerp = f"Prijscheck voorraad: {n} {'motor vraagt' if n == 1 else 'motoren vragen'} aandacht"
+    if n:
+        onderwerp = f"Prijscheck voorraad: {n} {'motor vraagt' if n == 1 else 'motoren vragen'} aandacht"
+    else:
+        onderwerp = "Prijscheck voorraad: check niet (volledig) gelukt"
     in_orde = "" if not rest else f"{rest} andere {'motor is' if rest == 1 else 'motoren zijn'} in orde."
+    if mislukt:
+        in_orde += (f' <b style="color:#DC2626">{mislukt} motor{"en" if mislukt != 1 else ""} kon{"den" if mislukt != 1 else ""}'
+                    ' niet gecontroleerd worden</b> — zie de GitHub Actions-log "Voorraad-prijscheck", of probeer'
+                    ' "Check prijs" in de app.')
     html = f"""
     <div style="font-family:system-ui,Arial,sans-serif;max-width:640px;margin:0 auto">
       <div style="border-top:4px solid #E31E24;padding:16px 0 8px">
@@ -132,20 +145,25 @@ def main():
         sys.exit(1)
     ids = beschikbare_voorraad()
     log(f"{len(ids)} beschikbare motor(en) in voorraad.")
-    resultaten = []
+    resultaten, mislukt = [], 0
     for i in range(0, len(ids), PORTIE):
+        portie = ids[i:i + PORTIE]
         try:
-            resultaten += check_portie(ids[i:i + PORTIE])
-        except requests.RequestException as e:
-            log(f"WAARSCHUWING: portie {i // PORTIE + 1} mislukt: {e}")
+            resultaten += check_portie(portie)
+        except (requests.RequestException, ValueError) as e:
+            mislukt += len(portie)
+            log(f"FOUT: portie {i // PORTIE + 1} ({len(portie)} motoren) mislukt: {e}")
     for r in resultaten:
         b = r.get("beoordeling") or {}
         log(f"  {r.get('merk')} {r.get('model')} {r.get('bouwjaar')}: {r.get('status')} — {b.get('kop') or r.get('toelichting')}")
-    mail = maak_mail(resultaten)
+    mail = maak_mail(resultaten, mislukt)
     if mail:
         stuur_mail(*mail)
     else:
         log("Alles in orde — geen mail.")
+    if mislukt:
+        log(f"FOUT: {mislukt} motor(en) niet gecontroleerd.")
+        sys.exit(1)  # run rood in GitHub, zodat een stille storing opvalt
     log("Klaar.")
 
 

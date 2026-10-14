@@ -16,6 +16,19 @@ export type Aanbod = {
 };
 export type Concurrent = { prijs: number; bouwjaar: number; km: number; dealer: string | null; url: string | null };
 
+/** Bedrag/aantal uit (Nederlandse) invoer → geheel getal, of null.
+ *  "6.500", "€ 6.500,-", "15 000" → 6500 / 15000 (punt/spatie = duizendtal);
+ *  "6500,00", "7500.00", "7500,5" → 6500 / 7500 (1–2 cijfers na punt/komma = decimalen);
+ *  "1,000" / "1.250.000" → 1000 / 1250000. (parseInt("6.500") zou 6 geven.) */
+export function naarBedrag(v: unknown): number | null {
+  let s = String(v ?? "").trim().replace(/[€\s]/g, "").replace(/[.,]-$/, "");
+  s = s.replace(/[.,]\d{1,2}$/, "");   // decimalen weg
+  s = s.replace(/[.,]/g, "");          // duizendtallen weg
+  if (!/^\d+$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export const norm = (s?: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 export const slug = (s?: string | null) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
@@ -89,6 +102,16 @@ export function kiesType(titel: string, model: string, types: [string, string][]
     }
   }
   return beste ? beste.type : null;
+}
+
+/** Typekeuze voor eigen voorraad: het modelveld kan extra woorden bevatten
+ *  ("Z900 ABS", "Versys 650 Tourer"). Neem het langste Motoroccasion-type dat
+ *  als hele woorddelen in het model staat; anders de gewone (spelfout-tolerante) keuze. */
+export function kiesTypeVoorraad(model: string, types: [string, string][]): [string, string] | null {
+  const toks = tokens(model);
+  const erin = types.filter(([, n]) => norm(n).length >= 3 && staatIn(n, toks));
+  if (erin.length) return erin.reduce((a, b) => (norm(b[1]).length > norm(a[1]).length ? b : a));
+  return kiesType(model, model, types);
 }
 
 /** [typekey, typenaam] uit de typeOptions van een Motoroccasion-antwoord. */
@@ -166,10 +189,12 @@ export function beoordeel(vraagprijs: number | null, inkoopprijs: number | null,
     return { kleur: "groen", kop, advies: null, minimum, margeTeLaag, actieNodig: margeTeLaag };
   }
   const goedkoper = concurrenten!.filter((c) => c.prijs < vraagprijs).length;
-  const advies = nietDuurderDan(laagste.prijs);
   const kop = `${goedkoper} goedkoper aangeboden — laagste ${euro(laagste.prijs)}`;
-  if (minimum != null && advies < minimum) {
+  // Onder de goedkoopste kan alleen als je minimum daar nog onder ligt.
+  if (minimum != null && minimum >= laagste.prijs) {
     return { kleur: "rood", kop, advies: null, minimum, margeTeLaag, actieNodig: true };
   }
+  // Net onder de goedkoopste (op €50), maar nooit onder je minimum.
+  const advies = minimum != null ? Math.max(nietDuurderDan(laagste.prijs), minimum) : nietDuurderDan(laagste.prijs);
   return { kleur: "geel", kop, advies, minimum, margeTeLaag, actieNodig: true };
 }
