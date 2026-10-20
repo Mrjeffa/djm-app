@@ -236,3 +236,8 @@ BEGIN
   VALUES (p_naam, p_telefoon, p_merk, p_model, p_bouwjaar, p_km);
 END;
 $function$;
+
+-- 6. (handmatig, optioneel) pg_net uit het publieke schema halen. pg_net kan niet
+--    verhuizen, alleen opnieuw installeren; de pushtrigger (private.meld_push) blijft werken.
+-- DROP EXTENSION pg_net;
+-- CREATE EXTENSION pg_net WITH SCHEMA extensions;

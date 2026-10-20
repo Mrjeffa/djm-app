@@ -4,6 +4,7 @@ import { JuridischModal, CookieBanner } from "./Juridisch.jsx";
 import { naarBedrag } from "../lib/getal.js";
 import { verkleinFoto, uploadFoto as uploadNaarCloudinary } from "../lib/foto.js";
 import { kmTekst } from "../lib/kmstand.js";
+import AppInstalleren from "./AppInstalleren.jsx";
 
 const useIsMobile = () => {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -1227,6 +1228,9 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
 
   return (
     <div>
+      {/* App op het beginscherm (verdwijnt zodra de app geïnstalleerd draait) */}
+      <AppInstalleren T={T} css={css} />
+
       {/* Profielgegevens */}
       <div style={css.card}>
         <div style={css.sectionTitle}>Mijn gegevens</div>
@@ -2144,7 +2148,7 @@ export default function KlantApp({ userId }) {
         // Voorraad ophalen (incl. recent verkochte motors, 30 dagen zichtbaar)
         const { data: vData } = await supabase
           .from("voorraad")
-          .select("id,merk,model,bouwjaar,km,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
+          .select("id,merk,model,bouwjaar,km,km_eenheid,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
           .neq("status", "verwijderd")
           .or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY},verkocht_op.gte.${new Date(Date.now()-30*86400000).toISOString().split("T")[0]}`)
           .order("created_at", { ascending: false });

@@ -11,6 +11,13 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin-allow-popups
 
+# Service worker en manifest altijd vers ophalen, anders blijft een oude versie hangen.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache
+
 # Bestanden met een hash in de naam veranderen nooit: lang cachen = sneller laden.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
