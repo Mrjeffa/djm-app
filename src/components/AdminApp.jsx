@@ -72,6 +72,12 @@ const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
 const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","instellingen"];
 
+// Afspraken met klantnaam, motor en de interne opmerking. Die opmerking staat in
+// een aparte tabel (afspraken_intern) die alleen de beheerder kan lezen; klanten
+// kunnen hun eigen afspraken wel lezen, maar niet wat jij erbij noteert.
+const AFSPRAAK_VELDEN = "*, klanten(naam), motoren(merk, model, kenteken), afspraken_intern(opmerking)";
+const internVan = (a) => { const i = Array.isArray(a?.afspraken_intern) ? a.afspraken_intern[0] : a?.afspraken_intern; return i?.opmerking ?? null; };
+
 // ── Cloudinary ── (verkleinen/uploaden: src/lib/foto.js)
 const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
@@ -1910,6 +1916,10 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
               <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17}}>
                 {motor.merk} {motor.model}
                 <span style={{...s.badge(T.accent),marginLeft:10,fontSize:10}}>{motor.kenteken}</span>
+                {motor.klant_verwijderd_op&&(
+                  <span title="De klant heeft deze motor verwijderd; jouw onderhoudshistorie is bewaard. Klant ziet hem niet meer."
+                    style={{...s.badge(T.muted),marginLeft:6,fontSize:10}}>Door klant verwijderd</span>
+                )}
               </div>
               <div style={{fontSize:12,color:T.muted,marginTop:4}}>
                 {motor.bouwjaar} · {motor.kmHistory?.length ? motor.kmHistory[motor.kmHistory.length-1].km.toLocaleString() : "—"} km · {motor.aankoopdatum ? `Gekocht ${motor.aankoopdatum}` : "Eigen motor"}
@@ -4671,7 +4681,7 @@ export default function AdminApp(){
         const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData] = await Promise.all([
           alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id")),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
-          alleRijen(()=>sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
+          alleRijen(()=>sb.from("afspraken").select(AFSPRAAK_VELDEN).gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
           sb.from("voorraad").select("id,fotos,verkocht_aan").or(`fotos_bewaren_tot.lte.${TODAY},verkocht_op.lte.${grens30}`),
           sb.from("producten").select("*").order("created_at",{ascending:false}),
           alleRijen(()=>sb.from("voorraad_service").select("*").order("datum",{ascending:false}).order("id")),
@@ -4738,6 +4748,7 @@ export default function AdminApp(){
           const isProefrit=x.type==="proefrit";
           const proefritMotor=isProefrit&&x.voorraad_motor_id?(v.data||[]).find(m=>m.id===x.voorraad_motor_id):null;
           return{...x,
+            interne_opmerking:internVan(x),
             klant:isProefrit?(x.naam||"Proefrit"):x.type==="intern"?(x.naam||"Intern"):x.klanten?.naam||"Onbekend",
             naam:x.naam||"",
             motorLabel:isProefrit&&proefritMotor?`${proefritMotor.merk} ${proefritMotor.model}`:(x.motoren?[x.motoren.merk,x.motoren.model].filter(Boolean).join(" ")||null:null),
@@ -5304,12 +5315,15 @@ export default function AdminApp(){
 
   const afwerkAfspraak = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    // Update afspraak status + interne_opmerking
+    // Interne opmerking apart (alleen beheerder), daarna de status
+    const opm = (f.interne_opmerking||"").trim();
+    await (opm
+      ? sb.from("afspraken_intern").upsert({ afspraak_id: f.afspraakId, opmerking: opm })
+      : sb.from("afspraken_intern").delete().eq("afspraak_id", f.afspraakId));
     const { data: updatedAfs } = await sb.from("afspraken").update({
       status: "afgewerkt",
-      interne_opmerking: f.interne_opmerking||null,
-    }).eq("id", f.afspraakId).select("*, klanten(naam), motoren(merk, model, kenteken)").single();
-    if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, klant: updatedAfs.klanten?.naam||"Onbekend", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:null} : a));
+    }).eq("id", f.afspraakId).select(AFSPRAAK_VELDEN).single();
+    if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, interne_opmerking: internVan(updatedAfs), klant: updatedAfs.klanten?.naam||"Onbekend", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:null} : a));
 
     // Service registreren bij klant motor
     if(f.motorId){
@@ -5611,7 +5625,7 @@ export default function AdminApp(){
     import("../lib/supabase.js").then(({ supabase: sb }) => {
       sub = sb.channel("admin-afspraken")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken" }, ({ new: n }) => {
-          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
+          sb.from("afspraken").select(AFSPRAAK_VELDEN).eq("id", n.id).single()
             .then(({ data }) => {
               if(!data) return;
               setAfspraken(p => {
@@ -5619,6 +5633,7 @@ export default function AdminApp(){
                 const isProefrit=data.type==="proefrit";
                 const isIntern=data.type==="intern";
                 return [...p, { ...data,
+                  interne_opmerking: internVan(data),
                   klant: isProefrit?(data.naam||"Proefrit"):isIntern?(data.naam||"Intern"):data.klanten?.naam||"Onbekend",
                   naam: data.naam||"",
                   motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null,
@@ -5627,9 +5642,9 @@ export default function AdminApp(){
             });
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken" }, ({ new: n }) => {
-          sb.from("afspraken").select("*, klanten(naam), motoren(merk, model, kenteken)").eq("id", n.id).single()
+          sb.from("afspraken").select(AFSPRAAK_VELDEN).eq("id", n.id).single()
             .then(({ data }) => {
-              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, klant: data.type==="proefrit"?(data.naam||"Proefrit"):data.type==="intern"?(data.naam||"Intern"):data.klanten?.naam||"Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null } : a));
+              if(data) setAfspraken(p => p.map(a => a.id === data.id ? { ...data, interne_opmerking: internVan(data), klant: data.type==="proefrit"?(data.naam||"Proefrit"):data.type==="intern"?(data.naam||"Intern"):data.klanten?.naam||"Onbekend", motorLabel: data.motoren?[data.motoren.merk,data.motoren.model].filter(Boolean).join(" ")||null:null } : a));
             });
         })
         .on("postgres_changes", { event: "DELETE", schema: "public", table: "afspraken" }, ({ old: o }) => {

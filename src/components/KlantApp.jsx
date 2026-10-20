@@ -1337,7 +1337,8 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
             )}
             {verwijderBevestigId === m.id && (
               <div style={{ background: `${T.red}12`, border: `1px solid ${T.red}35`, borderRadius: 6, padding: "10px 12px", margin: "6px 0 8px" }}>
-                <div style={{ fontSize: 13, color: T.red, marginBottom: 8, fontWeight: 600 }}>{m.merk} {m.model} verwijderen?</div>
+                <div style={{ fontSize: 13, color: T.red, marginBottom: 4, fontWeight: 600 }}>{m.merk} {m.model} verwijderen?</div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, lineHeight: 1.5 }}>Onderhoud dat bij De Jonge Motoren is gedaan, bewaren wij in onze administratie.</div>
                 {verwijderFout && <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>{verwijderFout}</div>}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => verwijderMotor(m.id)} disabled={verwijderBezig}
@@ -2125,7 +2126,7 @@ export default function KlantApp({ userId }) {
 
         // Motoren ophalen (heeft klant_id nodig)
         const { data: motorenData } = await supabase
-          .from("motoren").select("*").eq("klant_id", klantData.id);
+          .from("motoren").select("*").eq("klant_id", klantData.id).is("klant_verwijderd_op", null);
         const motorIds = (motorenData||[]).map(m => m.id);
 
         if (motorIds.length > 0) {
@@ -2256,10 +2257,17 @@ export default function KlantApp({ userId }) {
     return null;
   };
 
+  // Zonder historie bij De Jonge Motoren: echt verwijderen. Met historie (onderhoud
+  // door de garage, een klus of afspraak, of hier gekocht) staat de database dat niet
+  // toe; dan verbergen we de motor alleen, zodat dat onderhoud bewaard blijft.
   const verwijderMotor = async (motorId) => {
-    await supabase.from("km_historie").delete().eq("motor_id", motorId);
-    const { error } = await supabase.from("motoren").delete().eq("id", motorId);
-    if (error) return "Verwijderen mislukt. Neem contact op als de motor servicehistorie heeft.";
+    const { data: weg, error } = await supabase.from("motoren").delete().eq("id", motorId).select("id");
+    if (error) return "Verwijderen mislukt, probeer het later opnieuw.";
+    if (!weg?.length) {
+      const { error: fout } = await supabase.from("motoren")
+        .update({ klant_verwijderd_op: new Date().toISOString() }).eq("id", motorId);
+      if (fout) return "Verwijderen mislukt, probeer het later opnieuw.";
+    }
     setMotoren(prev => prev.filter(m => m.id !== motorId));
     return null;
   };

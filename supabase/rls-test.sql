@@ -2,7 +2,8 @@
 -- en meldt per controle OK / LEK. Wijzigt niets: alles gebeurt in één transactie die
 -- aan het eind met een (bedoelde) foutmelding wordt teruggedraaid; de uitkomst staat
 -- in die foutmelding. Draaien: Supabase → SQL Editor → plak dit bestand → Run.
--- Laatste uitkomst (20-10-2026): 50 controles, alle OK.
+-- Laatste uitkomst (20-10-2026): 50 controles, alle OK. Daarna uitgebreid met
+-- interne opmerkingen (afspraken_intern) en motor verwijderen met garage-historie.
 DO $$
 DECLARE
   uit text := ''; n int;
@@ -45,8 +46,11 @@ BEGIN
        + (SELECT count(*) FROM public.inkoop_leads) + (SELECT count(*) FROM public.inkoop_aanvragen) + (SELECT count(*) FROM public.inkoop_populair)
        + (SELECT count(*) FROM public.inkoop_radar_status) + (SELECT count(*) FROM public.voorraad_inkoop) + (SELECT count(*) FROM public.voorraad_chassis)
        + (SELECT count(*) FROM public.voorraad_intern) + (SELECT count(*) FROM public.voorraad_prijscheck) + (SELECT count(*) FROM public.voorraad_service)
-       + (SELECT count(*) FROM public.push_abonnementen) + (SELECT count(*) FROM public.push_log) + (SELECT count(*) FROM public.push_sleutels) INTO n;
-  uit := uit || format(E'%s 15 beheertabellen samen: ziet %s rijen (verwacht 0)\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
+       + (SELECT count(*) FROM public.push_abonnementen) + (SELECT count(*) FROM public.push_log) + (SELECT count(*) FROM public.push_sleutels)
+       + (SELECT count(*) FROM public.afspraken_intern) INTO n;
+  uit := uit || format(E'%s 16 beheertabellen samen: ziet %s rijen (verwacht 0)\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
+  SELECT count(*) INTO n FROM public.afspraken WHERE interne_opmerking IS NOT NULL;
+  uit := uit || format(E'%s interne opmerking in eigen afspraken: %s (verwacht 0)\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
   SELECT count(*) INTO n FROM public.voorraad WHERE status IN ('niet_beschikbaar','verwijderd') AND verkocht_op IS NULL;
   uit := uit || format(E'%s voorraad niet-beschikbaar/verwijderd: ziet %s (verwacht 0)\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
 
@@ -75,6 +79,21 @@ BEGIN
   BEGIN DELETE FROM public.motoren WHERE id = ander_motor; GET DIAGNOSTICS n = ROW_COUNT;
     uit := uit || format(E'%s motor van ander verwijderen: %s rijen\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
   EXCEPTION WHEN OTHERS THEN uit := uit || E'OK  motor van ander verwijderen: geweigerd\n'; END;
+  IF eigen_afspraak IS NOT NULL THEN
+    BEGIN UPDATE public.afspraken SET interne_opmerking = 'poging' WHERE id = eigen_afspraak;
+      uit := uit || E'LEK interne opmerking schrijven: toegestaan\n';
+    EXCEPTION WHEN OTHERS THEN uit := uit || E'OK  interne opmerking schrijven: geweigerd\n'; END;
+  END IF;
+  -- Motor met garage-historie mag de klant niet verwijderen (alleen verbergen)
+  DECLARE motor_hist uuid; BEGIN
+    SELECT m.id INTO motor_hist FROM public.motoren m WHERE m.klant_id = klant AND private.motor_heeft_garagehistorie(m.id) LIMIT 1;
+    IF motor_hist IS NOT NULL THEN
+      DELETE FROM public.motoren WHERE id = motor_hist; GET DIAGNOSTICS n = ROW_COUNT;
+      uit := uit || format(E'%s motor MET garage-onderhoud verwijderen: %s rijen\n', CASE WHEN n=0 THEN 'OK ' ELSE 'LEK' END, n);
+      UPDATE public.motoren SET klant_verwijderd_op = now() WHERE id = motor_hist; GET DIAGNOSTICS n = ROW_COUNT;
+      uit := uit || format(E'%s die motor verbergen: %s rij (mag)\n', CASE WHEN n=1 THEN 'OK ' ELSE 'FOUT' END, n);
+    END IF;
+  END;
   BEGIN UPDATE public.motoren SET klant_id = ander_klant WHERE id = eigen_motor;
     uit := uit || E'LEK eigen motor naar andere klant verplaatsen: toegestaan\n';
   EXCEPTION WHEN OTHERS THEN uit := uit || E'OK  eigen motor naar andere klant verplaatsen: geweigerd\n'; END;
