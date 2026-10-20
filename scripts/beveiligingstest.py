@@ -22,7 +22,7 @@ AFGESCHERMD = [
     "klanten", "motoren", "km_historie", "service_beurten", "afspraken", "admins",
     "taken", "klussen", "voorraad_chassis", "voorraad_service", "voorraad_inkoop",
     "voorraad_prijscheck", "inkoop_leads", "inkoop_aanvragen", "inkoop_populair",
-    "inkoop_radar_status", "voorraad_intern",
+    "inkoop_radar_status", "voorraad_intern", "push_abonnementen", "push_log", "push_sleutels",
 ]
 # Functies die een buitenstaander niet mag kunnen uitvoeren (onschuldige argumenten).
 RPC_VERBODEN = {
@@ -36,6 +36,7 @@ RPC_VERBODEN = {
 EDGE_ALLEEN_ADMIN = {
     "cloudinary-delete": {"urls": []},
     "voorraad-prijscheck": {},
+    "push-melding": {"test": True},
 }
 HEADERS_VERPLICHT = ["content-security-policy", "strict-transport-security",
                      "x-content-type-options", "x-frame-options", "referrer-policy"]

@@ -6,6 +6,7 @@ import { beoordeel, MIN_MARGE } from "../../supabase/functions/voorraad-prijsche
 import { naarBedrag } from "../lib/getal.js";
 import { verkleinFotos, uploadFoto } from "../lib/foto.js";
 import { naarKm, vanKm, kmTekst } from "../lib/kmstand.js";
+import PushInstellingen from "./PushInstellingen.jsx";
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -68,6 +69,8 @@ const TODAY = lokaleDatum();
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
+
+const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","instellingen"];
 
 // ── Cloudinary ── (verkleinen/uploaden: src/lib/foto.js)
 const clImg = (url, w=800) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
@@ -3943,6 +3946,9 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
 
   return(
     <div style={{maxWidth:600}}>
+      {/* Pushmeldingen op dit apparaat */}
+      <PushInstellingen T={T} s={s}/>
+
       {/* Bericht aan klanten */}
       <div style={{...s.card,marginBottom:16}}>
         <div style={s.sectionLabel}>Bericht aan klanten</div>
@@ -4597,7 +4603,21 @@ export default function AdminApp(){
   const effectiveDark=themeMode==="donker"||(themeMode==="automatisch"&&sysDark);
   Object.assign(T,effectiveDark?T_DARK:T_LIGHT);
   const isMobile=useIsMobile();
-  const [page,setPage]=useState("dashboard");
+  // Startpagina: ?pagina=… (tik op een pushmelding opent de juiste pagina)
+  const [page,setPage]=useState(()=>{
+    try{
+      const p=new URLSearchParams(window.location.search).get("pagina");
+      if(p&&ADMIN_PAGINAS.includes(p)){ window.history.replaceState(null,"",window.location.pathname); return p; }
+    }catch{ /* geen geldige url */ }
+    return "dashboard";
+  });
+  // App stond al open: de service worker vraagt om naar een pagina te gaan
+  useEffect(()=>{
+    if(!("serviceWorker" in navigator)) return;
+    const h=(e)=>{ const p=e.data?.type==="open-pagina"&&e.data.pagina; if(p&&ADMIN_PAGINAS.includes(p)) setPage(p); };
+    navigator.serviceWorker.addEventListener("message",h);
+    return ()=>navigator.serviceWorker.removeEventListener("message",h);
+  },[]);
   const [klanten,setKlanten]=useState([]);
   const [showroom,setShowroom]=useState([]);
   const [producten,setProducten]=useState([]);
