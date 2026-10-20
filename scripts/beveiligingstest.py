@@ -23,6 +23,7 @@ AFGESCHERMD = [
     "taken", "klussen", "voorraad_chassis", "voorraad_service", "voorraad_inkoop",
     "voorraad_prijscheck", "inkoop_leads", "inkoop_aanvragen", "inkoop_populair",
     "inkoop_radar_status", "voorraad_intern", "push_abonnementen", "push_log", "push_sleutels",
+    "afspraken_intern",
 ]
 # Functies die een buitenstaander niet mag kunnen uitvoeren (onschuldige argumenten).
 RPC_VERBODEN = {
