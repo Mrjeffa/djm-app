@@ -55,12 +55,17 @@ const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
 // ── Cloudinary ──────────────────────────────────────────────────────────────
 const CL_CLOUD = "dkfdwnep4";
-const CL_PRESET = "Djm app";
 
 const uploadFoto = async (file) => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  const { data: sig, error } = await sb.functions.invoke("cloudinary-sign");
+  if (error || !sig?.signature) throw new Error("Upload niet toegestaan");
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("upload_preset", CL_PRESET);
+  fd.append("upload_preset", sig.upload_preset);
+  fd.append("api_key", sig.api_key);
+  fd.append("timestamp", sig.timestamp);
+  fd.append("signature", sig.signature);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_CLOUD}/image/upload`, {
     method: "POST", body: fd,
   });
