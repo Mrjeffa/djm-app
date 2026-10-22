@@ -78,8 +78,8 @@ export const getAfspraken = () =>
 export const addAfspraak = (data) =>
   supabase.from('afspraken').insert(data).select().single()
 
-export const getBezetteDagen = () =>
-  supabase.from('afspraken').select('datum').gte('datum', new Date().toISOString().split('T')[0])
+// Volle dagen: via supabase.rpc('get_bezette_dagen') — een klant ziet door RLS alleen
+// zijn eigen afspraken, dus een directe query op afspraken mist andermans boekingen.
 
 // ── Instellingen ─────────────────────────────────────────────
 export const getInstellingen = () =>

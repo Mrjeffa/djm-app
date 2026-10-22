@@ -1680,7 +1680,7 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
 // ── Scherm: Voorraad ───────────────────────────────────────────────────────
 const clImg = (url, w = 600) => url ? url.replace("/upload/", `/upload/c_scale,w_${w},q_auto:eco,f_auto/`) : url;
 
-function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], openingstijden = null, onSlaProefritOp, onNaarContact }) {
+function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], bezetteDagen = [], openingstijden = null, onSlaProefritOp, onNaarContact }) {
   const [subTab, setSubTab] = useState("motoren");
   const [detailMotor, setDetailMotor] = useState(null);
   const [detailProduct, setDetailProduct] = useState(null);
@@ -1706,7 +1706,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
       if (!isOpenDag(dow)) continue;
       const iso = lokaleDatum(d);
       if (geslotenDagen.includes(iso)) continue;
-      dagen.push({ datum: iso, dag: DAGMAP[dow] });
+      dagen.push({ datum: iso, dag: DAGMAP[dow], vol: bezetteDagen.includes(iso) });
     }
     return dagen;
   })();
@@ -1878,13 +1878,13 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], open
                     <div style={css.sectionTitle}>Kies een dag</div>
                     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                       {beschikbaar.slice(0,20).map(d => (
-                        <button key={d.datum} onClick={() => setF(p => ({...p, datum:d.datum}))}
-                          style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 12px", borderRadius:6, border:`1px solid ${f.datum===d.datum?T.green:T.border}`, background:f.datum===d.datum?`${T.green}15`:"transparent", cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+                        <button key={d.datum} disabled={d.vol} onClick={() => !d.vol && setF(p => ({...p, datum:d.datum}))}
+                          style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 12px", borderRadius:6, border:`1px solid ${f.datum===d.datum?T.green:T.border}`, background:f.datum===d.datum?`${T.green}15`:d.vol?T.surf2:"transparent", cursor:d.vol?"default":"pointer", opacity:d.vol?0.7:1, fontFamily:"Barlow, sans-serif" }}>
                           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                             <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:700, fontSize:12, letterSpacing:1, color:f.datum===d.datum?T.green:T.text, textTransform:"uppercase", width:22 }}>{d.dag}</div>
                             <div style={{ fontSize:13, color:T.text }}>{fmtDatum(d.datum)}</div>
                           </div>
-                          {f.datum===d.datum && <span style={{ ...css.badge(T.green) }}>✓</span>}
+                          {d.vol ? <span style={css.badge(T.muted)}>Vol</span> : f.datum===d.datum && <span style={{ ...css.badge(T.green) }}>✓</span>}
                         </button>
                       ))}
                     </div>
@@ -2192,6 +2192,22 @@ export default function KlantApp({ userId }) {
     ));
   };
 
+  // Volle dagen komen uit de database (get_bezette_dagen): daar telt ook mee wat andere
+  // klanten en de website hebben geboekt, wat een klant zelf niet kan zien.
+  const herlaadBezetteDagen = async () => {
+    const { data } = await supabase.rpc("get_bezette_dagen");
+    if (data) setBezetteDagen([...data.map(a => String(a.datum)), ...geslotenDagen]);
+  };
+  useEffect(() => {
+    if (klant && ["service", "contact", "voorraad"].includes(tab)) herlaadBezetteDagen();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  // De database weigert een afspraak op een volle dag (ook als iemand anders net boekte)
+  const dagVolMelding = async (error) => {
+    if (!/zit vol/i.test(error?.message || "")) return null;
+    await herlaadBezetteDagen();
+    return "Deze dag is inmiddels vol. Kies een andere dag.";
+  };
+
   const slaAfspraakOp = async (f) => {
     const motor = motoren.find(m => m.id === f.motorId);
     const { error } = await supabase.from("afspraken").insert({
@@ -2200,8 +2216,8 @@ export default function KlantApp({ userId }) {
       type: "service", soort: f.soort || null, duur: f.duur || 1,
       naam: klant.naam || null, telefoon: klant.telefoon || null, email: klant.email || null,
     });
-    if (error) return "Versturen mislukt — probeer het opnieuw of neem contact op.";
-    setBezetteDagen(prev => [...prev, f.datum]);
+    if (error) return (await dagVolMelding(error)) || "Versturen mislukt — probeer het opnieuw of neem contact op.";
+    herlaadBezetteDagen();
     return null;
   };
 
@@ -2218,7 +2234,9 @@ export default function KlantApp({ userId }) {
       type: "proefrit",
       duur: 1,
     });
-    return error ? "Versturen mislukt — probeer het opnieuw of neem contact op." : null;
+    if (error) return (await dagVolMelding(error)) || "Versturen mislukt — probeer het opnieuw of neem contact op.";
+    herlaadBezetteDagen();
+    return null;
   };
 
   const updateKlantProfiel = async (data) => {
@@ -2340,6 +2358,7 @@ export default function KlantApp({ userId }) {
       klant_id: klant.id,
       motor_id: motor_id || null,
       datum: datum || TODAY,
+      dag_gekozen: !!datum, // zonder gekozen dag bezet deze aanvraag geen dag
       naam: klant.naam,
       telefoon: klant.telefoon || null,
       email: klant.email || null,
@@ -2348,8 +2367,8 @@ export default function KlantApp({ userId }) {
       type: soort,
       duur: 1,
     });
-    if (error) return error.message;
-    if (datum) setBezetteDagen(prev => [...prev, datum]);
+    if (error) return (await dagVolMelding(error)) || error.message;
+    if (datum) herlaadBezetteDagen();
     return null;
   };
 
@@ -2533,7 +2552,7 @@ export default function KlantApp({ userId }) {
             {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
             {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten} eigenAfspraken={eigenAfspraken}/>}
             {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
-            {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
+            {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
             {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
             {tab === "instellingen" && (
               <Instellingen
@@ -2600,7 +2619,7 @@ export default function KlantApp({ userId }) {
         {tab === "motor" && <MijnMotor motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onVoegServiceToe={voegEigenServiceToe} onNaarInstellingen={naarMotorToevoegen}/>}
         {tab === "service" && <ServiceTab motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaAfspraakOp={slaAfspraakOp} onWijzigService={wijzigEigenService} afspraakSoorten={afspraakSoorten} eigenAfspraken={eigenAfspraken}/>}
         {tab === "km" && <KmStand motoren={gesorteerdMotoren} selMotorId={selMotorId} onSelMotor={kiesMotor} onSlaOp={slaKmOp}/>}
-        {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
+        {tab === "voorraad" && <VoorraadTab voorraad={voorraad} producten={producten} klant={klant} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} openingstijden={openingstijden} onSlaProefritOp={slaProefritAanvraagOp} onNaarContact={() => setTab("contact")}/>}
         {tab === "contact" && <Contact openingstijden={openingstijden} geslotenDagen={geslotenDagen} bezetteDagen={bezetteDagen} opmerking={opmerking} klant={klant} motoren={gesorteerdMotoren} dienstenTarieven={dienstenTarieven} onVerzendAanvraag={verzendDienstAanvraag}/>}
         {tab === "instellingen" && (
           <Instellingen

@@ -3845,7 +3845,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -3868,6 +3868,17 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
+
+  // Afspraken per dag
+  const [perDag,setPerDag]=useState(maxPerDag);
+  const [perDagOk,setPerDagOk]=useState(false);
+  const [perDagFout,setPerDagFout]=useState(null);
+  useEffect(()=>setPerDag(maxPerDag),[maxPerDag]);
+  const slaPerDagOp=async()=>{
+    setPerDagFout(null);
+    try{ const n=await onSaveMaxPerDag(perDag); setPerDag(n); setPerDagOk(true); setTimeout(()=>setPerDagOk(false),2000); }
+    catch(e){ setPerDagFout(e.message); }
+  };
 
   // Inkoop-radar: bewaar-dagen + populaire modellen
   const [dagen,setDagen]=useState(inkoopBewaarDagen);
@@ -4006,6 +4017,24 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
             {opgeslagen?"✓ Opgeslagen!":"Opslaan"}
           </button>
         </div>
+      </div>
+
+      {/* Afspraken per dag */}
+      <div style={{...s.card,marginBottom:16}}>
+        <div style={s.sectionLabel}>Afspraken per dag</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+          Zoveel afspraken kunnen klanten (portaal en website) per dag aanvragen; daarna staat de dag op "Vol".
+          Geannuleerde afspraken en aanvragen zonder gekozen dag tellen niet mee. Jij kunt zelf altijd extra inplannen.
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <input style={{...s.input,width:80,textAlign:"center"}} type="number" min="1" max="20"
+            value={perDag} onChange={e=>setPerDag(e.target.value)}/>
+          <span style={{fontSize:13,color:T.muted}}>per dag</span>
+          <button style={{...s.btn,width:"auto",padding:"9px 18px",background:perDagOk?T.green:T.accent,marginLeft:4}} onClick={slaPerDagOp}>
+            {perDagOk?"✓ Opgeslagen":"Opslaan"}
+          </button>
+        </div>
+        {perDagFout&&<div style={{fontSize:12,color:T.red,marginTop:8}}>⚠ {perDagFout}</div>}
       </div>
 
       {/* Gesloten periodes */}
@@ -4756,7 +4785,7 @@ export default function AdminApp(){
         }));
 
         // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen").single();
+        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag").single();
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
@@ -4765,6 +4794,7 @@ export default function AdminApp(){
         if(inst.data?.medewerkers) setMedewerkers(inst.data.medewerkers);
         if(inst.data?.afspraak_categorieen) setAfspraakCategorieen(inst.data.afspraak_categorieen);
         if(inst.data?.inkoop_bewaar_dagen != null) setInkoopBewaarDagen(inst.data.inkoop_bewaar_dagen);
+        if(inst.data?.max_afspraken_per_dag != null) setMaxPerDag(inst.data.max_afspraken_per_dag);
 
       } catch(e) {
         console.error("Laad fout:", e);
@@ -5520,6 +5550,16 @@ export default function AdminApp(){
   const [medewerkers, setMedewerkers] = useState([]);
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
   const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
+  // Dagcapaciteit voor klantportaal en website (de database bewaakt hem, zie supabase/dagcapaciteit.sql)
+  const [maxPerDag, setMaxPerDag] = useState(1);
+  const slaMaxPerDagOp = async (aantal) => {
+    const n = Math.max(1, Math.min(20, parseInt(aantal)||1));
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { error } = await sb.from("instellingen").update({ max_afspraken_per_dag: n }).eq("id", 1);
+    if (error) throw new Error(error.message);
+    setMaxPerDag(n);
+    return n;
+  };
 
   const slaInkoopDagenOp = async (dagen) => {
     const n = Math.max(1, Math.min(60, parseInt(dagen)||5));
@@ -5695,7 +5735,7 @@ export default function AdminApp(){
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 
