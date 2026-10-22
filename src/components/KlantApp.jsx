@@ -42,6 +42,51 @@ const GearIcon = ({ size = 18 }) => (
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
   </svg>
 );
+const MotorIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="5.5" cy="17.5" r="3.5"/>
+    <circle cx="18.5" cy="17.5" r="3.5"/>
+    <path d="M15 6h-5l-2 4H3"/>
+    <path d="m12 6 3.5 11.5"/>
+    <path d="M8 10 5.5 17.5"/>
+  </svg>
+);
+const WrenchIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </svg>
+);
+const GaugeIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2a10 10 0 1 0 10 10"/>
+    <path d="M12 7v5l3 3"/>
+    <path d="M22 2 16 8"/>
+  </svg>
+);
+const CalendarIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+    <line x1="16" y1="2" x2="16" y2="6"/>
+    <line x1="8" y1="2" x2="8" y2="6"/>
+    <line x1="3" y1="10" x2="21" y2="10"/>
+  </svg>
+);
+const PhoneIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.15 6.15l1.07-.94a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+  </svg>
+);
+const MessageIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+);
+const MailIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+    <polyline points="22,6 12,13 2,6"/>
+  </svg>
+);
 
 // ── Shared UI ──────────────────────────────────────────────────────────────
 const css = {
@@ -427,13 +472,13 @@ function Contact({ openingstijden, geslotenDagen, opmerking }) {
         </a>
       </div>
       {[
-        { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
-        { icon: "💬", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
-        { icon: "✉", label: "E-mail", sub: "dejongemotor@email.nl", href: "mailto:info@dejongemotor.nl", color: T.muted },
+        { icon: <PhoneIcon size={22} />, label: "Bellen", sub: "0166-606090", href: "tel:+31166606090", color: T.accent },
+        { icon: <MessageIcon size={22} />, label: "WhatsApp", sub: "06-21908697", href: "https://wa.me/31621908697", color: "#25D366" },
+        { icon: <MailIcon size={22} />, label: "E-mail", sub: "info@dejongemotoren.nl", href: "mailto:info@dejongemotoren.nl", color: T.muted },
       ].map((c, i) => (
         <a key={i} href={c.href}
           style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px", background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, textDecoration: "none", color: T.text }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${c.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{c.icon}</div>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${c.color}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: c.color }}>{c.icon}</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: c.color }}>{c.label}</div>
             <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{c.sub}</div>
@@ -850,11 +895,11 @@ export default function KlantApp({ userId }) {
   };
 
   const nav = [
-    { id: "motor", icon: "🏍", label: "Motor" },
-    { id: "service", icon: "🔧", label: "Service" },
-    { id: "km", icon: "📍", label: "Km Stand" },
-    { id: "afspraak", icon: "📅", label: "Afspraak" },
-    { id: "contact", icon: "📞", label: "Contact" },
+    { id: "motor", icon: <MotorIcon size={20} />, label: "Motor" },
+    { id: "service", icon: <WrenchIcon size={20} />, label: "Service" },
+    { id: "km", icon: <GaugeIcon size={20} />, label: "Km Stand" },
+    { id: "afspraak", icon: <CalendarIcon size={20} />, label: "Afspraak" },
+    { id: "contact", icon: <PhoneIcon size={20} />, label: "Contact" },
   ];
   const titles = { motor: "Mijn Motor", service: "Servicegeschiedenis", km: "Km Stand", afspraak: "Afspraak", contact: "Contact", instellingen: "Instellingen" };
 
@@ -930,7 +975,7 @@ export default function KlantApp({ userId }) {
             <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{motoren.length} motor{motoren.length !== 1 ? "en" : ""}</div>
           </div>
           <button onClick={() => setTab(tab === "instellingen" ? "motor" : "instellingen")}
-            style={{ width: 34, height: 34, borderRadius: "50%", background: tab === "instellingen" ? T.accent : T.surf2, border: `1px solid ${tab === "instellingen" ? T.accent : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: tab === "instellingen" ? "#fff" : T.muted }}
+            style={{ width: 44, height: 44, borderRadius: "50%", background: tab === "instellingen" ? T.accent : T.surf2, border: `1px solid ${tab === "instellingen" ? T.accent : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: tab === "instellingen" ? "#fff" : T.muted }}
             title="Instellingen">
             <GearIcon size={16} />
           </button>
@@ -965,7 +1010,7 @@ export default function KlantApp({ userId }) {
       <nav style={css.bottomNav}>
         {nav.map(n => (
           <button key={n.id} style={css.navBtn(tab === n.id)} onClick={() => setTab(n.id)}>
-            <span style={{ fontSize: 20 }}>{n.icon}</span>
+            <span style={{ display:"flex", alignItems:"center", justifyContent:"center" }}>{n.icon}</span>
             <span style={{ fontSize: 9, letterSpacing: 0.3, fontWeight: tab === n.id ? 600 : 400 }}>{n.label}</span>
           </button>
         ))}

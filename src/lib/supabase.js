@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://xftnovnldcdfohqlqgor.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdG5vdm5sZGNkZm9ocWxxZ29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzODU2NzQsImV4cCI6MjA5NTk2MTY3NH0.5Qgfipldcz_YrODg5HT25h0nkIfJMzMiW2ChQO57wfM'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -27,8 +27,6 @@ export const stuurUitnodiging = (email) =>
   })
 
 export const uitloggen = () => supabase.auth.signOut()
-
-export const getSession = () => supabase.auth.getSession()
 
 // ── Klanten ──────────────────────────────────────────────────
 export const getKlanten = () =>
@@ -88,10 +86,3 @@ export const getInstellingen = () =>
 export const updateInstellingen = (data) =>
   supabase.from('instellingen').update(data).eq('id', 1)
 
-// ── Admin check ───────────────────────────────────────────────
-export const isAdmin = async () => {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-  const { data } = await supabase.from('admins').select('id').eq('id', user.id).single()
-  return !!data
-}

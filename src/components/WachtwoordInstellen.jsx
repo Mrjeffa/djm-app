@@ -23,7 +23,7 @@ export default function WachtwoordInstellen({ onKlaar }) {
   }
 
   return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:T.bg, padding:20, fontFamily:'sans-serif' }}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:20, fontFamily:'Barlow, sans-serif' }}>
       <div style={{ width:'100%', maxWidth:380 }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
           <div style={{ fontSize:28, fontWeight:900, letterSpacing:3, color:T.text }}>DE JONGE</div>
@@ -42,16 +42,16 @@ export default function WachtwoordInstellen({ onKlaar }) {
               <div style={{ fontSize:13, color:T.muted, marginBottom:20, lineHeight:1.6 }}>
                 Kies een wachtwoord voor je account. Minimaal 8 tekens.
               </div>
-              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
+              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'Barlow, sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
                 type="password" placeholder="Nieuw wachtwoord"
                 value={wachtwoord} onChange={e=>setWachtwoord(e.target.value)}/>
-              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
+              <input style={{ width:'100%', background:'#1E1E1E', border:`1px solid ${T.border}`, borderRadius:6, padding:'11px 14px', color:T.text, fontSize:15, fontFamily:'Barlow, sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 }}
                 type="password" placeholder="Herhaal wachtwoord"
                 value={herhaal} onChange={e=>setHerhaal(e.target.value)}
                 onKeyDown={e=>e.key==='Enter'&&slaOp()}/>
               {fout && <div style={{ fontSize:12, color:T.red, marginBottom:10 }}>{fout}</div>}
               <button onClick={slaOp} disabled={laden||!wachtwoord||!herhaal}
-                style={{ width:'100%', padding:13, background:T.accent, color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'sans-serif', opacity: laden||!wachtwoord||!herhaal ? 0.5 : 1 }}>
+                style={{ width:'100%', padding:13, background:T.accent, color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'Barlow, sans-serif', opacity: laden||!wachtwoord||!herhaal ? 0.5 : 1 }}>
                 {laden ? 'Opslaan...' : 'Wachtwoord instellen →'}
               </button>
             </>
