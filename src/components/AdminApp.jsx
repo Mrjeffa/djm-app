@@ -1632,7 +1632,7 @@ function ProefritModal({motor, afspraken, klanten=[], onSave, onClose, geslotenD
 }
 
 // ── Pages ────────────────────────────────────────────────────────────────────
-function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfspraak,onDeleteAfspraakReeks=()=>{},onAfwerkAfspraak,klussen=[],afspraakCategorieen=[],onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{}}){
+function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfspraak,onDeleteAfspraakReeks=()=>{},onAfwerkAfspraak,klussen=[],afspraakCategorieen=[],afspraakSoorten=[],medewerkers=[],onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{}}){
   const isMobile=useIsMobile();
   const totalMotoren=klanten.reduce((a,k)=>a+(k.motoren||[]).length,0);
   const aanvragen=afspraken.filter(a=>a.status==="aangevraagd");
@@ -1742,6 +1742,9 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
           afspraak={editAfspraakItem}
           klanten={klanten}
           voorraad={showroom}
+          afspraakSoorten={afspraakSoorten}
+          medewerkers={medewerkers}
+          afspraakCategorieen={afspraakCategorieen}
           onSave={a=>{onEditAfspraak(a);setEditAfspraakItem(null);}}
           onDelete={id=>{onDeleteAfspraak(id);setEditAfspraakItem(null);}}
           onClose={()=>setEditAfspraakItem(null)}
@@ -3822,6 +3825,14 @@ function NieuweItemRij({onAdd}){
     </div>
   );
 }
+// Melding onder een lijst die direct wordt opgeslagen
+function OpslaanStatus({status}){
+  if(!status) return null;
+  const kleur=status==="ok"?T.green:status==="bezig"?T.muted:T.red;
+  const tekst=status==="ok"?"✓ Opgeslagen":status==="bezig"?"Opslaan…":`⚠ ${status}`;
+  return <div style={{fontSize:12,color:kleur,marginTop:8}}>{tekst}</div>;
+}
+
 function NieuweNaamRij({onAdd,placeholder="Naam"}){
   const [naam,setNaam]=useState("");
   const voegToe=()=>{if(naam.trim()){onAdd(naam.trim());setNaam("");}};
@@ -3860,11 +3871,31 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const [soortenOk,setSoortenOk]=useState(false);
   useEffect(()=>setSoorten(afspraakSoorten.length?afspraakSoorten:DEFAULT_AFSPRAAK_SOORTEN),[afspraakSoorten]);
   const [medewerkersLijst,setMedewerkersLijst]=useState(medewerkers);
-  const [medewerkersOk,setMedewerkersOk]=useState(false);
+  const [medewerkersStatus,setMedewerkersStatus]=useState(null); // null | "bezig" | "ok" | foutmelding
   useEffect(()=>setMedewerkersLijst(medewerkers),[medewerkers]);
   const [categorieen,setCategorieen]=useState(afspraakCategorieen);
-  const [categorieenOk,setCategorieenOk]=useState(false);
+  const [categorieenStatus,setCategorieenStatus]=useState(null);
   useEffect(()=>setCategorieen(afspraakCategorieen),[afspraakCategorieen]);
+  // Medewerkers en kleurcategorieën worden direct opgeslagen bij toevoegen/verwijderen
+  // (voorheen pas met een losse knop "Opslaan", die makkelijk werd overgeslagen).
+  const bewaarLijst=async(nieuw,vorige,zet,zetStatus,opslaan)=>{
+    zet(nieuw); zetStatus("bezig");
+    try{
+      await opslaan(nieuw);
+      zetStatus("ok"); setTimeout(()=>zetStatus(st=>st==="ok"?null:st),2000);
+    }catch(e){ zet(vorige); zetStatus("Opslaan mislukt: "+(e.message||"onbekende fout")); }
+  };
+  const bestaatAl=(lijst,naam)=>lijst.some(x=>(typeof x==="string"?x:x.naam).trim().toLowerCase()===naam.trim().toLowerCase());
+  const voegMedewerkerToe=(naam)=>{
+    if(bestaatAl(medewerkersLijst,naam)){ setMedewerkersStatus(`"${naam}" staat er al.`); return; }
+    bewaarLijst([...medewerkersLijst,naam],medewerkersLijst,setMedewerkersLijst,setMedewerkersStatus,onSaveMedewerkers);
+  };
+  const verwijderMedewerker=(i)=>bewaarLijst(medewerkersLijst.filter((_,j)=>j!==i),medewerkersLijst,setMedewerkersLijst,setMedewerkersStatus,onSaveMedewerkers);
+  const voegCategorieToe=(naam,kleur)=>{
+    if(bestaatAl(categorieen,naam)){ setCategorieenStatus(`"${naam}" staat er al.`); return; }
+    bewaarLijst([...categorieen,{naam,kleur}],categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
+  };
+  const verwijderCategorie=(i)=>bewaarLijst(categorieen.filter((_,j)=>j!==i),categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
@@ -4193,20 +4224,18 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
       {/* Medewerkers */}
       <div style={{...s.card,marginTop:16}}>
         <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Medewerkers</div>
-        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Namen die je bij een afspraak kunt koppelen.</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Namen die je bij een afspraak kunt koppelen. Toevoegen en verwijderen wordt direct opgeslagen.</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
           {medewerkersLijst.map((naam,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:20,fontSize:12}}>
               <span>{naam}</span>
-              <button onClick={()=>setMedewerkersLijst(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+              <button onClick={()=>verwijderMedewerker(i)} disabled={medewerkersStatus==="bezig"} title="Verwijderen" style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
             </div>
           ))}
           {medewerkersLijst.length===0&&<div style={{fontSize:12,color:T.muted}}>Nog geen medewerkers toegevoegd</div>}
         </div>
-        <NieuweNaamRij placeholder="Naam medewerker" onAdd={naam=>setMedewerkersLijst(p=>[...p,naam])}/>
-        <button style={{...s.btn,background:medewerkersOk?T.green:T.accent,marginTop:14}} onClick={async()=>{await onSaveMedewerkers(medewerkersLijst);setMedewerkersOk(true);setTimeout(()=>setMedewerkersOk(false),2000);}}>
-          {medewerkersOk?"✓ Opgeslagen":"Opslaan"}
-        </button>
+        <NieuweNaamRij placeholder="Naam medewerker" onAdd={voegMedewerkerToe}/>
+        <OpslaanStatus status={medewerkersStatus}/>
       </div>
 
       {/* Kleurcategorieën */}
@@ -4218,15 +4247,13 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:12}}>
               <span style={{width:14,height:14,borderRadius:"50%",background:c.kleur,flexShrink:0}}/>
               <span style={{flex:1}}>{c.naam}</span>
-              <button onClick={()=>setCategorieen(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+              <button onClick={()=>verwijderCategorie(i)} disabled={categorieenStatus==="bezig"} title="Verwijderen" style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:14,padding:"0 0 0 4px",lineHeight:1}}>×</button>
             </div>
           ))}
           {categorieen.length===0&&<div style={{fontSize:12,color:T.muted}}>Nog geen categorieën toegevoegd</div>}
         </div>
-        <NieuweCategorieRij onAdd={(naam,kleur)=>setCategorieen(p=>[...p,{naam,kleur}])}/>
-        <button style={{...s.btn,background:categorieenOk?T.green:T.accent,marginTop:14}} onClick={async()=>{await onSaveAfspraakCategorieen(categorieen);setCategorieenOk(true);setTimeout(()=>setCategorieenOk(false),2000);}}>
-          {categorieenOk?"✓ Opgeslagen":"Opslaan"}
-        </button>
+        <NieuweCategorieRij onAdd={voegCategorieToe}/>
+        <OpslaanStatus status={categorieenStatus}/>
       </div>
 
       {/* Inkoop-radar */}
@@ -5595,13 +5622,15 @@ export default function AdminApp(){
 
   const slaMedewerkersOp = async (namen) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ medewerkers: namen }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ medewerkers: namen }).eq("id", 1);
+    if (error) throw new Error(error.message);
     setMedewerkers(namen);
   };
 
   const slaAfspraakCategorieenOp = async (categorieen) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ afspraak_categorieen: categorieen }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ afspraak_categorieen: categorieen }).eq("id", 1);
+    if (error) throw new Error(error.message);
     setAfspraakCategorieen(categorieen);
   };
 
@@ -5730,7 +5759,7 @@ export default function AdminApp(){
 
   const pageContent = (
     <>
-      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
+      {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
