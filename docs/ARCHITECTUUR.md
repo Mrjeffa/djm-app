@@ -272,7 +272,7 @@ Navigatie: state `tab` (onderbalk; instellingen via het tandwiel).
 | `motor` | `MijnMotor` | Eigen motor(en), onderhoudsstatus, servicegeschiedenis | motoren, service_beurten, km_historie |
 | `service` | `ServiceTab` → `Afspraak` | Afspraak aanvragen (dagkeuze met volle dagen), eigen onderhoud invoeren, eigen afspraken zien | afspraken, service_beurten, rpc `get_bezette_dagen` |
 | `km` | `KmStand` | Km-stand doorgeven | km_historie |
-| `voorraad` | `VoorraadTab` | Occasions en onderdelen bekijken, proefrit aanvragen | voorraad (beschikbaar + 30 dagen verkocht), producten, afspraken |
+| `voorraad` | `VoorraadTab` | Occasions en onderdelen bekijken, proefrit aanvragen | rpc `voorraad_overzicht` (te koop + 30 dagen verkocht), producten, afspraken |
 | `contact` | `Contact` | Diensten aanvragen: schade, consignatie, aankoopkeuring, zoekopdracht, winterstalling, seizoensklaarmaak (met foto's) | afspraken (`dag_gekozen=false` zonder datum) |
 | `instellingen` | `Instellingen` | App installeren, gegevens, wachtwoord, motoren toevoegen/verwijderen, thema, gegevens downloaden, account verwijderen | klanten, motoren, rpc `verwijder_eigen_account` |
 
@@ -283,7 +283,8 @@ goedkeuring". Lukt het laden niet (netwerk) → "Laden mislukt" met knop "Opnieu
 (voorheen leek dat op "wacht op goedkeuring").
 
 **Data laden** (drie rondes, binnen een ronde alles tegelijk):
-1. klantrecord (`user_id`, `maybeSingle`), volle dagen (rpc), instellingen, voorraad, producten;
+1. klantrecord (`user_id`, `maybeSingle`), volle dagen (rpc), instellingen, voorraad (rpc
+   `voorraad_overzicht`: geen klantnummer, geen kenteken van verkochte motoren), producten;
 2. alleen als goedgekeurd: eigen afspraken + motoren (zonder `klant_verwijderd_op`);
 3. km_historie + service_beurten van die motoren (oplopend; schermen nemen het laatste element
    als "laatste service"). De huidige km-stand is de **hoogste** stand (`hoogsteKm`).
@@ -333,7 +334,7 @@ geblokkeerd is, zoals in een privévenster).
 | `service_beurten` | onderhoud (`klant_invoer` = door klant ingevoerd) | klant: lezen eigen, eigen invoer toevoegen/wijzigen; admin: alles |
 | `afspraken` | afspraken en aanvragen (`status`, `dag_gekozen`, `type`, `soort`, `medewerker_namen`, `categorie`, klus-velden) | klant: eigen lezen/aanvragen; admin: alles; website: alleen via `maak_afspraak` |
 | `afspraken_intern` | interne opmerking bij een afspraak | alleen admin |
-| `voorraad` | voorraadmotoren (`km` altijd km, `km_eenheid` km/mijl, foto's, status) | iedereen: beschikbaar/gereserveerd; ingelogd: ook 30 dagen na verkoop; admin: alles |
+| `voorraad` | voorraadmotoren (`km` altijd km, `km_eenheid` km/mijl, foto's, status, `verkocht_op`, `verkocht_aan` = klant-id koper) | bezoeker (anon): te koop + 30 dagen na verkoop, **alleen de websitekolommen** (kolomrechten: geen `kenteken`, `verkocht_aan`, onderdelen-link, banden); klant: niet rechtstreeks, via `voorraad_overzicht()`; admin: alles |
 | `voorraad_inkoop` / `voorraad_chassis` / `voorraad_intern` / `voorraad_prijscheck` / `voorraad_service` | inkoopprijs, chassisnr., interne opmerking, Motoroccasion-check, onderhoud vóór verkoop | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
@@ -352,6 +353,7 @@ geblokkeerd is, zoals in een privévenster).
 | `maak_inkoop_lead(...)` | website (anoniem) | "wij kopen je motor"-aanvraag → `inkoop_aanvragen` |
 | `get_drukke_datums(start, eind)` | website (anoniem) | aantal meetellende afspraken per dag (alleen datums + aantallen) |
 | `get_bezette_dagen()` | ingelogd (klantportaal) | volle dagen (≥ `max_afspraken_per_dag`) |
+| `voorraad_overzicht()` | ingelogd (klantportaal) | voorraad te koop + 30 dagen na verkoop, alleen veilige kolommen; kenteken alleen van motoren die nog te koop zijn |
 | `verwijder_eigen_account()` | klant | account opheffen (klantrecord gearchiveerd, login verwijderd) |
 | `delete_auth_user_by_id(id)` | admin | login van een klant verwijderen |
 
@@ -383,10 +385,11 @@ Publicatie `supabase_realtime`: `afspraken`, `klanten`.
 Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderwerp bewaard in
 `supabase/*.sql`: `beveiliging.sql`, `rls.sql`, `push.sql`, `voorraad_velden.sql`,
 `afspraken_intern_en_motoren.sql`, `dagcapaciteit.sql`, `website_koppeling.sql`,
-`links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens), plus
+`links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens),
+`verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
-`dagcapaciteit-test.sql`, `website-test.sql`.
+`dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 
@@ -474,7 +477,10 @@ De website linkt niet naar de app (de app wordt alleen in tekst genoemd).
   inkoop-radar) gaan in de app door `veiligeUrl()` (`lib/larsson.js`): alleen http(s), zodat een
   `javascript:`-link niet in de beheer-app kan draaien. De database dwingt dat ook af voor
   `onderdelen_link` (constraints `*_onderdelen_link_http`).
-- Recent verkochte voorraad (kenteken, koper) alleen voor ingelogde gebruikers.
+- Voorraad: verkochte motoren zijn 30 dagen zichtbaar (website en portaal), maar kenteken,
+  klantnummer van de koper, chassisnummer, inkoopprijs en interne opmerking niet. Kenteken en
+  `verkocht_aan` zijn voor bezoekers afgeschermd met kolomrechten, voor klanten via
+  `voorraad_overzicht()`; chassis, inkoop en opmerking staan in admin-tabellen.
 - `public/_headers`: CSP (alleen eigen scripts; verbindingen naar Supabase, Cloudinary, RDW),
   HSTS, nosniff, geen framing, referrer-policy, permissions-policy.
 - Controle: `scripts/beveiligingstest.py` (GitHub Actions), `supabase/rls-test.sql`,

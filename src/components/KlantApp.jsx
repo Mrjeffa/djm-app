@@ -1832,7 +1832,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], beze
                 <div>
                   <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:26, lineHeight:1.1 }}>{m.merk} {m.model}</div>
                   <div style={{ display:"flex", gap:6, marginTop:5, flexWrap:"wrap" }}>
-                    <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:3, fontSize:12, fontWeight:700, background:`${T.yellow}15`, color:T.text, border:`1px solid ${T.yellow}70`, fontFamily:"Barlow Condensed, sans-serif", letterSpacing:1 }}>{m.kenteken}</span>
+                    {m.kenteken && <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:3, fontSize:12, fontWeight:700, background:`${T.yellow}15`, color:T.text, border:`1px solid ${T.yellow}70`, fontFamily:"Barlow Condensed, sans-serif", letterSpacing:1 }}>{m.kenteken}</span>}
                     {isVerkocht && <span style={{ ...css.badge(T.green) }}>Verkocht</span>}
                     {m.status==="gereserveerd" && !isVerkocht && <span style={{ ...css.badge(T.yellow) }}>Gereserveerd</span>}
                   </div>
@@ -2100,17 +2100,13 @@ export default function KlantApp({ userId }) {
     const timer = setTimeout(() => { if (actief) setLaden(false); }, 12000);
     const laadData = async () => {
       try {
-        const sindsVerkocht = lokaleDatum(new Date(Date.now() - 30 * 86400000));
         const [klantRes, afsprakenRes, instRes, vRes, pRes] = await Promise.all([
           supabase.from("klanten").select("*").eq("user_id", userId).maybeSingle(),
           supabase.rpc("get_bezette_dagen"),
           supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten").single(),
-          // Voorraad incl. recent verkochte motoren (30 dagen zichtbaar)
-          supabase.from("voorraad")
-            .select("id,merk,model,bouwjaar,km,km_eenheid,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
-            .neq("status", "verwijderd")
-            .or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY},verkocht_op.gte.${sindsVerkocht}`)
-            .order("created_at", { ascending: false }),
+          // Voorraad: te koop + 30 dagen na verkoop. Via een functie die alleen veilige kolommen
+          // geeft: geen klantnummer van de koper, en geen kenteken van verkochte motoren.
+          supabase.rpc("voorraad_overzicht"),
           supabase.from("producten").select("id,naam,omschrijving,prijs,fotos,categorie").eq("actief", true).order("created_at", { ascending: false }),
         ]);
         if (!actief) return;
@@ -2128,7 +2124,7 @@ export default function KlantApp({ userId }) {
         if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
         if (inst?.diensten_tarieven) setDienstenTarieven(inst.diensten_tarieven);
         if (inst?.afspraak_soorten?.length) setAfspraakSoorten(inst.afspraak_soorten);
-        setVooraad((vRes.data || []).filter(m => m.verkocht_op ? true : m.status !== "niet_beschikbaar"));
+        setVooraad(vRes.data || []);
         setProducten(pRes.data || []);
 
         if (klantData?.status !== "goedgekeurd") return;
