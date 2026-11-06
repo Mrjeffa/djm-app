@@ -104,6 +104,9 @@ function AppInner() {
   const bezig = useRef(false)
   const inReset = useRef(false)
   const heeftSessie = useRef(false)
+  const huidigeGebruiker = useRef(null)  // user-id van de verwerkte sessie
+  const huidigeToken = useRef(null)
+  const laatsteAdminCheck = useRef(0)
 
   // Verwerk admin-resultaat: null (timeout) = onzeker, behoud huidige waarde
   const verwerkAdmin = (isAdmin) => {
@@ -122,8 +125,14 @@ function AppInner() {
     }
     setLaden(true)
     setSessie(session)
-    await koppelKlant(session.user)
-    verwerkAdmin(await checkIsAdmin(session.user.id))
+    huidigeGebruiker.current = session.user.id
+    huidigeToken.current = session.access_token
+    laatsteAdminCheck.current = Date.now()
+    // Eerst kijken of dit de beheerder is: alleen klanten krijgen een klantrecord
+    // (voorheen maakte de koppeling er ook een aan voor het admin-account).
+    const isAdmin = await checkIsAdmin(session.user.id)
+    if (isAdmin === false) await koppelKlant(session.user)
+    verwerkAdmin(isAdmin)
     heeftSessie.current = true
     bezig.current = false
     setLaden(false)
@@ -147,29 +156,39 @@ function AppInner() {
         bezig.current = false
         inReset.current = false
         heeftSessie.current = false
+        huidigeGebruiker.current = null
+        huidigeToken.current = null
         setSessie(null)
         setAdmin(false)
         setReset(false)
         setLaden(false)
         clearCachedAdmin()
       } else if (event === 'SIGNED_IN' && !inReset.current) {
-        if (heeftSessie.current) {
-          // Stille update bij app-wisselen of schermvergrendeling — geen laadscherm
-          setSessie(session)
-          // Herbevestig admin op achtergrond; null-timeout doet niets
-          checkIsAdmin(session.user.id).then(verwerkAdmin).catch(() => {})
+        if (heeftSessie.current && huidigeGebruiker.current === session.user.id) {
+          // Zelfde gebruiker: Supabase meldt SIGNED_IN opnieuw bij terugkeren naar de app.
+          // Geen laadscherm en geen nieuwe queries; alleen bijwerken als de token wisselde.
+          if (huidigeToken.current !== session.access_token) {
+            huidigeToken.current = session.access_token
+            setSessie(session)
+          }
+          // Admin-rol hooguit eens per 10 minuten herbevestigen (null-timeout doet niets)
+          if (Date.now() - laatsteAdminCheck.current > 10 * 60_000) {
+            laatsteAdminCheck.current = Date.now()
+            checkIsAdmin(session.user.id).then(verwerkAdmin).catch(() => {})
+          }
         } else {
           await verwerkSessie(session)
         }
       } else if (event === 'TOKEN_REFRESHED') {
+        huidigeToken.current = session?.access_token || null
         setSessie(session)
       }
     })
 
-    // Vangnet: na 12s altijd doorgaan + reset bezig zodat events niet geblokkeerd raken
-    // Na 12s altijd laden stoppen. heeftSessie op true zodat SIGNED_IN daarna
-    // nooit meer een nieuw laadscherm start — anders loopt het in cirkels.
-    const vannet = setTimeout(() => { setLaden(false); heeftSessie.current = true }, 12000)
+    // Vangnet: na 12s altijd laden stoppen en events weer doorlaten. (heeftSessie wordt
+    // alleen gezet als er echt een sessie verwerkt is; een latere SIGNED_IN van een
+    // andere gebruiker loopt zo altijd door de volledige controle.)
+    const vannet = setTimeout(() => { setLaden(false); bezig.current = false }, 12000)
     return () => { subscription.unsubscribe(); clearTimeout(vannet) }
   }, [])
 

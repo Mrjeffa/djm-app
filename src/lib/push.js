@@ -52,11 +52,16 @@ export const zetPushAan = async () => {
   // Oude aanmelding met een andere sleutel: eerst afmelden
   const oudeSleutel = sub?.options?.applicationServerKey;
   if (sub && oudeSleutel && new Uint8Array(oudeSleutel).join() !== sleutel.join()) { await sub.unsubscribe(); sub = null; }
+  const nieuw = !sub;
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: sleutel });
   const j = sub.toJSON();
   const { error: dbFout } = await supabase.from("push_abonnementen")
     .upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, apparaat: apparaatNaam() }, { onConflict: "endpoint" });
-  if (dbFout) throw new Error("Aanmelden opslaan mislukt: " + dbFout.message);
+  if (dbFout) {
+    // Niet opgeslagen: de browser-aanmelding terugdraaien, anders lijkt push aan te staan
+    if (nieuw) { try { await sub.unsubscribe(); } catch { /* al weg */ } }
+    throw new Error("Aanmelden opslaan mislukt: " + dbFout.message);
+  }
 };
 
 export const zetPushUit = async () => {

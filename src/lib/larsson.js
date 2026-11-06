@@ -82,6 +82,16 @@ export const zoekLarssonLink = async (merk, model, bouwjaar) => {
 };
 
 // Fallback: gerichte zoekopdracht op de leverancierssite via Google.
+// Geeft de URL terug als het een http(s)-adres is, anders null.
+export const veiligeUrl = (u) => {
+  const tekst = typeof u === "string" ? u.trim() : "";
+  if (!tekst) return null;
+  try {
+    const url = new URL(tekst);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch { return null; }
+};
+
 export const larssonZoekFallback = (merk, model) => {
   const q = encodeURIComponent([merk, model].filter(Boolean).join(" ").trim());
   return `https://www.google.com/search?q=${q}+site%3Amike2.larsson.nl`;
@@ -95,7 +105,9 @@ export const openOnderdelen = async ({ merk, model, bouwjaar, handmatig }) => {
   // blijft het nieuwe tabblad leeg. We verbreken de opener-koppeling ná het
   // navigeren, zodat de Larsson-pagina onze app niet kan benaderen.
   const tab = window.open("", "_blank");
-  let url = handmatig && handmatig.trim() ? handmatig.trim() : null;
+  // Alleen gewone webadressen: een "javascript:"-link in dit (eigen) tabblad zou
+  // anders met de rechten van de app draaien. Klanten kunnen dit veld zelf invullen.
+  let url = veiligeUrl(handmatig);
   if (!url) {
     try { url = await zoekLarssonLink(merk, model, bouwjaar); } catch { url = null; }
   }

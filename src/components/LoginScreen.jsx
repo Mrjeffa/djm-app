@@ -63,12 +63,23 @@ export default function LoginScreen() {
   const wrap = { display:'flex', alignItems:'flex-start', justifyContent:'center', minHeight:'100dvh', background:T.bg, padding:'20px 16px', fontFamily:'Barlow, sans-serif', boxSizing:'border-box' }
   const card = { background:T.surf, border:`1px solid ${T.border}`, borderRadius:10, padding:'24px 20px' }
 
+  // Supabase-foutmeldingen vertalen; onbekende fouten niet letterlijk tonen
+  const authFout = (error, standaard) => {
+    const m = `${error?.code || ''} ${error?.message || ''}`.toLowerCase()
+    if (/email_not_confirmed|not confirmed/.test(m)) return 'Je e-mailadres is nog niet bevestigd. Klik op de link in de bevestigingsmail (kijk ook bij spam).'
+    if (/rate|too many|over_email_send_rate|429/.test(m) || error?.status === 429) return 'Te veel pogingen. Wacht een paar minuten en probeer het opnieuw.'
+    if (/fetch|network|failed to fetch|load failed/.test(m)) return 'Geen verbinding. Controleer je internet en probeer het opnieuw.'
+    if (/already registered|already exists|user_already_exists/.test(m)) return 'Er bestaat al een account met dit e-mailadres. Log in of kies "Wachtwoord vergeten".'
+    if (/weak|password should/.test(m)) return 'Kies een sterker wachtwoord (minimaal 8 tekens, niet te voorspelbaar).'
+    return standaard
+  }
+
   const login = async () => {
-    if (!email || !ww) return
+    if (!email || !ww || laden) return
     setLaden(true); setFout(null)
-    const { error } = await supabase.auth.signInWithPassword({ email, password: ww })
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: ww })
     setLaden(false)
-    if (error) setFout('E-mailadres of wachtwoord klopt niet.')
+    if (error) setFout(authFout(error, 'E-mailadres of wachtwoord klopt niet.'))
   }
 
   const registreer = async () => {
@@ -80,9 +91,10 @@ export default function LoginScreen() {
     if (ww.length < 8) { setFout('Wachtwoord minimaal 8 tekens.'); return }
     if (ww !== ww2) { setFout('Wachtwoorden komen niet overeen.'); return }
     if (!akkoord) { setFout('Ga akkoord met het privacybeleid en de algemene voorwaarden om een account aan te maken.'); return }
+    if (laden) return
     setLaden(true); setFout(null)
     const { error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password: ww,
       options: {
         data: {
@@ -98,15 +110,18 @@ export default function LoginScreen() {
       }
     })
     setLaden(false)
-    if (error) { setFout('Fout: ' + error.message); return }
+    if (error) { setFout(authFout(error, 'Aanmelden lukte niet. Probeer het opnieuw of neem contact met ons op.')); return }
     setTab('register_ok')
   }
 
   const resetWW = async () => {
     if (!email) { setFout('Vul eerst je e-mailadres in.'); return }
+    if (laden) return
     setLaden(true); setFout(null)
-    await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin })
     setLaden(false)
+    // Een onbekend e-mailadres geeft geen fout (zo is niet te achterhalen wie een account heeft)
+    if (error) { setFout(authFout(error, 'Versturen lukte niet. Probeer het over een paar minuten opnieuw.')); return }
     setTab('reset_ok')
   }
 

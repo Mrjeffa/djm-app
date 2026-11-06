@@ -68,6 +68,11 @@ for t in AFGESCHERMD:
     zichtbaar = status == 200 and body.strip() not in ("[]", "")
     controleer(f"tabel {t}", not zichtbaar, f"HTTP {status}, {'rijen zichtbaar!' if zichtbaar else 'niets zichtbaar'}")
 
+# Recent verkochte motoren (kenteken, koper-id) alleen voor ingelogde gebruikers
+status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select=id,kenteken,verkocht_aan&verkocht_op=not.is.null&limit=1")
+zichtbaar = status == 200 and body.strip() not in ("[]", "")
+controleer("verkochte voorraad", not zichtbaar, f"HTTP {status}, {'rijen zichtbaar!' if zichtbaar else 'niets zichtbaar'}")
+
 for f, args in RPC_VERBODEN.items():
     status, body, _ = verzoek("POST", f"{URL}/rest/v1/rpc/{f}", args)
     controleer(f"rpc {f}", status >= 400, f"HTTP {status}")
