@@ -32,6 +32,7 @@ RPC_VERBODEN = {
     "bewaak_klanten_mutaties": {},
     "bewaak_afspraken_mutaties": {},
     "get_bezette_dagen": {},
+    "voorraad_overzicht": {},
 }
 # Edge functions die alleen voor admins zijn (lege opdracht: doet niets, ook als het lek zou zijn).
 EDGE_ALLEEN_ADMIN = {
@@ -68,10 +69,14 @@ for t in AFGESCHERMD:
     zichtbaar = status == 200 and body.strip() not in ("[]", "")
     controleer(f"tabel {t}", not zichtbaar, f"HTTP {status}, {'rijen zichtbaar!' if zichtbaar else 'niets zichtbaar'}")
 
-# Recent verkochte motoren (kenteken, koper-id) alleen voor ingelogde gebruikers
-status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select=id,kenteken,verkocht_aan&verkocht_op=not.is.null&limit=1")
-zichtbaar = status == 200 and body.strip() not in ("[]", "")
-controleer("verkochte voorraad", not zichtbaar, f"HTTP {status}, {'rijen zichtbaar!' if zichtbaar else 'niets zichtbaar'}")
+# Voorraad: de website mag motoren tonen (ook 30 dagen na verkoop), maar kenteken en
+# klantnummer van de koper zijn voor een bezoeker niet op te vragen (kolomrechten).
+for kolom in ("kenteken", "verkocht_aan", "*"):
+    status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select={kolom}&limit=1")
+    zichtbaar = status == 200 and body.strip() not in ("[]", "")
+    controleer(f"voorraad kolom {kolom}", not zichtbaar, f"HTTP {status}, {'leesbaar!' if zichtbaar else 'afgeschermd'}")
+status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select=id,merk,model,prijs,fotos,status,verkocht_op&limit=1")
+controleer("website kan voorraad lezen", status == 200, f"HTTP {status}")
 
 for f, args in RPC_VERBODEN.items():
     status, body, _ = verzoek("POST", f"{URL}/rest/v1/rpc/{f}", args)
