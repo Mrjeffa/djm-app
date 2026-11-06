@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { openOnderdelen, larssonZoekFallback, preloadLarsson } from "../lib/larsson.js";
+import { openOnderdelen, larssonZoekFallback, preloadLarsson, veiligeUrl } from "../lib/larsson.js";
 import { openAutoScout } from "../lib/autoscout.js";
 // Zelfde beoordeling als de wekelijkse prijscheck-mail (gedeeld met de edge function)
 import { beoordeel, MIN_MARGE } from "../../supabase/functions/voorraad-prijscheck/logica.ts";
@@ -65,7 +65,7 @@ const WSTART = 540; const WEND = 1020; // 09:00 - 17:00
 const MIDI_MIN = 780; // 13:00 — middag begint na lunch (12-13)
 // Lokale datum (niet toISOString — dat is UTC en verschuift 's nachts een dag)
 const lokaleDatum = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-const TODAY = lokaleDatum();
+let TODAY = lokaleDatum(); // bijgewerkt als de app over middernacht open blijft (zie AdminApp)
 const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
@@ -76,6 +76,8 @@ const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","inste
 // een aparte tabel (afspraken_intern) die alleen de beheerder kan lezen; klanten
 // kunnen hun eigen afspraken wel lezen, maar niet wat jij erbij noteert.
 const AFSPRAAK_VELDEN = "*, klanten(naam), motoren(merk, model, kenteken), afspraken_intern(opmerking)";
+// Naam die de agenda bij een afspraak toont
+const klantLabel = (x) => x.type==="proefrit" ? (x.naam||"Proefrit") : x.type==="intern" ? (x.naam||"Intern") : (x.klanten?.naam||x.naam||"Onbekend");
 const internVan = (a) => { const i = Array.isArray(a?.afspraken_intern) ? a.afspraken_intern[0] : a?.afspraken_intern; return i?.opmerking ?? null; };
 
 // ── Cloudinary ── (verkleinen/uploaden: src/lib/foto.js)
@@ -145,10 +147,15 @@ const bandStatus = (jaren) => {
   return               { kleur: T.green,   icon: "✓", label: `${jaren.toFixed(1)} jr` };
 };
 
+// "JJJJ-MM-DD" als lokale datum (new Date("JJJJ-MM-DD") is UTC-middernacht: rond de
+// overgang zomer-/wintertijd schoof een week of periode dan een dag op)
+const lokaleDag = str => { const [y,m,d]=String(str).split("-").map(Number); return new Date(y,(m||1)-1,d||1); };
+const plusDagen = (str, n) => { const d=lokaleDag(str); d.setDate(d.getDate()+n); return lokaleDatum(d); };
+
 const getWeekDates = base => {
-  const d = new Date(base); const day = d.getDay();
+  const d = lokaleDag(base); const day = d.getDay();
   const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
-  return Array.from({length:6},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i); return x.toISOString().split("T")[0]; });
+  return Array.from({length:6},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i); return lokaleDatum(x); });
 };
 
 const LUNCH_SLOTS = new Set([720, 750, 780]); // 12:00, 12:30, 13:00 — lunchpauze
@@ -269,7 +276,8 @@ function UitnodigingModal({klant, onClose}){
     setBezig(true);
     try {
       const { stuurUitnodiging } = await import("../lib/supabase.js");
-      await stuurUitnodiging(klant.email);
+      const { error } = await stuurUitnodiging(klant.email);
+      if (error) throw error;
       setStap("email_verzonden");
     } catch(e) {
       alert("Fout bij versturen: " + e.message);
@@ -354,6 +362,9 @@ function UitnodigingModal({klant, onClose}){
 function KlantModal({onSave, onClose, voorraad=[]}){
   const [f,setF]=useState({naam:"",email:"",telefoon:"",adres:"",postcode:"",woonplaats:""});
   const [opgeslagen,setOpgeslagen]=useState(null);
+  const [fout,setFout]=useState("");
+  const [bezig,setBezig]=useState(false);
+  const beschikbaar=voorraad.filter(m=>!m.verkocht_op);
   const [motorKeuze,setMotorKeuze]=useState(null); // null | "voorraad" | "nieuw"
   const [geselecteerdeVoorraad,setGeselecteerdeVoorraad]=useState(null);
   // eigen motor velden
@@ -386,7 +397,7 @@ function KlantModal({onSave, onClose, voorraad=[]}){
   };
 
   const sla_op = async () => {
-    if(!f.naam||!f.email) return;
+    if(!f.naam||!f.email||bezig) return;
     let motor = null;
     if(motorKeuze==="voorraad" && geselecteerdeVoorraad) {
       motor = {...geselecteerdeVoorraad, aankoopdatum: TODAY};
@@ -394,8 +405,11 @@ function KlantModal({onSave, onClose, voorraad=[]}){
       motor = {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:naarBedrag(motorF.km)||0};
     }
     // Eerst wachten tot de klant echt is opgeslagen, pas dan de uitnodigingsflow tonen
-    await onSave({...f, motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
-    setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email});
+    setBezig(true); setFout("");
+    const err = await onSave({...f, email:f.email.trim().toLowerCase(), motor, verwijderUitVoorraad: motorKeuze==="voorraad"&&geselecteerdeVoorraad?.id});
+    setBezig(false);
+    if(err){ setFout(err); return; }
+    setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email.trim().toLowerCase()});
   };
 
   return(
@@ -427,11 +441,11 @@ function KlantModal({onSave, onClose, voorraad=[]}){
       {/* Uit voorraad */}
       {motorKeuze==="voorraad"&&(
         <div>
-          {voorraad.length===0?(
+          {beschikbaar.length===0?(
             <div style={{fontSize:13,color:T.muted,padding:"10px 0"}}>Geen motors in voorraad</div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {voorraad.map(m=>(
+              {beschikbaar.map(m=>(
                 <div key={m.id} onClick={()=>setGeselecteerdeVoorraad(m)}
                   style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${geselecteerdeVoorraad?.id===m.id?T.accent:T.border}`,background:geselecteerdeVoorraad?.id===m.id?`${T.accent}20`:"transparent",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
@@ -469,7 +483,8 @@ function KlantModal({onSave, onClose, voorraad=[]}){
         </div>
       )}
 
-      <ModalFooter onClose={onClose} label="Opslaan" onClick={sla_op}/>
+      {fout&&<div style={{fontSize:12,color:T.red,marginTop:12}}>⚠ {fout}</div>}
+      <ModalFooter onClose={onClose} label={bezig?"Opslaan…":"Opslaan"} disabled={bezig} onClick={sla_op}/>
     </Modal>
   );
 }
@@ -1688,7 +1703,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
                   <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
                   {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString("nl-NL")} km`:""}</div>}
                   {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{a.soort}</div>}
-                  <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{a.omschrijving?` · ${a.omschrijving}`:""}</div>
+                  <div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.duur}u{(a.opmerking||a.omschrijving)?` · ${a.opmerking||a.omschrijving}`:""}</div>
                 </div>
               </div>
             );
@@ -1708,7 +1723,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
                     <div style={{fontSize:14,fontWeight:500}}>{a.klant}</div>
                     {label&&<div style={{fontSize:12,color:T.accent,marginTop:1}}>{label}{km?` · ${km.toLocaleString("nl-NL")} km`:""}</div>}
                     {a.soort&&<div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{a.soort}</div>}
-                    {a.omschrijving&&<div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.omschrijving}</div>}
+                    {(a.opmerking||a.omschrijving)&&<div style={{fontSize:12,color:T.muted,marginTop:1}}>{a.opmerking||a.omschrijving}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
                     <div style={{fontSize:12,color:T.accent}}>{fmtDate(a.datum)}</div>
@@ -2434,7 +2449,7 @@ function PrijscheckBlok({motor:m, onCheck}){
                   <div key={titel} style={{display:"flex",flexDirection:"column",gap:2,margin:"4px 0"}}>
                     <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{titel}</div>
                     {lijst.map((c,i)=>(
-                      <a key={i} href={c.url||pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                      <a key={i} href={veiligeUrl(c.url||pc.mo_url)||undefined} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
                         {euro(c.prijs)} · {km(c.km)} · {c.dealer||"onbekend"} ↗
                       </a>
                     ))}
@@ -2442,7 +2457,7 @@ function PrijscheckBlok({motor:m, onCheck}){
                 ))}
               </details>
             )}
-            {pc.mo_url&&<a href={pc.mo_url} target="_blank" rel="noopener noreferrer" style={{color:T.muted}}>Motoroccasion ↗</a>}
+            {veiligeUrl(pc.mo_url)&&<a href={veiligeUrl(pc.mo_url)} target="_blank" rel="noopener noreferrer" style={{color:T.muted}}>Motoroccasion ↗</a>}
             {pc.mo_model&&<span>vergeleken met {pc.mo_model} {m.bouwjaar}</span>}
           </div>
         </>
@@ -3391,8 +3406,8 @@ function AgendaPage({afspraken,klanten,voorraad,onAddAfspraak,onEditAfspraak,onD
     return {label:[motor.merk,motor.model].filter(Boolean).join(" ")||null,km:lastKm,kenteken:motor.kenteken||null};
   };
   const weekDates=getWeekDates(weekBase);
-  const prev=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()-7);setWeekBase(d.toISOString().split("T")[0]);};
-  const next=()=>{const d=new Date(weekDates[0]);d.setDate(d.getDate()+7);setWeekBase(d.toISOString().split("T")[0]);};
+  const prev=()=>setWeekBase(plusDagen(weekDates[0],-7));
+  const next=()=>setWeekBase(plusDagen(weekDates[0],7));
   // Dynamic grid range: expand for internals that fall outside 9-17
   const weekApts=geplandAfspraken.filter(a=>weekDates.includes(a.datum)&&a.tijd);
   const minAptStart=weekApts.length>0?Math.min(...weekApts.map(a=>timeToMin(a.tijd))):WSTART;
@@ -3856,7 +3871,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
+function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -3978,13 +3993,8 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
   const voegPeriodeToe = () => {
     if(!periodeVan||!periodeTot||periodeVan>periodeTot) return;
     const datums = [];
-    const cur = new Date(periodeVan);
-    const end = new Date(periodeTot);
-    while(cur <= end) {
-      datums.push(cur.toISOString().split("T")[0]);
-      cur.setDate(cur.getDate()+1);
-    }
-    datums.forEach(d => onToggleGesloten(d, true));
+    for(let d=periodeVan; d<=periodeTot && datums.length<400; d=plusDagen(d,1)) datums.push(d);
+    onVoegGeslotenToe(datums); // in één keer opslaan (los per dag gaf een race: dagen vielen weg)
     setPeriodeVan(""); setPeriodeTot("");
   };
 
@@ -4435,7 +4445,7 @@ function InkoopPrijsBlok({lead, model}){
         {advies&&kolom("Inkoop", `${euro(advies.openingsbod)} – ${euro(advies.max)}`, "openingsbod – max")}
       </div>
       {!advies&&lead.mo_url&&(
-        <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:8,fontSize:12,color:T.muted}}>
+        <a href={veiligeUrl(lead.mo_url)||undefined} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:8,fontSize:12,color:T.muted}}>
           Zelf bekijken op Motoroccasion ↗
         </a>
       )}
@@ -4446,7 +4456,7 @@ function InkoopPrijsBlok({lead, model}){
             {gekopieerd?"✓ Gekopieerd":`Kopieer bod (${euro(advies.bod)})`}
           </button>
           {lead.mo_url&&(
-            <a href={lead.mo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.muted}}>
+            <a href={veiligeUrl(lead.mo_url)||undefined} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.muted}}>
               Motoroccasion ↗
             </a>
           )}
@@ -4460,7 +4470,7 @@ function InkoopPrijsBlok({lead, model}){
                   <div key={groep} style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
                     <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{titel}</div>
                     {lijst.map((v,i)=>(
-                      <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
+                      <a key={i} href={veiligeUrl(v.url)||undefined} target="_blank" rel="noopener noreferrer" style={{color:T.text,textDecoration:"none"}}>
                         {euro(v.prijs)} · {v.bouwjaar} · {Number(v.km).toLocaleString("nl-NL")} km{v.titel?` · ${v.titel}`:""} ↗
                       </a>
                     ))}
@@ -4621,7 +4631,7 @@ function InkoopRadarPage({leads=[], status=null, populair=[], bewaarDagen=5, onU
               </div>
               <div style={{flex:1,padding:"12px 14px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
-                  <a href={l.url} target="_blank" rel="noopener noreferrer"
+                  <a href={veiligeUrl(l.url)||undefined} target="_blank" rel="noopener noreferrer"
                     style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17,lineHeight:1.2,color:T.text,textDecoration:"none",minWidth:0,overflowWrap:"anywhere"}}>
                     {l.titel} ↗
                   </a>
@@ -4693,32 +4703,58 @@ export default function AdminApp(){
   const [inkoopStatus,setInkoopStatus]=useState(null);
   const [inkoopPopulair,setInkoopPopulair]=useState([]);
   const [laden,setLaden]=useState(true);
+  // App over middernacht open laten (PWA, of een tabblad op de werkplaats-pc): "vandaag" bijwerken
+  const [,setVandaag]=useState(TODAY);
+  useEffect(()=>{
+    const check=()=>{ if(lokaleDatum()!==TODAY){ TODAY=lokaleDatum(); setVandaag(TODAY); } };
+    document.addEventListener("visibilitychange",check);
+    const iv=setInterval(check,5*60*1000);
+    return ()=>{ document.removeEventListener("visibilitychange",check); clearInterval(iv); };
+  },[]);
 
   // ── Opruimen van verlopen records (30 dagen na verkoop/verwijdering) ──
   // Draait ná het eerste scherm, zodat de gebruiker er nooit op hoeft te wachten.
   const ruimVerlopenOp = async (sb, verlopenVoorraad) => {
-    for(const m of (verlopenVoorraad||[])){
-      // Migreer voorraad_service naar service_beurten vóór delete, zodat service bij klant motor blijft
-      if(m.verkocht_aan){
-        const {data:klantMotor} = await sb.from("motoren").select("id").eq("source_voorraad_id",m.id).maybeSingle();
-        if(klantMotor){
-          const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",m.id);
-          if(vs?.length){
-            const {data:existing} = await sb.from("service_beurten").select("datum,omschrijving,km").eq("motor_id",klantMotor.id);
-            const toMigrate=vs.filter(s=>!(existing||[]).some(e=>e.datum===s.datum&&e.omschrijving===s.omschrijving&&String(e.km||"")===String(s.km||"")));
-            if(toMigrate.length) await sb.from("service_beurten").insert(toMigrate.map(s=>({motor_id:klantMotor.id,datum:s.datum,omschrijving:s.omschrijving,km:s.km,voorband_datum:s.voorband_datum||null,achterband_datum:s.achterband_datum||null})));
+    const lijst = verlopenVoorraad||[];
+    if(lijst.length){
+      // 1. Servicegeschiedenis van verkochte motoren naar de klantmotor kopiëren vóór het verwijderen
+      //    (in een paar verzoeken voor alle motoren samen i.p.v. per motor).
+      const verkocht = lijst.filter(m=>m.verkocht_aan).map(m=>m.id);
+      if(verkocht.length){
+        const [{data:klantMotoren}, {data:vs}] = await Promise.all([
+          sb.from("motoren").select("id,source_voorraad_id").in("source_voorraad_id",verkocht),
+          sb.from("voorraad_service").select("*").in("voorraad_motor_id",verkocht),
+        ]);
+        const klantMotorVan = new Map((klantMotoren||[]).map(km=>[km.source_voorraad_id,km.id]));
+        if(vs?.length && klantMotorVan.size){
+          const {data:bestaand} = await sb.from("service_beurten").select("motor_id,datum,omschrijving,km").in("motor_id",[...klantMotorVan.values()]);
+          const sleutel = (motorId,x)=>`${motorId}|${x.datum}|${x.omschrijving}|${x.km??""}`;
+          const al = new Set((bestaand||[]).map(e=>sleutel(e.motor_id,e)));
+          const nieuw = vs.filter(x=>klantMotorVan.has(x.voorraad_motor_id)&&!al.has(sleutel(klantMotorVan.get(x.voorraad_motor_id),x)))
+            .map(x=>({motor_id:klantMotorVan.get(x.voorraad_motor_id),datum:x.datum,omschrijving:x.omschrijving,km:x.km,voorband_datum:x.voorband_datum||null,achterband_datum:x.achterband_datum||null}));
+          if(nieuw.length){
+            const {error} = await sb.from("service_beurten").insert(nieuw);
+            if(error){ console.error("Service kopiëren mislukt, opruimen overgeslagen:", error); return; }
           }
         }
       }
-      const urls=(m.fotos||[]).filter(Boolean);
+      // 2. Verwijderen; foto's pas weg als de rij echt weg is
+      let weg = [];
+      const {data, error} = await sb.from("voorraad").delete().in("id",lijst.map(m=>m.id)).select("id");
+      if(!error) weg = (data||[]).map(r=>r.id);
+      else for(const m of lijst){ // één rij die niet weg mag (koppeling) blokkeert dan niet de rest
+        const {data:d} = await sb.from("voorraad").delete().eq("id",m.id).select("id");
+        if(d?.length) weg.push(m.id);
+      }
+      const urls = lijst.filter(m=>weg.includes(m.id)).flatMap(m=>(m.fotos||[]).filter(Boolean));
       if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
-      await sb.from("voorraad").delete().eq("id",m.id);
     }
-    const verlopenProd = await sb.from("producten").select("id,fotos").lte("fotos_bewaren_tot",TODAY);
-    for(const p of (verlopenProd.data||[])){
-      const urls=(p.fotos||[]).filter(Boolean);
+    const {data:verlopenProd} = await sb.from("producten").select("id,fotos").lte("fotos_bewaren_tot",TODAY);
+    if(verlopenProd?.length){
+      const {data:wegProd} = await sb.from("producten").delete().in("id",verlopenProd.map(p=>p.id)).select("id");
+      const wegIds = new Set((wegProd||[]).map(r=>r.id));
+      const urls = verlopenProd.filter(p=>wegIds.has(p.id)).flatMap(p=>(p.fotos||[]).filter(Boolean));
       if(urls.length) sb.functions.invoke("cloudinary-delete",{body:{urls}});
-      await sb.from("producten").delete().eq("id",p.id);
     }
   };
 
@@ -4734,7 +4770,10 @@ export default function AdminApp(){
         // Verkochte motoren blijven 30 dagen zichtbaar — op basis van verkocht_op,
         // niet van fotos_bewaren_tot (die kan ontbreken bij foto-loze motoren).
         const grens30 = lokaleDatum(new Date(Date.now()-30*86400000));
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData] = await Promise.all([
+        // Alles in één ronde tegelijk ophalen (voorheen drie rondes na elkaar).
+        // Motoren/km/service: alles in één keer (admin ziet alles) i.p.v. .in(klant_id, …):
+        // bij honderden klanten wordt die URL te lang voor de server.
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData, mot, km, svc, inst] = await Promise.all([
           alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id")),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           alleRijen(()=>sb.from("afspraken").select(AFSPRAAK_VELDEN).gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
@@ -4749,6 +4788,11 @@ export default function AdminApp(){
           sb.from("voorraad_inkoop").select("voorraad_id,inkoopprijs"),   // aparte tabel: alleen admin leesbaar
           sb.from("voorraad_prijscheck").select("*"),                      // laatste Motoroccasion-check per motor
           sb.from("voorraad_intern").select("voorraad_id,opmerking"),      // interne opmerkingen: alleen admin leesbaar
+          // Gerichte kolomselecties: historie-tabellen groeien het hardst.
+          alleRijen(()=>sb.from("motoren").select("*").not("klant_id","is",null).order("created_at").order("id")),
+          alleRijen(()=>sb.from("km_historie").select("motor_id,datum,km").order("datum").order("id")),
+          alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin,voorband_datum,achterband_datum").order("datum",{ascending:false}).order("id")),
+          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag").single(),
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
@@ -4760,49 +4804,37 @@ export default function AdminApp(){
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
 
-        let verrijkt = (k.data||[]).map(klant=>({...klant, motoren:[]}));
-
-        if(verrijkt.length > 0){
-          // Gerichte kolomselecties: historie-tabellen groeien het hardst.
-          // Alle motoren in één keer (admin ziet alles) i.p.v. .in(klant_id, …):
-          // bij honderden klanten wordt die URL te lang voor de server.
-          const [mot, km, svc] = await Promise.all([
-            alleRijen(()=>sb.from("motoren").select("*").not("klant_id","is",null).order("created_at").order("id")),
-            alleRijen(()=>sb.from("km_historie").select("motor_id,datum,km").order("datum").order("id")),
-            alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin").order("datum",{ascending:false}).order("id")),
-          ]);
-          // Eén keer groeperen i.p.v. per klant/motor door alle rijen te zoeken
-          const motorenPerKlant = groepeer(mot.data||[], "klant_id");
-          const kmPerMotor = groepeer(km.data||[], "motor_id");
-          const svcPerMotor = groepeer(svc.data||[], "motor_id");
-          const vrdSvcPerMotor = groepeer(vsData.data||[], "voorraad_motor_id");
-          verrijkt = (k.data||[]).map(klant=>({
-            ...klant,
-            motoren: (motorenPerKlant.get(klant.id)||[]).map(m=>{
-              const klantSvc = (svcPerMotor.get(m.id)||[]).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin}));
-              // Merge voorraad service history via source link, skip records already copied on sale
-              const vrdSvc = m.source_voorraad_id
-                ? (vrdSvcPerMotor.get(m.source_voorraad_id)||[]).filter(x=>!klantSvc.some(ks=>ks.datum===x.datum&&ks.omschrijving===x.omschrijving&&String(ks.km)===String(x.km))).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true}))
-                : [];
-              return {
-                ...m,
-                kmHistory: (kmPerMotor.get(m.id)||[]).map(x=>({datum:x.datum,km:x.km})),
-                service: [...klantSvc,...vrdSvc].sort((a,b)=>(b.datum||"").localeCompare(a.datum||"")),
-              };
-            })
-          }));
-        }
+        // Eén keer groeperen i.p.v. per klant/motor door alle rijen te zoeken
+        const motorenPerKlant = groepeer(mot.data||[], "klant_id");
+        const kmPerMotor = groepeer(km.data||[], "motor_id");
+        const svcPerMotor = groepeer(svc.data||[], "motor_id");
+        const vrdSvcPerMotor = groepeer(vsData.data||[], "voorraad_motor_id");
+        const verrijkt = (k.data||[]).map(klant=>({
+          ...klant,
+          motoren: (motorenPerKlant.get(klant.id)||[]).map(m=>{
+            const klantSvc = (svcPerMotor.get(m.id)||[]).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:x.klant_invoer,interval_gereset:x.interval_gereset,gezien_admin:x.gezien_admin,voorband_datum:x.voorband_datum,achterband_datum:x.achterband_datum}));
+            // Service uit de voorraadtijd (via source_voorraad_id), zonder wat bij verkoop al is gekopieerd
+            const vrdSvc = m.source_voorraad_id
+              ? (vrdSvcPerMotor.get(m.source_voorraad_id)||[]).filter(x=>!klantSvc.some(ks=>ks.datum===x.datum&&ks.omschrijving===x.omschrijving&&String(ks.km)===String(x.km))).map(x=>({id:x.id,datum:x.datum,omschrijving:x.omschrijving,km:x.km,klant_invoer:false,interval_gereset:false,gezien_admin:true,van_voorraad:true,voorband_datum:x.voorband_datum,achterband_datum:x.achterband_datum}))
+              : [];
+            return {
+              ...m,
+              kmHistory: (kmPerMotor.get(m.id)||[]).map(x=>({datum:x.datum,km:x.km})),
+              service: [...klantSvc,...vrdSvc].sort((a,b)=>(b.datum||"").localeCompare(a.datum||"")),
+            };
+          })
+        }));
 
         setKlanten(verrijkt);
         setKlussen(klusData.data||[]);
-        const voorraadSvc = vsData.data||[];
         setShowroom((v.data||[]).map(m=>({...m, chassis_nummer: chassisMap[m.id]||null,
           inkoopprijs: vInkoopMap[m.id]??null, prijscheck: prijscheckMap[m.id]||null, interne_opmerking: internMap[m.id]||null,
-          service: voorraadSvc.filter(s=>s.voorraad_motor_id===m.id)})));
+          service: vrdSvcPerMotor.get(m.id)||[]})));
         setProducten(pData.data||[]);
+        const voorraadOpId = new Map((v.data||[]).map(m=>[m.id,m]));
         setAfspraken((a.data||[]).map(x=>{
           const isProefrit=x.type==="proefrit";
-          const proefritMotor=isProefrit&&x.voorraad_motor_id?(v.data||[]).find(m=>m.id===x.voorraad_motor_id):null;
+          const proefritMotor=isProefrit&&x.voorraad_motor_id?voorraadOpId.get(x.voorraad_motor_id):null;
           return{...x,
             interne_opmerking:internVan(x),
             klant:isProefrit?(x.naam||"Proefrit"):x.type==="intern"?(x.naam||"Intern"):x.klanten?.naam||"Onbekend",
@@ -4811,8 +4843,7 @@ export default function AdminApp(){
           };
         }));
 
-        // Instellingen laden
-        const inst = await sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag").single();
+        // Instellingen
         if(inst.data?.gesloten_dagen) setGeslotenDagen(inst.data.gesloten_dagen);
         if(inst.data?.openingstijden) setOpeningstijden(inst.data.openingstijden);
         if(inst.data?.opmerking !== undefined) setOpmerking(inst.data.opmerking || "");
@@ -4846,9 +4877,12 @@ export default function AdminApp(){
       sb.from("inkoop_radar_status").select("*").maybeSingle(),
       sb.from("inkoop_populair").select("*").order("rang",{ascending:true}),
     ]);
-    setInkoopLeads(leadsRes.data||[]);
-    setInkoopStatus(statusRes.data||null);
-    setInkoopPopulair(populairRes.data||[]);
+    // Mislukt ophalen (bv. geen netwerk): de bestaande lijst laten staan i.p.v. leeg maken
+    if(!leadsRes.error) setInkoopLeads(leadsRes.data||[]);
+    if(!statusRes.error) setInkoopStatus(statusRes.data||null);
+    if(!populairRes.error) setInkoopPopulair(populairRes.data||[]);
+    const fout = leadsRes.error||statusRes.error||populairRes.error;
+    if(fout) console.error("Inkoop herladen mislukt:", fout);
   };
 
   const updateLeadStatus = async (adId, nieuweStatus) => {
@@ -4877,11 +4911,13 @@ export default function AdminApp(){
 
   const addKlant = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const {data:klant} = await sb.from("klanten").insert({
+    const {data:klant, error} = await sb.from("klanten").insert({
       naam:f.naam, email:f.email, telefoon:f.telefoon||"",
-      adres:f.adres||"", postcode:f.postcode||"", woonplaats:f.woonplaats||""
+      adres:f.adres||"", postcode:f.postcode||"", woonplaats:f.woonplaats||"",
+      status:"goedgekeurd", // door de beheerder zelf aangemaakt
     }).select().single();
-    if(!klant) return;
+    if(error||!klant) return /duplicate|unique/i.test(error?.message||"") ? "Er bestaat al een klant met dit e-mailadres." : "Opslaan mislukt: "+(error?.message||"onbekende fout");
+    let melding = null;
     let motoren = [];
     if(f.motor){
       const src = f.motor;
@@ -4897,12 +4933,20 @@ export default function AdminApp(){
         if(beginKm){ await sb.from("km_historie").insert({motor_id:motor.id,km:beginKm,datum:TODAY}); }
         motoren = [{...motor,kmHistory:beginKm?[{datum:TODAY,km:beginKm}]:[],service:[]}];
         if(f.verwijderUitVoorraad){
-          await sb.from("voorraad").update({verkocht_op:TODAY,verkocht_aan:klant.id}).eq("id",f.verwijderUitVoorraad);
-          setShowroom(p=>p.filter(m=>m.id!==f.verwijderUitVoorraad));
+          const vm = showroom.find(m=>m.id===f.verwijderUitVoorraad);
+          const bewaar = new Date(); bewaar.setDate(bewaar.getDate()+30);
+          const verkochtVelden = {verkocht_op:TODAY, verkocht_aan:klant.id, status:"verkocht",
+            fotos_bewaren_tot:(vm?.fotos||[]).length>0 ? lokaleDatum(bewaar) : null};
+          const {error:vErr} = await sb.from("voorraad").update(verkochtVelden).eq("id",f.verwijderUitVoorraad);
+          if(vErr) console.error("Voorraad als verkocht markeren mislukt:", vErr);
+          else setShowroom(p=>p.map(m=>m.id===f.verwijderUitVoorraad?{...m,...verkochtVelden}:m));
         }
-      }
+      } else melding = "Klant opgeslagen, maar de motor niet. Voeg die bij de klant opnieuw toe.";
     }
-    setKlanten(p=>[...p,{...klant,motoren}]);
+    // Realtime kan de nieuwe klant al hebben toegevoegd (kanaal admin-klanten)
+    setKlanten(p=>p.some(k=>k.id===klant.id) ? p.map(k=>k.id===klant.id?{...k,...klant,motoren}:k) : [...p,{...klant,motoren}]);
+    if(melding) alert(melding);
+    return null;
   };
 
   const updateKlant = async (u) => {
@@ -5091,7 +5135,7 @@ export default function AdminApp(){
 
   const addVoorraadMotor = async (f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const {data:v} = await sb.from("voorraad").insert({
+    const {data:v, error:insertFout} = await sb.from("voorraad").insert({
       kenteken:f.kenteken, merk:f.merk, model:f.model||"",
       bouwjaar:parseInt(f.bouwjaar)||0, km:naarKm(naarBedrag(f.km)||0, f.km_eenheid), km_eenheid:f.km_eenheid==="mijl"?"mijl":"km",
       prijs:naarBedrag(f.prijs)||0, datum_in:f.datum_in||TODAY,
@@ -5102,7 +5146,13 @@ export default function AdminApp(){
       uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
       status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
-    if(v){
+    if(insertFout||!v){
+      // Niet opgeslagen: de al geüploade foto's weer opruimen
+      if((f.fotos||[]).length) verwijderCloudinaryFotos(f.fotos);
+      alert("Motor opslaan mislukt: "+(insertFout?.message||"onbekende fout"));
+      return;
+    }
+    {
       if(f.chassis_nummer) await bewaarChassis(sb, v.id, f.chassis_nummer);
       const inkoopprijs = naarInkoop(f.inkoopprijs);
       if(inkoopprijs!=null) await bewaarInkoop(sb, v.id, inkoopprijs);
@@ -5137,8 +5187,14 @@ export default function AdminApp(){
     // als die pas ná het laden van de app is gemaakt (bv. door de maandagcheck).
     const checkVerouderd = !huidig || ["merk","model","bouwjaar","km"].some(k=>String(huidig[k]??"")!==String(waarden[k]));
     const interne_opmerking = (f.interne_opmerking||"").trim() || null;
+    // Eerst de motor zelf: lukt dat niet, dan niets anders wijzigen en geen foto's weggooien
+    const {error:updateFout} = await sb.from("voorraad").update(waarden).eq("id",id);
+    if(updateFout){
+      if(nieuweUrls.length) verwijderCloudinaryFotos(nieuweUrls);
+      alert("Wijzigingen opslaan mislukt: "+updateFout.message);
+      return;
+    }
     await Promise.all([
-      sb.from("voorraad").update(waarden).eq("id",id),
       bewaarChassis(sb, id, f.chassis_nummer||null),
       inkoopprijs!==oudeInkoop ? bewaarInkoop(sb, id, inkoopprijs) : null,
       interne_opmerking!==(huidig?.interne_opmerking??null) ? bewaarIntern(sb, id, interne_opmerking) : null,
@@ -5155,18 +5211,19 @@ export default function AdminApp(){
     const sb = (await import("../lib/supabase.js")).supabase;
     const k = klanten.find(k=>k.id===klantId);
     if(!k) return;
-    const bewarenTot = new Date(TODAY); bewarenTot.setDate(bewarenTot.getDate()+30);
-    const bewarenStr = bewarenTot.toISOString().split("T")[0];
-    await sb.from("voorraad").update({
+    const bewarenStr = plusDagen(TODAY,30);
+    const {error:verkoopFout} = await sb.from("voorraad").update({
       verkocht_op:TODAY, verkocht_aan:klantId, status:"verkocht",
       fotos_bewaren_tot:(motor.fotos||[]).length>0 ? bewarenStr : null,
     }).eq("id",motor.id);
-    const {data:nieuwMotor} = await sb.from("motoren").insert({
+    if(verkoopFout){ alert("Verkoop opslaan mislukt: "+verkoopFout.message+". Er is niets gewijzigd."); return null; }
+    const {data:nieuwMotor, error:motorFout} = await sb.from("motoren").insert({
       klant_id:klantId,kenteken:motor.kenteken,merk:motor.merk,
       model:motor.model||"",bouwjaar:motor.bouwjaar||0,aankoopdatum:TODAY,
       chassis_nummer:motor.chassis_nummer||null, // koper mag het chassisnummer van zijn eigen motor zien
       source_voorraad_id:motor.id,
     }).select().single();
+    if(motorFout) alert("Motor is als verkocht gemarkeerd, maar kon niet aan de klant worden gekoppeld: "+motorFout.message+". Voeg hem bij de klant handmatig toe.");
     if(nieuwMotor){
       // Kopieer voorraad servicehistorie naar klant motor
       const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",motor.id);
@@ -5183,37 +5240,66 @@ export default function AdminApp(){
     return nieuwMotor||null; // klant-motor teruggeven zodat de verkoop-workflow er afspraken op kan plannen
   };
 
+  // Servicebeurten van een klantmotor naar de voorraad kopiëren (inruil / terugkopen), zodat
+  // ze niet verdwijnen als de klantmotor wordt verwijderd (service_beurten gaan dan mee weg).
+  // Wat er al staat (bv. van vóór de verkoop) wordt niet dubbel gekopieerd.
+  const kopieerServiceNaarVoorraad = async (sb, motorId, voorraadId) => {
+    const [{data:svc, error:e1}, {data:al, error:e2}] = await Promise.all([
+      sb.from("service_beurten").select("datum,omschrijving,km,voorband_datum,achterband_datum").eq("motor_id",motorId),
+      sb.from("voorraad_service").select("datum,omschrijving,km").eq("voorraad_motor_id",voorraadId),
+    ]);
+    if(e1||e2) return {fout:e1||e2, rijen:[]};
+    const sleutel = x=>`${x.datum}|${x.omschrijving}|${x.km??""}`;
+    const bestaand = new Set((al||[]).map(sleutel));
+    const nieuw = (svc||[]).filter(x=>!bestaand.has(sleutel(x))).map(x=>({voorraad_motor_id:voorraadId,datum:x.datum,omschrijving:x.omschrijving,km:x.km,voorband_datum:x.voorband_datum||null,achterband_datum:x.achterband_datum||null}));
+    if(!nieuw.length) return {fout:null, rijen:[]};
+    const {data, error} = await sb.from("voorraad_service").insert(nieuw).select();
+    return {fout:error, rijen:data||[]};
+  };
+
   const terugkopenMotor = async (motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("voorraad").update({
+    // De klantmotor die bij deze verkoop is aangemaakt (niet zoeken op kenteken: dat kan leeg of gewijzigd zijn)
+    const {data:recs} = motor.verkocht_aan
+      ? await sb.from("motoren").select("id").eq("source_voorraad_id",motor.id).eq("klant_id",motor.verkocht_aan)
+      : {data:[]};
+    const rid = recs?.[0]?.id || null;
+    let extraSvc = [];
+    if(rid){
+      const {fout, rijen} = await kopieerServiceNaarVoorraad(sb, rid, motor.id);
+      if(fout){ alert("Terugkopen gestopt: servicehistorie kon niet worden overgezet. Probeer het opnieuw."); return; }
+      extraSvc = rijen;
+    }
+    const {error} = await sb.from("voorraad").update({
       verkocht_op:null, verkocht_aan:null, fotos_bewaren_tot:null, status:"beschikbaar",
     }).eq("id",motor.id);
-    if(motor.verkocht_aan){
-      const {data:recs} = await sb.from("motoren").select("id").eq("klant_id",motor.verkocht_aan).eq("kenteken",motor.kenteken);
-      if(recs?.length>0){
-        const rid=recs[0].id;
-        await sb.from("motoren").delete().eq("id",rid);
-        setKlanten(prev=>prev.map(k=>k.id===motor.verkocht_aan?{...k,motoren:k.motoren.filter(m=>m.id!==rid)}:k));
-      }
+    if(error){ alert("Terugkopen mislukt: "+error.message); return; }
+    if(rid){
+      const {error:delErr} = await sb.from("motoren").delete().eq("id",rid);
+      if(delErr) console.error("Klantmotor verwijderen mislukt:", delErr);
+      else setKlanten(prev=>prev.map(k=>k.id===motor.verkocht_aan?{...k,motoren:k.motoren.filter(m=>m.id!==rid)}:k));
     }
-    setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:null,verkocht_aan:null,fotos_bewaren_tot:null,status:"beschikbaar"}:m));
+    setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:null,verkocht_aan:null,fotos_bewaren_tot:null,status:"beschikbaar",service:[...extraSvc,...(m.service||[])]}:m));
   };
 
   const inruilMotorVanKlant = async (klantId, motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const latestKm = motor.kmHistory?.length ? motor.kmHistory[motor.kmHistory.length-1].km : (motor.km||0);
-    const {data:v} = await sb.from("voorraad").insert({
+    const latestKm = (motor.kmHistory||[]).reduce((max,k)=>Math.max(max,Number(k.km)||0),0);
+    const {data:v, error} = await sb.from("voorraad").insert({
       kenteken: motor.kenteken||"", merk: motor.merk||"", model: motor.model||"",
-      bouwjaar: motor.bouwjaar||0, km: latestKm, prijs: 0,
+      bouwjaar: motor.bouwjaar||0, km: latestKm, km_eenheid: "km", prijs: 0,
       datum_in: TODAY, fotos: [], status: "niet_beschikbaar",
       voorband_datum: motor.voorband_datum||null, achterband_datum: motor.achterband_datum||null,
       voorband_maat: motor.voorband_maat||null, achterband_maat: motor.achterband_maat||null,
     }).select().single();
-    if(v){
-      if(motor.chassis_nummer) await bewaarChassis(sb, v.id, motor.chassis_nummer);
-      setShowroom(p=>[{...v, chassis_nummer:motor.chassis_nummer||null},...p]);
-    }
-    await sb.from("motoren").delete().eq("id",motor.id);
+    // Mislukt: de klantmotor NIET verwijderen, anders is hij nergens meer
+    if(error||!v){ alert("Inruilen mislukt: "+(error?.message||"onbekende fout")+". Er is niets gewijzigd."); return; }
+    if(motor.chassis_nummer) await bewaarChassis(sb, v.id, motor.chassis_nummer);
+    const {fout, rijen} = await kopieerServiceNaarVoorraad(sb, motor.id, v.id);
+    setShowroom(p=>[{...v, chassis_nummer:motor.chassis_nummer||null, service:rijen},...p]);
+    if(fout){ alert("De motor staat in de voorraad, maar de servicehistorie kon niet worden overgezet. De klantmotor is daarom bewaard; verwijder hem later zelf."); return; }
+    const {error:delErr} = await sb.from("motoren").delete().eq("id",motor.id);
+    if(delErr){ console.error("Klantmotor verwijderen mislukt:", delErr); return; }
     setKlanten(prev=>prev.map(k=>k.id===klantId?{...k,motoren:(k.motoren||[]).filter(m=>m.id!==motor.id)}:k));
   };
 
@@ -5225,8 +5311,7 @@ export default function AdminApp(){
 
   const deleteVoorraadMotor = async (motor) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
-    const datum = bewaren_tot.toISOString().split("T")[0];
+    const datum = plusDagen(TODAY,30);
     await sb.from("voorraad").update({status:"verwijderd",fotos_bewaren_tot:datum}).eq("id",motor.id);
     setShowroom(p=>p.filter(m=>m.id!==motor.id));
   };
@@ -5251,16 +5336,14 @@ export default function AdminApp(){
 
   const deleteProduct = async (prod) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
-    const datum = bewaren_tot.toISOString().split("T")[0];
+    const datum = plusDagen(TODAY,30);
     await sb.from("producten").update({actief:false, fotos_bewaren_tot:datum}).eq("id",prod.id);
     setProducten(p=>p.map(x=>x.id===prod.id?{...x,actief:false,fotos_bewaren_tot:datum}:x));
   };
 
   const verkochProduct = async (prod) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const bewaren_tot = new Date(); bewaren_tot.setDate(bewaren_tot.getDate()+30);
-    const datum = bewaren_tot.toISOString().split("T")[0];
+    const datum = plusDagen(TODAY,30);
     await sb.from("producten").update({verkocht_op:TODAY, fotos_bewaren_tot:datum}).eq("id",prod.id);
     setProducten(p=>p.map(x=>x.id===prod.id?{...x,verkocht_op:TODAY,fotos_bewaren_tot:datum}:x));
   };
@@ -5318,7 +5401,11 @@ export default function AdminApp(){
         datum: datumStr,
         tijd: f.tijd,
         duur: parseInt(f.duur)||1,
-        opmerking: f.type==="intern" ? (f.klant||"") : (f.omschrijving||""),
+        // Intern: de beschrijving staat in naam (titel in de agenda); is er een klant gekozen,
+        // dan is die de titel en gaat de beschrijving mee in de opmerking (ging eerder verloren)
+        opmerking: f.type==="intern"
+          ? [f.naam&&f.naam!=="Intern"&&f.naam!==f.klant?f.naam:null, f.omschrijving].filter(Boolean).join(" — ")
+          : (f.omschrijving||""),
         status: "gepland",
         type: f.type||"service",
         naam: f.type==="proefrit"?(f.naam||""):f.type==="intern"?(f.klant||"Intern"):null,
@@ -5341,7 +5428,9 @@ export default function AdminApp(){
       const motor = f.type==="proefrit"&&f.voorraad_motor_id ? showroom.find(m=>m.id===f.voorraad_motor_id) : null;
       const motorLabel = motor ? `${motor.merk} ${motor.model}` : null;
       const displayKlant = f.type==="proefrit" ? (f.naam||"Proefrit") : (klantNaam||f.klant||"");
-      setAfspraken(p=>[...p,...nieuweRijen.map(afs=>({...afs,klant:displayKlant,naam:afs.naam,omschrijving:f.omschrijving,motorLabel}))]);
+      // Realtime (kanaal admin-afspraken) kan een deel al hebben toegevoegd: die vervangen, niet verdubbelen
+      const nieuweIds = new Set(nieuweRijen.map(r=>r.id));
+      setAfspraken(p=>[...p.filter(a=>!nieuweIds.has(a.id)),...nieuweRijen.map(afs=>({...afs,klant:displayKlant,naam:afs.naam,omschrijving:f.omschrijving,motorLabel}))]);
       if(f.type==="proefrit"&&f.voorraad_motor_id){
         await sb.from("voorraad").update({status:"gereserveerd"}).eq("id",f.voorraad_motor_id);
         setShowroom(p=>p.map(m=>m.id===f.voorraad_motor_id?{...m,status:"gereserveerd"}:m));
@@ -5377,10 +5466,11 @@ export default function AdminApp(){
     await (opm
       ? sb.from("afspraken_intern").upsert({ afspraak_id: f.afspraakId, opmerking: opm })
       : sb.from("afspraken_intern").delete().eq("afspraak_id", f.afspraakId));
-    const { data: updatedAfs } = await sb.from("afspraken").update({
+    const { data: updatedAfs, error: afwerkFout } = await sb.from("afspraken").update({
       status: "afgewerkt",
     }).eq("id", f.afspraakId).select(AFSPRAAK_VELDEN).single();
-    if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, interne_opmerking: internVan(updatedAfs), klant: updatedAfs.klanten?.naam||"Onbekend", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:null} : a));
+    if(afwerkFout){ alert("Afwerken mislukt: "+afwerkFout.message); return; }
+    if(updatedAfs) setAfspraken(p => p.map(a => a.id===f.afspraakId ? {...updatedAfs, interne_opmerking: internVan(updatedAfs), klant: klantLabel(updatedAfs), naam: updatedAfs.naam||"", motorLabel: updatedAfs.motoren?[updatedAfs.motoren.merk,updatedAfs.motoren.model].filter(Boolean).join(" ")||null:(a.motorLabel||null)} : a));
 
     // Service registreren bij klant motor
     if(f.motorId){
@@ -5392,13 +5482,23 @@ export default function AdminApp(){
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
-      const { data: svc } = await sb.from("service_beurten").insert(svcData).select().single();
+      const { data: svc, error: svcFout } = await sb.from("service_beurten").insert(svcData).select().single();
+      if(svcFout) alert("Afspraak is afgewerkt, maar de servicebeurt kon niet worden opgeslagen: "+svcFout.message+". Voeg hem bij de klant handmatig toe.");
       if(svc){
+        // Net als "Service toevoegen": km-stand en interval bijwerken
+        const kmVal = svcData.km;
+        if(kmVal){
+          await Promise.all([
+            sb.from("motoren").update({last_service_km:kmVal}).eq("id",f.motorId),
+            sb.from("km_historie").insert({motor_id:f.motorId, km:kmVal, datum:f.datum}),
+          ]);
+        }
         setKlanten(prev => prev.map(k => ({
           ...k,
           motoren: (k.motoren||[]).map(m => {
             if(m.id !== f.motorId) return m;
-            const updated = {...m, service:[...(m.service||[]),svc]};
+            const updated = {...m, service:[svc,...(m.service||[])]}; // nieuwste eerst, zoals bij laden
+            if(kmVal){ updated.last_service_km = kmVal; updated.kmHistory = [...(m.kmHistory||[]), {datum:f.datum, km:kmVal}]; }
             if(f.voorband_datum) updated.voorband_datum = f.voorband_datum;
             if(f.achterband_datum) updated.achterband_datum = f.achterband_datum;
             return updated;
@@ -5423,11 +5523,12 @@ export default function AdminApp(){
         voorband_datum: f.voorband_datum||null,
         achterband_datum: f.achterband_datum||null,
       };
-      const { data: svc } = await sb.from("voorraad_service").insert(svcData).select().single();
+      const { data: svc, error: svcFout } = await sb.from("voorraad_service").insert(svcData).select().single();
+      if(svcFout) alert("Afspraak is afgewerkt, maar de servicebeurt kon niet worden opgeslagen: "+svcFout.message);
       if(svc){
-        setShowroom(p=>p.map(m=>m.id===f.voorraadMotorId?{...m,service:[...(m.service||[]),svc]}:m));
+        setShowroom(p=>p.map(m=>m.id===f.voorraadMotorId?{...m,service:[svc,...(m.service||[])]}:m));
         // Als de voorraad motor is verkocht, ook zichtbaar maken bij de gekoppelde klant motor
-        const svcEntry={id:svc.id,datum:svc.datum,omschrijving:svc.omschrijving,km:svc.km,klant_invoer:false,interval_gereset:false,gezien_admin:false,van_voorraad:true};
+        const svcEntry={id:svc.id,datum:svc.datum,omschrijving:svc.omschrijving,km:svc.km,klant_invoer:false,interval_gereset:false,gezien_admin:true,van_voorraad:true,voorband_datum:svc.voorband_datum,achterband_datum:svc.achterband_datum};
         setKlanten(prev=>prev.map(k=>({...k,motoren:(k.motoren||[]).map(m=>m.source_voorraad_id===f.voorraadMotorId?{...m,service:[svcEntry,...(m.service||[])]}:m)})));
         if(f.voorband_datum||f.achterband_datum){
           const upd = {};
@@ -5560,14 +5661,20 @@ export default function AdminApp(){
     setAfspraken(p=>p.filter(a=>!(a.herhaal_groep_id===afspraak.herhaal_groep_id&&a.datum>=afspraak.datum)));
   };
 
-  const toggleGeslotenDag = async (datum, blokkeer) => {
+  // Gesloten dagen: lees-wijzig-schrijf op de actuele lijst in de database. Een periode gaat
+  // in één keer (voorheen per dag tegelijk: die overschreven elkaar en dagen vielen weg).
+  const wijzigGeslotenDagen = async (erbij=[], eraf=[]) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    const { data: inst } = await sb.from("instellingen").select("gesloten_dagen").single();
-    const huidig = inst?.gesloten_dagen || [];
-    const nieuw = blokkeer ? [...new Set([...huidig, datum])] : huidig.filter(d=>d!==datum);
-    await sb.from("instellingen").update({ gesloten_dagen: nieuw }).eq("id", 1);
+    const { data: inst, error: leesFout } = await sb.from("instellingen").select("gesloten_dagen").single();
+    if(leesFout){ alert("Gesloten dagen ophalen mislukt: "+leesFout.message); return; }
+    const weg = new Set(eraf);
+    const nieuw = [...new Set([...(inst?.gesloten_dagen||[]), ...erbij])].filter(d=>!weg.has(d)).sort();
+    const { error } = await sb.from("instellingen").update({ gesloten_dagen: nieuw }).eq("id", 1);
+    if(error){ alert("Opslaan mislukt: "+error.message); return; }
     setGeslotenDagen(nieuw);
   };
+  const toggleGeslotenDag = (datum, blokkeer) => blokkeer ? wijzigGeslotenDagen([datum]) : wijzigGeslotenDagen([], [datum]);
+  const voegGeslotenDagenToe = (datums) => wijzigGeslotenDagen(datums);
 
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
@@ -5591,32 +5698,37 @@ export default function AdminApp(){
   const slaInkoopDagenOp = async (dagen) => {
     const n = Math.max(1, Math.min(60, parseInt(dagen)||5));
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ inkoop_bewaar_dagen: n }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ inkoop_bewaar_dagen: n }).eq("id", 1);
+    if (error) { alert("Opslaan mislukt: " + error.message); throw new Error(error.message); }
     setInkoopBewaarDagen(n);
     return n;
   };
 
   const slaOpeningstijdenOp = async (tijden) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ openingstijden: tijden }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ openingstijden: tijden }).eq("id", 1);
+    if (error) { alert("Opslaan mislukt: " + error.message); throw new Error(error.message); }
     setOpeningstijden(tijden);
   };
 
   const slaOpmerkingOp = async (tekst) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ opmerking: tekst }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ opmerking: tekst }).eq("id", 1);
+    if (error) { alert("Opslaan mislukt: " + error.message); throw new Error(error.message); }
     setOpmerking(tekst);
   };
 
   const slaDienstenTarievenOp = async (tarieven) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ diensten_tarieven: tarieven }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ diensten_tarieven: tarieven }).eq("id", 1);
+    if (error) { alert("Opslaan mislukt: " + error.message); throw new Error(error.message); }
     setDienstenTarieven(tarieven);
   };
 
   const slaAfspraakSoortenOp = async (soorten) => {
     const sb = (await import("../lib/supabase.js")).supabase;
-    await sb.from("instellingen").update({ afspraak_soorten: soorten }).eq("id", 1);
+    const { error } = await sb.from("instellingen").update({ afspraak_soorten: soorten }).eq("id", 1);
+    if (error) { alert("Opslaan mislukt: " + error.message); throw new Error(error.message); }
     setAfspraakSoorten(soorten);
   };
 
@@ -5650,7 +5762,7 @@ export default function AdminApp(){
         {onConflict:"id",ignoreDuplicates:true}
       );
     }
-    const {data} = await alleRijen(()=>sb.from("klanten").select("*").order("id"));
+    const {data} = await alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id"));
     if(data) setKlanten(prev=>{
       const map = new Map(prev.map(k=>[k.id,k]));
       return data.map(d=>({...(map.get(d.id)||{motoren:[]}), ...d}));
@@ -5674,23 +5786,28 @@ export default function AdminApp(){
         );
       }
     }
+    // Zelfde selectie als bij het opstarten: geen verwijderde en geen lang geleden verkochte motoren
+    const grens30 = plusDagen(TODAY,-30);
     const [{data}, {data:chassisData}] = await Promise.all([
-      sb.from("voorraad").select("*").order("datum_in",{ascending:false}),
+      sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
       sb.from("voorraad_chassis").select("voorraad_id,chassis_nummer"),
     ]);
     if(data){
       const cMap = Object.fromEntries((chassisData||[]).map(c=>[c.voorraad_id,c.chassis_nummer]));
-      // Inkoopprijs en prijscheck staan in eigen tabellen; behoud wat we al hadden.
-      setShowroom(p=>data.map(m=>{
-        const oud=p.find(x=>x.id===m.id);
-        return {...m, chassis_nummer:cMap[m.id]||null, inkoopprijs:oud?.inkoopprijs??null, prijscheck:oud?.prijscheck||null, interne_opmerking:oud?.interne_opmerking??null};
-      }));
+      // Inkoopprijs, prijscheck, opmerking en service staan in eigen tabellen; behoud wat we al hadden.
+      setShowroom(p=>{
+        const oudOpId = new Map(p.map(x=>[x.id,x]));
+        return data.map(m=>{
+          const oud=oudOpId.get(m.id);
+          return {...m, chassis_nummer:cMap[m.id]||null, inkoopprijs:oud?.inkoopprijs??null, prijscheck:oud?.prijscheck||null, interne_opmerking:oud?.interne_opmerking??null, service:oud?.service||[]};
+        });
+      });
     }
   };
 
   // Realtime: nieuwe/gewijzigde/verwijderde afspraken van klanten
   useEffect(() => {
-    let sub;
+    let sub, gestopt = false;
     import("../lib/supabase.js").then(({ supabase: sb }) => {
       sub = sb.channel("admin-afspraken")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken" }, ({ new: n }) => {
@@ -5720,13 +5837,14 @@ export default function AdminApp(){
           setAfspraken(p => p.filter(a => a.id !== o.id));
         })
         .subscribe();
+      if(gestopt) sb.removeChannel(sub);
     });
-    return () => { if(sub) sub.unsubscribe(); };
+    return () => { gestopt = true; if(sub) import("../lib/supabase.js").then(({ supabase: sb }) => sb.removeChannel(sub)); };
   }, []);
 
   // Realtime: nieuwe klant-aanmeldingen (via trigger bij auth signup)
   useEffect(() => {
-    let sub;
+    let sub, gestopt = false;
     import("../lib/supabase.js").then(({ supabase: sb }) => {
       sub = sb.channel("admin-klanten")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "klanten" }, ({ new: n }) => {
@@ -5736,8 +5854,9 @@ export default function AdminApp(){
           setKlanten(p => p.map(k => k.id === n.id ? { ...k, ...n } : k));
         })
         .subscribe();
+      if(gestopt) sb.removeChannel(sub);
     });
-    return () => { if(sub) sub.unsubscribe(); };
+    return () => { gestopt = true; if(sub) import("../lib/supabase.js").then(({ supabase: sb }) => sb.removeChannel(sub)); };
   }, []);
 
   const nav=[
@@ -5764,7 +5883,7 @@ export default function AdminApp(){
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
+      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 

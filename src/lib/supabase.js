@@ -12,86 +12,26 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 })
 
 // ── Auth ─────────────────────────────────────────────────────
-export const stuurMagicLink = (email) =>
-  supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: window.location.origin,
-    }
-  })
-
 export const stuurUitnodiging = (email) =>
   supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin
   })
 
-export const uitloggen = () => supabase.auth.signOut()
-
-export const getSession = () => supabase.auth.getSession()
-
-// ── Klanten ──────────────────────────────────────────────────
-export const getKlanten = () =>
-  supabase.from('klanten').select('*, motoren(*)').order('naam')
-
-export const addKlant = (data) =>
-  supabase.from('klanten').insert(data).select().single()
-
-export const updateKlant = (id, data) =>
-  supabase.from('klanten').update(data).eq('id', id)
-
-// ── Motoren ──────────────────────────────────────────────────
-export const addMotor = (data) =>
-  supabase.from('motoren').insert(data).select().single()
-
-export const updateMotor = (id, data) =>
-  supabase.from('motoren').update(data).eq('id', id)
-
-// ── Km historie ──────────────────────────────────────────────
-export const addKmStand = (motor_id, km) =>
-  supabase.from('km_historie').insert({ motor_id, km, datum: new Date().toISOString().split('T')[0] })
-
-export const getKmHistorie = (motor_id) =>
-  supabase.from('km_historie').select('*').eq('motor_id', motor_id).order('datum')
-
-// ── Service ──────────────────────────────────────────────────
-export const addServiceBeurt = (data) =>
-  supabase.from('service_beurten').insert(data).select().single()
-
-export const getServiceBeurten = (motor_id) =>
-  supabase.from('service_beurten').select('*').eq('motor_id', motor_id).order('datum', { ascending: false })
-
-// ── Voorraad ─────────────────────────────────────────────────
-export const getVoorraad = () =>
-  supabase.from('voorraad').select('*').is('verkocht_op', null).order('created_at', { ascending: false })
-
-export const addVoorraad = (data) =>
-  supabase.from('voorraad').insert(data).select().single()
-
-export const verkoopVoorraad = (id, klant_id) =>
-  supabase.from('voorraad').update({ verkocht_op: new Date().toISOString().split('T')[0], verkocht_aan: klant_id }).eq('id', id)
-
-// ── Afspraken ────────────────────────────────────────────────
-export const getAfspraken = () =>
-  supabase.from('afspraken').select('*, klanten(naam), motoren(kenteken, merk, model)').order('datum')
-
-export const addAfspraak = (data) =>
-  supabase.from('afspraken').insert(data).select().single()
-
-// Volle dagen: via supabase.rpc('get_bezette_dagen') — een klant ziet door RLS alleen
-// zijn eigen afspraken, dus een directe query op afspraken mist andermans boekingen.
-
-// ── Instellingen ─────────────────────────────────────────────
-export const getInstellingen = () =>
-  supabase.from('instellingen').select('*').single()
-
-export const updateInstellingen = (data) =>
-  supabase.from('instellingen').update(data).eq('id', 1)
-
-// ── Admin check ───────────────────────────────────────────────
-export const isAdmin = async () => {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-  const { data } = await supabase.from('admins').select('id').eq('id', user.id).single()
-  return !!data
+// Uitloggen meldt ook de pushmeldingen van dit apparaat af: anders blijft een gedeeld of
+// overgedragen apparaat beheerdersmeldingen krijgen. Hooguit 3 s wachten, daarna gewoon uitloggen.
+const pushAfmelden = async () => {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  const reg = await navigator.serviceWorker.getRegistration()
+  const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null
+  if (!sub) return
+  await supabase.from('push_abonnementen').delete().eq('endpoint', sub.endpoint)
+  await sub.unsubscribe()
 }
+export const uitloggen = async () => {
+  try { await Promise.race([pushAfmelden(), new Promise(r => setTimeout(r, 3000))]) } catch { /* geen push */ }
+  return supabase.auth.signOut()
+}
+
+// Overige data-toegang staat in de componenten zelf (AdminApp/KlantApp) en gaat
+// via dit ene `supabase`-object; wat iemand mag lezen/schrijven bepaalt RLS in de
+// database (zie docs/ARCHITECTUUR.md). Volle dagen: supabase.rpc('get_bezette_dagen').

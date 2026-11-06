@@ -25,8 +25,12 @@ BEGIN
   r := public.maak_afspraak('Test Persoon', '0611111111', null, dag, 'service', null, 'test', null);
   uit := uit || format(E'%s website boekt lege dag: %s\n', CASE WHEN (r->>'success')::boolean THEN 'OK ' ELSE 'FOUT' END, r);
   IF private.max_afspraken_per_dag() = 1 THEN
-    r := public.maak_afspraak('Tweede Persoon', '0622222222', null, dag, 'service', null, 'test', null);
-    uit := uit || format(E'%s website boekt dezelfde (volle) dag: %s\n', CASE WHEN NOT (r->>'success')::boolean THEN 'OK ' ELSE 'FOUT' END, r->>'fout');
+    BEGIN
+      r := public.maak_afspraak('Tweede Persoon', '0622222222', null, dag, 'service', null, 'test', null);
+      uit := uit || format(E'FOUT website boekt dezelfde (volle) dag: %s\n', r);
+    EXCEPTION WHEN OTHERS THEN
+      uit := uit || format(E'OK  website boekt dezelfde (volle) dag: geweigerd ("%s")\n', SQLERRM);
+    END;
   END IF;
 
   -- 2. Klant: ziet de dag als vol en kan hem niet boeken

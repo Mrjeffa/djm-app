@@ -4,7 +4,7 @@
 // Bewust zuinig: alleen eigen bestanden worden gecachet, nooit Supabase/Cloudinary
 // (gegevens en inloggen gaan altijd live naar de server).
 
-const CACHE = "djm-v1";
+const CACHE = "djm-v2";
 const MAX_ASSETS = 80; // oude bestanden van eerdere versies opruimen
 
 self.addEventListener("install", (e) => {
@@ -35,7 +35,9 @@ self.addEventListener("fetch", (e) => {
     e.respondWith((async () => {
       try {
         const antwoord = await fetch(req);
-        if (antwoord.ok) (await caches.open(CACHE)).put("/", antwoord.clone());
+        // Alleen de app-pagina zelf bewaren (geen ander bestand dat in een tabblad werd geopend)
+        const type = antwoord.headers.get("content-type") || "";
+        if (antwoord.ok && !antwoord.redirected && type.includes("text/html")) (await caches.open(CACHE)).put("/", antwoord.clone());
         return antwoord;
       } catch {
         return (await caches.match("/")) || Response.error();
@@ -44,8 +46,20 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
+  // Iconen hebben geen hash in de naam: uit de cache tonen en op de achtergrond verversen
+  if (url.pathname.startsWith("/icons/")) {
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const bewaard = await cache.match(req);
+      const vers = fetch(req).then((a) => { if (a.ok) cache.put(req, a.clone()); return a; }).catch(() => null);
+      if (bewaard) { e.waitUntil(vers); return bewaard; }
+      return (await vers) || Response.error();
+    })());
+    return;
+  }
+
   // Bestanden met een hash in de naam veranderen nooit: uit de cache als ze er zijn
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
+  if (url.pathname.startsWith("/assets/")) {
     e.respondWith((async () => {
       const bewaard = await caches.match(req);
       if (bewaard) return bewaard;

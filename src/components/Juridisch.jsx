@@ -8,7 +8,7 @@ export const VOORWAARDEN_VERSIE = "2026-07";
 const BEDRIJF = {
   naam: "De Jonge Motoren",
   adres: "Stevinweg 14, Tholen",
-  email: "info@dejongemotor.nl",
+  email: "info@dejongemotoren.nl",
 };
 
 // Basis-styling (thema-kleuren via prop T, zodat het werkt in login én app)

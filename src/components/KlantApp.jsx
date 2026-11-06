@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase, uitloggen } from "../lib/supabase.js";
 import { JuridischModal, CookieBanner } from "./Juridisch.jsx";
 import { naarBedrag } from "../lib/getal.js";
@@ -32,7 +32,10 @@ let T = {...T_LIGHT};
 // ── Utils ──────────────────────────────────────────────────────────────────
 // Lokale datum (niet toISOString — dat is UTC en verschuift 's nachts een dag)
 const lokaleDatum = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-const TODAY = lokaleDatum();
+let TODAY = lokaleDatum(); // wordt bijgewerkt als de app over middernacht open blijft (zie KlantApp)
+// localStorage/sessionStorage kunnen ontbreken of geblokkeerd zijn (privévenster, Safari-instellingen)
+const leesOpslag = (opslag, sleutel) => { try { return window[opslag].getItem(sleutel); } catch { return null; } };
+const schrijfOpslag = (opslag, sleutel, waarde) => { try { window[opslag].setItem(sleutel, waarde); } catch { /* niet beschikbaar */ } };
 
 const agendaDateStr = (datum, tijd, duur) => {
   if (!datum) return { start: "", end: "" };
@@ -46,7 +49,7 @@ const agendaDateStr = (datum, tijd, duur) => {
 const addToGoogleCalendar = (a) => {
   const { start, end } = agendaDateStr(a.datum, a.tijd, a.duur);
   const titel = encodeURIComponent(`Afspraak De Jonge Motoren${a.soort ? ` — ${a.soort}` : ""}`);
-  window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titel}&dates=${start}/${end}&location=De%20Jonge%20Motoren`, "_blank");
+  window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titel}&dates=${start}/${end}&location=De%20Jonge%20Motoren`, "_blank", "noopener");
 };
 
 const downloadICS = (a) => {
@@ -169,6 +172,10 @@ function MotorSelector({ motoren, selected, onSelect }) {
   );
 }
 
+// Huidige km-stand = hoogste geregistreerde stand (niet de laatst ingevoerde rij:
+// een oude beurt achteraf invoeren mag de stand niet terugzetten).
+const hoogsteKm = (hist = []) => hist.reduce((max, k) => Math.max(max, Number(k.km) || 0), 0);
+
 // ── Scherm: Mijn Motor ─────────────────────────────────────────────────────
 function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe, onNaarInstellingen }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
@@ -194,7 +201,7 @@ function MijnMotor({ motoren, selMotorId, onSelMotor, onVoegServiceToe, onNaarIn
     </div>
   );
 
-  const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
+  const huidigKm = hoogsteKm(motor.kmHistory);
   const lastServiceKm = motor.last_service_km || 0;
   const intervalKm = motor.interval_km || 5000;
   const kmSindsBeurt = (lastServiceKm > 0 && motor.service?.length > 0) ? huidigKm - lastServiceKm : null;
@@ -441,16 +448,18 @@ function KmStand({ motoren, selMotorId, onSelMotor, onSlaOp }) {
   const motor = motoren.find(m => m.id === selMotorId) || motoren[0];
   if (!motor) return null;
 
-  const huidigKm = motor.kmHistory.length ? motor.kmHistory[motor.kmHistory.length - 1].km : 0;
+  const huidigKm = hoogsteKm(motor.kmHistory);
 
+  const [fout, setFout] = useState("");
   const opslaan = async () => {
     const km = parseInt(nieuwKm);
-    if (!km || km <= huidigKm) return;
-    setBezig(true);
-    await onSlaOp(motor.id, km);
+    if (bezig || !km || km <= huidigKm) return;
+    setBezig(true); setFout("");
+    const err = await onSlaOp(motor.id, km);
+    setBezig(false);
+    if (err) { setFout(err); return; }
     setNieuwKm("");
     setOpgeslagen(true);
-    setBezig(false);
     setTimeout(() => setOpgeslagen(false), 2500);
   };
 
@@ -475,10 +484,11 @@ function KmStand({ motoren, selMotorId, onSelMotor, onSlaOp }) {
         {opgeslagen ? (
           <div style={{ ...css.btn, background: T.green, textAlign: "center", borderRadius: 8, padding: 13, fontSize: 15, fontWeight: 600, cursor: "default" }}>✓ Opgeslagen!</div>
         ) : (
-          <button style={{ ...css.btn, opacity: (!nieuwKm || parseInt(nieuwKm) <= huidigKm || bezig) ? 0.4 : 1 }} onClick={opslaan}>
+          <button disabled={bezig} style={{ ...css.btn, opacity: (!nieuwKm || parseInt(nieuwKm) <= huidigKm || bezig) ? 0.4 : 1 }} onClick={opslaan}>
             {bezig ? "Opslaan..." : "Opslaan"}
           </button>
         )}
+        {fout && <div style={{ fontSize: 12, color: T.red, marginTop: 10 }}>{fout}</div>}
       </div>
 
       <div style={css.card}>
@@ -728,7 +738,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     setFotoBezig(false);
   };
 
-  const SOORTEN_MET_MOTOR = ["schade", "consignatie", "winterstalling", "seizoenscheck"];
+  const SOORTEN_MET_MOTOR = ["schade", "consignatie", "winterstalling", "seizoensklaarmaak"];
   const stuur = async (soort) => {
     setBezig(true); setFout(null);
     const data = { ...f };
@@ -1073,9 +1083,9 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
         </a>
       </div>
       {[
-        { icon: "📞", label: "Bellen", sub: "Direct contact", href: "tel:+31140000000", color: T.accent },
-        { icon: "💬", label: "WhatsApp", sub: "Stuur een bericht", href: "https://wa.me/31140000000", color: "#25D366" },
-        { icon: "✉", label: "E-mail", sub: "dejongemotor@email.nl", href: "mailto:info@dejongemotor.nl", color: T.muted },
+        { icon: "📞", label: "Bellen", sub: "0166-606090", href: "tel:+31166606090", color: T.accent },
+        { icon: "💬", label: "WhatsApp", sub: "06-21908697", href: "https://wa.me/31621908697", color: "#25D366" },
+        { icon: "✉", label: "E-mail", sub: "info@dejongemotoren.nl", href: "mailto:info@dejongemotoren.nl", color: T.muted },
       ].map((c, i) => (
         <a key={i} href={c.href}
           style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px", background: T.surf, border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, textDecoration: "none", color: T.text }}>
@@ -1589,7 +1599,7 @@ function ServiceTab({ motoren, selMotorId, onSelMotor, bezetteDagen, geslotenDag
           motoren={motoren} selMotorId={selMotorId} onSelMotor={onSelMotor}
           bezetteDagen={bezetteDagen} geslotenDagen={geslotenDagen} openingstijden={openingstijden}
           afspraakSoorten={afspraakSoorten}
-          onSlaOp={async (f) => { await onSlaAfspraakOp(f); setAfspraakOpen(false); }}
+          onSlaOp={onSlaAfspraakOp}
         />
       </div>
     );
@@ -1750,7 +1760,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], beze
             </div>
           </div>
           <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:22, color: isVerkocht ? T.green : T.accent, flexShrink:0, marginLeft:8 }}>
-            {isVerkocht ? "Verkocht" : `€${motor.prijs?.toLocaleString()}`}
+            {isVerkocht ? "Verkocht" : motor.prijs != null ? `€${Number(motor.prijs).toLocaleString("nl-NL")}` : "Prijs op aanvraag"}
           </div>
         </div>
         <div style={{ fontSize:12, color:T.muted, lineHeight:1.8 }}>
@@ -1828,7 +1838,7 @@ function VoorraadTab({ voorraad, producten = [], klant, geslotenDagen = [], beze
                   </div>
                 </div>
                 <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:800, fontSize:28, color: isVerkocht ? T.green : T.accent, flexShrink:0, marginLeft:12 }}>
-                  {isVerkocht ? "Verkocht" : `€${m.prijs?.toLocaleString()}`}
+                  {isVerkocht ? "Verkocht" : m.prijs != null ? `€${Number(m.prijs).toLocaleString("nl-NL")}` : "Prijs op aanvraag"}
                 </div>
               </div>
 
@@ -2050,8 +2060,8 @@ export default function KlantApp({ userId }) {
   const [tab, setTab] = useState("motor");
   const [klant, setKlant] = useState(null);
   const [motoren, setMotoren] = useState([]);
-  const [selMotorId, setSelMotorId] = useState(() => sessionStorage.getItem("djm_sel_motor"));
-  const [hoofdMotorId, setHoofdMotorId] = useState(() => localStorage.getItem("djm_hoofd_motor"));
+  const [selMotorId, setSelMotorId] = useState(() => leesOpslag("sessionStorage", "djm_sel_motor"));
+  const [hoofdMotorId, setHoofdMotorId] = useState(() => leesOpslag("localStorage", "djm_hoofd_motor"));
   const [bezetteDagen, setBezetteDagen] = useState([]);
   const [geslotenDagen, setGeslotenDagen] = useState([]);
   const [openingstijden, setOpeningstijden] = useState(null);
@@ -2067,8 +2077,8 @@ export default function KlantApp({ userId }) {
 
   const [autoOpenMotorForm, setAutoOpenMotorForm] = useState(false);
 
-  const kiesMotor = (id) => { sessionStorage.setItem("djm_sel_motor", id); setSelMotorId(id); };
-  const kiesHoofdMotor = (id) => { localStorage.setItem("djm_hoofd_motor", id); setHoofdMotorId(id); kiesMotor(id); };
+  const kiesMotor = (id) => { schrijfOpslag("sessionStorage", "djm_sel_motor", id || ""); setSelMotorId(id); };
+  const kiesHoofdMotor = (id) => { schrijfOpslag("localStorage", "djm_hoofd_motor", id || ""); setHoofdMotorId(id); kiesMotor(id); };
 
   const naarMotorToevoegen = () => { setAutoOpenMotorForm(true); setTab("instellingen"); };
 
@@ -2076,130 +2086,142 @@ export default function KlantApp({ userId }) {
     ? [...motoren].sort((a, b) => a.id === hoofdMotorId ? -1 : b.id === hoofdMotorId ? 1 : 0)
     : motoren;
 
+  // Laden in drie rondes, alles binnen een ronde tegelijk:
+  //  1. klantrecord + instellingen + volle dagen + voorraad + producten (onafhankelijk)
+  //  2. eigen afspraken + motoren (hebben het klant-id nodig; alleen als goedgekeurd)
+  //  3. km-historie + servicebeurten van die motoren
+  // Het koppelen van een account aan een vooraf aangemaakt klantrecord gebeurt al bij het
+  // aanmelden (database-trigger handle_new_auth_user) en bij het inloggen (App.jsx).
+  const [laadFout, setLaadFout] = useState(false);
+  const [laadPoging, setLaadPoging] = useState(0);
+  const bezetteDagenOpgehaald = useRef(0);
   useEffect(() => {
-    const timer = setTimeout(() => setLaden(false), 12000);
+    let actief = true;
+    const timer = setTimeout(() => { if (actief) setLaden(false); }, 12000);
     const laadData = async () => {
       try {
-        // Klant, instellingen, afspraken en huidige user parallel ophalen
-        const [klantRes, afsprakenRes, instRes, userRes] = await Promise.all([
-          supabase.from("klanten").select("*").eq("user_id", userId).single(),
+        const sindsVerkocht = lokaleDatum(new Date(Date.now() - 30 * 86400000));
+        const [klantRes, afsprakenRes, instRes, vRes, pRes] = await Promise.all([
+          supabase.from("klanten").select("*").eq("user_id", userId).maybeSingle(),
           supabase.rpc("get_bezette_dagen"),
           supabase.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten").single(),
-          supabase.auth.getUser(),
+          // Voorraad incl. recent verkochte motoren (30 dagen zichtbaar)
+          supabase.from("voorraad")
+            .select("id,merk,model,bouwjaar,km,km_eenheid,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
+            .neq("status", "verwijderd")
+            .or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY},verkocht_op.gte.${sindsVerkocht}`)
+            .order("created_at", { ascending: false }),
+          supabase.from("producten").select("id,naam,omschrijving,prijs,fotos,categorie").eq("actief", true).order("created_at", { ascending: false }),
         ]);
-
-        let klantData = klantRes.data;
-
-        // Niet gevonden op user_id → probeer email-koppeling (admin pre-aangemaakt)
-        if (!klantData) {
-          const email = userRes.data?.user?.email;
-          if (email) {
-            const { data: klantByEmail } = await supabase
-              .from("klanten").select("*").eq("email", email).is("user_id", null).single();
-            if (klantByEmail) {
-              await supabase.from("klanten").update({ user_id: userId }).eq("id", klantByEmail.id);
-              klantData = { ...klantByEmail, user_id: userId };
-            }
-          }
-        }
-
-        if (!klantData) { setLaden(false); clearTimeout(timer); return; }
+        if (!actief) return;
+        if (klantRes.error) throw klantRes.error;
+        const klantData = klantRes.data;
+        setLaadFout(false);
         setKlant(klantData);
 
-        // Eigen afspraken ophalen (voor status-weergave en meldingen)
-        const { data: eigenAfsData } = await supabase
-          .from("afspraken")
-          .select("id,datum,status,soort,type,tijd,duur,naam,voorraad_motor_id,melding_gezien")
-          .eq("klant_id", klantData.id)
-          .order("datum");
-        setEigenAfspraken(eigenAfsData || []);
-
-        // Instellingen direct verwerken
         const inst = instRes.data;
         const gesloten = inst?.gesloten_dagen || [];
         setGeslotenDagen(gesloten);
         setBezetteDagen([...(afsprakenRes.data||[]).map(a => String(a.datum)), ...gesloten]);
+        bezetteDagenOpgehaald.current = Date.now();
         if (inst?.openingstijden) setOpeningstijden(inst.openingstijden);
         if (inst?.opmerking !== undefined) setOpmerking(inst.opmerking || "");
         if (inst?.diensten_tarieven) setDienstenTarieven(inst.diensten_tarieven);
         if (inst?.afspraak_soorten?.length) setAfspraakSoorten(inst.afspraak_soorten);
+        setVooraad((vRes.data || []).filter(m => m.verkocht_op ? true : m.status !== "niet_beschikbaar"));
+        setProducten(pRes.data || []);
 
-        // Motoren ophalen (heeft klant_id nodig)
-        const { data: motorenData } = await supabase
-          .from("motoren").select("*").eq("klant_id", klantData.id).is("klant_verwijderd_op", null);
+        if (klantData?.status !== "goedgekeurd") return;
+
+        const [{ data: eigenAfsData }, { data: motorenData }] = await Promise.all([
+          supabase.from("afspraken")
+            .select("id,datum,status,soort,type,tijd,duur,naam,voorraad_motor_id,melding_gezien")
+            .eq("klant_id", klantData.id).order("datum"),
+          supabase.from("motoren").select("*").eq("klant_id", klantData.id).is("klant_verwijderd_op", null),
+        ]);
+        if (!actief) return;
+        setEigenAfspraken(eigenAfsData || []);
         const motorIds = (motorenData||[]).map(m => m.id);
+        if (motorIds.length === 0) { setMotoren([]); return; }
 
-        if (motorIds.length > 0) {
-          const [{ data: kmData }, { data: svcData }] = await Promise.all([
-            supabase.from("km_historie").select("*").in("motor_id", motorIds).order("datum"),
-            supabase.from("service_beurten").select("*").in("motor_id", motorIds).order("datum", { ascending: false }),
-          ]);
-          setMotoren((motorenData||[]).map(m => ({
-            ...m,
-            kmHistory: (kmData||[]).filter(k => k.motor_id === m.id).map(k => ({ datum: k.datum, km: k.km })),
-            service: (svcData||[]).filter(s => s.motor_id === m.id),
-          })));
-          const storedSel = sessionStorage.getItem("djm_sel_motor");
-          const storedHoofd = localStorage.getItem("djm_hoofd_motor");
-          setSelMotorId(motorIds.includes(storedSel) ? storedSel : motorIds.includes(storedHoofd) ? storedHoofd : motorIds[0]);
-        } else {
-          setMotoren([]);
-        }
-
-        // Voorraad ophalen (incl. recent verkochte motors, 30 dagen zichtbaar)
-        const { data: vData } = await supabase
-          .from("voorraad")
-          .select("id,merk,model,bouwjaar,km,km_eenheid,prijs,fotos,kenteken,status,datum_in,verkocht_op,fotos_bewaren_tot,voorband_datum,achterband_datum")
-          .neq("status", "verwijderd")
-          .or(`verkocht_op.is.null,fotos_bewaren_tot.gt.${TODAY},verkocht_op.gte.${new Date(Date.now()-30*86400000).toISOString().split("T")[0]}`)
-          .order("created_at", { ascending: false });
-        setVooraad((vData || []).filter(m => m.verkocht_op ? true : m.status !== "niet_beschikbaar"));
-
-        // Producten ophalen (onderdelen + accessoires)
-        const { data: pData } = await supabase
-          .from("producten")
-          .select("id,naam,omschrijving,prijs,fotos,categorie")
-          .eq("actief", true)
-          .order("created_at", { ascending: false });
-        setProducten(pData || []);
-      } catch(e) { console.error(e); }
-      setLaden(false);
-      clearTimeout(timer);
+        const [{ data: kmData }, { data: svcData }] = await Promise.all([
+          supabase.from("km_historie").select("motor_id,datum,km").in("motor_id", motorIds).order("datum"),
+          // Oplopend: de schermen nemen het laatste element als "laatste service"
+          supabase.from("service_beurten").select("*").in("motor_id", motorIds).order("datum"),
+        ]);
+        if (!actief) return;
+        const kmPerMotor = new Map(), svcPerMotor = new Map();
+        for (const k of kmData || []) { if (!kmPerMotor.has(k.motor_id)) kmPerMotor.set(k.motor_id, []); kmPerMotor.get(k.motor_id).push({ datum: k.datum, km: k.km }); }
+        for (const sv of svcData || []) { if (!svcPerMotor.has(sv.motor_id)) svcPerMotor.set(sv.motor_id, []); svcPerMotor.get(sv.motor_id).push(sv); }
+        setMotoren((motorenData||[]).map(m => ({ ...m, kmHistory: kmPerMotor.get(m.id) || [], service: svcPerMotor.get(m.id) || [] })));
+        const storedSel = leesOpslag("sessionStorage", "djm_sel_motor");
+        const storedHoofd = leesOpslag("localStorage", "djm_hoofd_motor");
+        setSelMotorId(motorIds.includes(storedSel) ? storedSel : motorIds.includes(storedHoofd) ? storedHoofd : motorIds[0]);
+      } catch(e) {
+        console.error(e);
+        if (actief) setLaadFout(true);
+      } finally {
+        if (actief) { setLaden(false); clearTimeout(timer); }
+      }
     };
     laadData();
-    return () => clearTimeout(timer);
-  }, [userId]);
+    return () => { actief = false; clearTimeout(timer); };
+  }, [userId, laadPoging]);
+
+  // App over middernacht open laten (PWA): "vandaag" bijwerken zodra de app weer zichtbaar is
+  const [, setVandaag] = useState(TODAY);
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState !== "visible" || lokaleDatum() === TODAY) return;
+      TODAY = lokaleDatum();
+      setVandaag(TODAY);
+      bezetteDagenOpgehaald.current = 0;
+    };
+    document.addEventListener("visibilitychange", check);
+    const iv = setInterval(check, 5 * 60 * 1000);
+    return () => { document.removeEventListener("visibilitychange", check); clearInterval(iv); };
+  }, []);
 
   // Realtime: eigen afspraken — status-updates (admin bevestigt / werkt af)
   useEffect(() => {
-    if (!klant?.id) return;
-    const sub = supabase.channel("klant-eigen-afspraken")
+    if (!klant?.id || klant.status !== "goedgekeurd") return;
+    const sub = supabase.channel(`klant-afspraken-${klant.id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
         setEigenAfspraken(prev => prev.map(a => a.id === n.id ? { ...a, ...n } : a));
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "afspraken", filter: `klant_id=eq.${klant.id}` }, ({ new: n }) => {
-        setEigenAfspraken(prev => [...prev, n].sort((a, b) => (a.datum||"").localeCompare(b.datum||"")));
+        setEigenAfspraken(prev => prev.some(a => a.id === n.id) ? prev
+          : [...prev, n].sort((a, b) => (a.datum||"").localeCompare(b.datum||"")));
+      })
+      // DELETE-events zijn niet te filteren en bevatten alleen het id: weghalen als het een eigen afspraak was
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "afspraken" }, ({ old: o }) => {
+        if (o?.id) setEigenAfspraken(prev => prev.some(a => a.id === o.id) ? prev.filter(a => a.id !== o.id) : prev);
       })
       .subscribe();
-    return () => { sub.unsubscribe(); };
-  }, [klant?.id]);
+    return () => { supabase.removeChannel(sub); };
+  }, [klant?.id, klant?.status]);
 
   const slaKmOp = async (motorId, km) => {
-    const { error } = await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: TODAY });
-    if (error) { console.error("Km opslaan mislukt:", error); return; }
+    const { error } = await supabase.from("km_historie").insert({ motor_id: motorId, km, datum: lokaleDatum() });
+    if (error) { console.error("Km opslaan mislukt:", error); return "Opslaan mislukt — controleer je verbinding en probeer het opnieuw."; }
     setMotoren(prev => prev.map(m => m.id === motorId
-      ? { ...m, kmHistory: [...m.kmHistory, { datum: TODAY, km }] } : m
+      ? { ...m, kmHistory: [...m.kmHistory, { datum: lokaleDatum(), km }] } : m
     ));
+    return null;
   };
 
   // Volle dagen komen uit de database (get_bezette_dagen): daar telt ook mee wat andere
   // klanten en de website hebben geboekt, wat een klant zelf niet kan zien.
-  const herlaadBezetteDagen = async () => {
+  // Bij het wisselen van tabblad hooguit eens per minuut opnieuw ophalen (scheelt
+  // honderden verzoeken bij veel gebruikers); na een eigen aanvraag of "dag vol" altijd.
+  const herlaadBezetteDagen = async ({ altijd = true } = {}) => {
+    if (!altijd && Date.now() - bezetteDagenOpgehaald.current < 60000) return;
+    bezetteDagenOpgehaald.current = Date.now();
     const { data } = await supabase.rpc("get_bezette_dagen");
     if (data) setBezetteDagen([...data.map(a => String(a.datum)), ...geslotenDagen]);
   };
   useEffect(() => {
-    if (klant && ["service", "contact", "voorraad"].includes(tab)) herlaadBezetteDagen();
+    if (klant && ["service", "contact", "voorraad"].includes(tab)) herlaadBezetteDagen({ altijd: false });
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   // De database weigert een afspraak op een volle dag (ook als iemand anders net boekte)
   const dagVolMelding = async (error) => {
@@ -2286,7 +2308,10 @@ export default function KlantApp({ userId }) {
         .update({ klant_verwijderd_op: new Date().toISOString() }).eq("id", motorId);
       if (fout) return "Verwijderen mislukt, probeer het later opnieuw.";
     }
-    setMotoren(prev => prev.filter(m => m.id !== motorId));
+    const rest = motoren.filter(m => m.id !== motorId);
+    setMotoren(rest);
+    if (hoofdMotorId === motorId) { schrijfOpslag("localStorage", "djm_hoofd_motor", ""); setHoofdMotorId(null); }
+    if (selMotorId === motorId) kiesMotor(rest[0]?.id || null);
     return null;
   };
 
@@ -2444,6 +2469,23 @@ export default function KlantApp({ userId }) {
     </div>
   );
 
+  if (laadFout) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+      <div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
+        <div style={{ fontSize:36, margin:"20px 0 12px" }}>📶</div>
+        <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:10 }}>Laden mislukt</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+          Je gegevens konden niet worden opgehaald. Controleer je internetverbinding en probeer het opnieuw.
+        </div>
+        <button onClick={() => { setLaden(true); setLaadPoging(n => n + 1); }}
+          style={{ marginTop:24, padding:"11px 22px", background:T.accent, border:"none", color:"#fff", borderRadius:8, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+          Opnieuw proberen
+        </button>
+      </div>
+    </div>
+  );
+
   if (!klant) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
       <div>
@@ -2486,9 +2528,34 @@ export default function KlantApp({ userId }) {
         <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
           Je aanmelding is niet goedgekeurd. Neem contact op als je denkt dat dit een fout is.
         </div>
-        <a href="https://wa.me/31140000000" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
+        <a href="https://wa.me/31621908697" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
           Stuur een bericht →
         </a>
+      </div>
+    </div>
+  );
+
+  // Alleen goedgekeurde klanten komen in het portaal; o.a. "gearchiveerd" (door de
+  // beheerder gearchiveerd of account verwijderd) niet. De database (RLS) beperkt
+  // klanten toch al tot hun eigen gegevens; dit scherm voorkomt een half werkend portaal.
+  if (klant.status !== 'goedgekeurd') return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100dvh", background:T.bg, fontFamily:"Barlow, sans-serif", padding:24, textAlign:"center" }}>
+      <div>
+        <div style={{ fontFamily:"Barlow Condensed, sans-serif", fontWeight:900, fontSize:22, letterSpacing:2, color:T.text }}>DE JONGE MOTOREN</div>
+        <div style={{ fontSize:36, margin:"20px 0 12px" }}>🔒</div>
+        <div style={{ fontSize:16, fontWeight:600, color:T.text, marginBottom:10 }}>Account niet actief</div>
+        <div style={{ fontSize:13, color:T.muted, lineHeight:1.8, maxWidth:280, margin:"0 auto" }}>
+          Je account heeft op dit moment geen toegang tot Mijn Garage. Neem contact met ons op als je het weer wilt gebruiken.
+        </div>
+        <a href="https://wa.me/31621908697" style={{ display:"inline-block", marginTop:20, padding:"11px 20px", background:T.accent, color:"#fff", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:600 }}>
+          Stuur een bericht →
+        </a>
+        <div>
+          <button onClick={uitloggen}
+            style={{ marginTop:16, padding:"10px 20px", background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:8, fontSize:13, cursor:"pointer", fontFamily:"Barlow, sans-serif" }}>
+            Uitloggen
+          </button>
+        </div>
       </div>
     </div>
   );
