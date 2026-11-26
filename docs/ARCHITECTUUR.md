@@ -88,7 +88,8 @@ djm-app/
 │  │  ├─ Juridisch.jsx        # privacybeleid, voorwaarden, cookiebanner
 │  │  ├─ AppInstalleren.jsx   # kader "App installeren" (klantportaal)
 │  │  ├─ PushInstellingen.jsx # pushmeldingen aan/uit (admin)
-│  │  └─ WebsiteBeheer.jsx    # "Website aanpassen" (admin, apart geladen): zie §5b
+│  │  ├─ WebsiteBeheer.jsx    # "Website aanpassen" (admin, apart geladen): zie §5b
+│  │  └─ UpdateMelding.jsx    # melding "Nieuwe versie beschikbaar" (iedereen)
 │  └─ lib/
 │     ├─ supabase.js          # Supabase-client + uitloggen/uitnodiging
 │     ├─ foto.js              # foto's verkleinen + uploaden naar Cloudinary
@@ -99,6 +100,7 @@ djm-app/
 │     ├─ larsson.js           # onderdelen-link zoeken (Larsson)
 │     ├─ autoscout.js         # gegevens klaarzetten voor AutoScout24
 │     ├─ website.js           # website-beheer: paden, controles, codes, slug, markdown-hulp
+│     ├─ versie.js            # nieuwe versie online? (melding "Nieuwe versie beschikbaar")
 │     └─ laden.js             # lazy laden met één keer herladen na een update
 ├─ supabase/
 │  ├─ functions/              # edge functions (Deno): zie §9
@@ -351,6 +353,14 @@ geblokkeerd is, zoals in een privévenster).
   bewaard); `/assets/*` cache-first (hash in de naam); `/icons/*` uit de cache en op de
   achtergrond ververst. Supabase/Cloudinary/RDW nooit. Toont pushmeldingen en opent bij een
   tik de juiste pagina.
+- **Updates:** een app op het beginscherm (of een tabblad dat open blijft) laadt een nieuwe
+  versie pas bij een echte herstart. `lib/versie.js` vergelijkt daarom het hoofdbestand van de
+  online versie (`index.html` → `/assets/index-<hash>.js`) met wat er draait: bij het openen, bij
+  terugkeren naar de app (hooguit eens per minuut), bij weer online komen en elke 30 minuten.
+  Is er een nieuwe versie, dan toont `components/UpdateMelding.jsx` (op elk scherm, ook voor
+  klanten en op het inlogscherm) "Nieuwe versie beschikbaar" met **Vernieuwen** (herladen; de
+  service worker haalt pagina's eerst van het netwerk, dus dat laadt de nieuwe versie) en
+  **Later**. Bewust geen automatisch herladen: dan zou een half ingevuld formulier verloren gaan.
 - **Installeren:** `lib/pwa.js` vangt `beforeinstallprompt` op; `AppInstalleren.jsx` toont de
   knop (Android) of de iPhone-uitleg.
 - **Push (alleen beheerder):** `PushInstellingen.jsx` → `lib/push.js` meldt het apparaat aan
