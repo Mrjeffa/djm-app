@@ -56,7 +56,7 @@ $function$;
 REVOKE ALL ON FUNCTION public.voorraad_overzicht() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.voorraad_overzicht() TO authenticated;
 
--- ── Deel 2 (pas toepassen als de app met voorraad_overzicht live staat) ───────
+-- ── Deel 2 (toegepast 26-11-2026, nadat de app met voorraad_overzicht live stond) ──
 
 -- Klanten lezen de tabel niet meer rechtstreeks (anders zouden ze via de API alsnog
 -- kenteken en verkocht_aan van verkochte motoren kunnen opvragen). De beheerder houdt
