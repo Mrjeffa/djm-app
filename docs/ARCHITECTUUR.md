@@ -89,7 +89,8 @@ djm-app/
 │  │  ├─ AppInstalleren.jsx   # kader "App installeren" (klantportaal)
 │  │  ├─ PushInstellingen.jsx # pushmeldingen aan/uit (admin)
 │  │  ├─ WebsiteBeheer.jsx    # "Website aanpassen" (admin, apart geladen): zie §5b
-│  │  └─ UpdateMelding.jsx    # melding "Nieuwe versie beschikbaar" (iedereen)
+│  │  ├─ UpdateMelding.jsx    # melding "Nieuwe versie beschikbaar" (iedereen)
+│  │  └─ AppVersie.jsx        # Instellingen → App-versie: bouwdatum + "Zoeken naar update"
 │  └─ lib/
 │     ├─ supabase.js          # Supabase-client + uitloggen/uitnodiging
 │     ├─ foto.js              # foto's verkleinen + uploaden naar Cloudinary
@@ -192,6 +193,12 @@ nieuwe klant). Kanalen worden bij sluiten met `removeChannel` opgeruimd.
 - *Verkopen aan klant* (`verkoop`): voorraad → `verkocht` (+ `verkocht_aan`, foto's 30 dagen
   bewaard), nieuwe klantmotor met `source_voorraad_id`, servicehistorie gekopieerd naar
   `service_beurten`. Mislukt de eerste stap, dan verandert er niets.
+- *Verkoopproces* (`VerkoopProces`): altijd dezelfde stappen — klant + extra's kiezen en
+  verkopen, dan de afspraak "Motor klaarmaken", dan "Afhalen / afleveren". Start vanuit
+  Voorraad → Verkopen, of vanuit Klant toevoegen met "Uit voorraad": dan wordt eerst de klant
+  opgeslagen (`addKlant`, geeft `{fout, klant}`), loopt het verkoopproces met die klant vast
+  gekozen, en volgt daarna de uitnodiging voor het klantportaal. Breek je de verkoop af, dan
+  staat de klant er zonder motor en verkoop je later via Voorraad.
 - *Extra's bij verkoop*: de lijst (Afleverpakket, Garantiepakket, Slot, …) staat in
   `instellingen.verkoop_extras` en is aan te passen in Instellingen → Extra's bij verkoop
   (toevoegen, verwijderen, volgorde; direct opgeslagen). In het voorraadformulier vink je per
@@ -372,6 +379,11 @@ geblokkeerd is, zoals in een privévenster).
   klanten en op het inlogscherm) "Nieuwe versie beschikbaar" met **Vernieuwen** (herladen; de
   service worker haalt pagina's eerst van het netwerk, dus dat laadt de nieuwe versie) en
   **Later**. Bewust geen automatisch herladen: dan zou een half ingevuld formulier verloren gaan.
+  Ook bij `pageshow` (iPhone haalt de app bevroren uit de achtergrond) wordt gecontroleerd.
+  Opent de app vers, dan draait hij al de nieuwste versie en komt er dus geen melding.
+- **App-versie:** `vite.config.js` bakt de bouwdatum en commit (`CF_PAGES_COMMIT_SHA`) in de app
+  (`__APP_VERSIE__`). Instellingen → App-versie (beheer en klantportaal) toont die en heeft
+  "Zoeken naar update" (`zoekUpdate()`; bij een nieuwe versie verschijnt ook de melding).
 - **Installeren:** `lib/pwa.js` vangt `beforeinstallprompt` op; `AppInstalleren.jsx` toont de
   knop (Android) of de iPhone-uitleg.
 - **Push (alleen beheerder):** `PushInstellingen.jsx` → `lib/push.js` meldt het apparaat aan

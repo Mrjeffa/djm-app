@@ -8,6 +8,15 @@
 // minuut, plus elke 30 minuten zolang de app open en zichtbaar is. Offline: niets.
 
 const MIN_TUSSENPOOS = 60 * 1000;
+
+// Bouwdatum en commit van de versie die nu draait (vite.config.js → __APP_VERSIE__)
+/* global __APP_VERSIE__ */
+const VERSIE = typeof __APP_VERSIE__ !== "undefined" ? __APP_VERSIE__ : { commit: "", gebouwd: "" };
+export function versieTekst() {
+  if (!import.meta.env.PROD || !VERSIE.gebouwd) return "ontwikkelversie";
+  const datum = new Date(VERSIE.gebouwd).toLocaleString("nl-NL", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return VERSIE.commit ? `${datum} (${VERSIE.commit})` : datum;
+}
 const INTERVAL = 30 * 60 * 1000;
 
 const scriptUitHtml = (html) =>
@@ -33,6 +42,21 @@ export async function nieuweVersieBeschikbaar() {
   }
 }
 
+const NIEUWE_VERSIE_EVENT = "djm-nieuwe-versie";
+
+// Handmatig zoeken naar een update. Geeft "nieuw", "nieuwste" of "onbekend" (offline of
+// ontwikkelversie). Bij "nieuw" verschijnt ook de gewone melding.
+export async function zoekUpdate() {
+  if (!huidigeVersie()) return "onbekend";
+  if (!navigator.onLine) return "onbekend";
+  navigator.serviceWorker?.getRegistration?.().then((reg) => reg?.update()).catch(() => {});
+  if (await nieuweVersieBeschikbaar()) {
+    window.dispatchEvent(new Event(NIEUWE_VERSIE_EVENT));
+    return "nieuw";
+  }
+  return "nieuwste";
+}
+
 // Controleer bij openen, bij terugkeren naar de app, bij weer online komen en periodiek.
 // onNieuw wordt aangeroepen zodra er een nieuwere versie online staat. Geeft een stopfunctie.
 export function volgVersie(onNieuw) {
@@ -51,9 +75,15 @@ export function volgVersie(onNieuw) {
   };
   const opZicht = () => controleer();
   const opOnline = () => controleer(true);
+  // pageshow: iPhone haalt een app soms "bevroren" uit de achtergrond terug (bfcache)
+  const opTerug = (e) => { if (e.persisted) controleer(true); };
+  // Handmatig zoeken (Instellingen → App-versie) laat bij een nieuwe versie ook de melding zien
+  const opGevonden = () => onNieuw();
   document.addEventListener("visibilitychange", opZicht);
   window.addEventListener("focus", opZicht);
   window.addEventListener("online", opOnline);
+  window.addEventListener("pageshow", opTerug);
+  window.addEventListener(NIEUWE_VERSIE_EVENT, opGevonden);
   const iv = setInterval(() => controleer(true), INTERVAL);
   const start = setTimeout(() => controleer(true), 10 * 1000);
   return () => {
@@ -61,6 +91,8 @@ export function volgVersie(onNieuw) {
     document.removeEventListener("visibilitychange", opZicht);
     window.removeEventListener("focus", opZicht);
     window.removeEventListener("online", opOnline);
+    window.removeEventListener("pageshow", opTerug);
+    window.removeEventListener(NIEUWE_VERSIE_EVENT, opGevonden);
     clearInterval(iv);
     clearTimeout(start);
   };

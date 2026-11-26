@@ -5,6 +5,7 @@ import { naarBedrag } from "../lib/getal.js";
 import { verkleinFoto, uploadFoto as uploadNaarCloudinary } from "../lib/foto.js";
 import { kmTekst } from "../lib/kmstand.js";
 import AppInstalleren from "./AppInstalleren.jsx";
+import AppVersie from "./AppVersie.jsx";
 
 const useIsMobile = () => {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -1448,6 +1449,12 @@ function Instellingen({ klant, motoren, hoofdMotorId, onKiesHoofd, onUpdateKlant
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Welke versie draait er + handmatig zoeken naar een update */}
+      <div style={css.card}>
+        <div style={css.sectionTitle}>App-versie</div>
+        <AppVersie T={T} />
       </div>
 
       {/* AVG: Privacy & gegevens */}
