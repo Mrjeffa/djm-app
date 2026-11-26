@@ -9,6 +9,10 @@
 -- Lezen: iedereen (de website); blog en pagina's alleen als ze gepubliceerd zijn, FAQ alleen actief.
 -- Schrijven: alleen de beheerder (RLS met is_admin()); wijzigingen komen in een historietabel.
 -- Fase 6 (aanbetalen met Mollie) staat hier bewust niet in.
+-- Na het toepassen (26-11-2026, migraties "website_cms_teksten_gelijk_aan_live" en
+-- "website_cms_home_gelijk_aan_live"): verkopen.intro, home.inkoop.tekst, home.werkplaats.tekst
+-- en home.over.tekst kregen de teksten die toen live stonden, en de vier blogartikelen uit de
+-- website (src/content/blog.ts) zijn in blog_posts gezet.
 
 -- ══ SCHEMA ═══════════════════════════════════════════════════════════════════
 -- 4.1 Blokken: alle losse teksten en afbeeldingen, generiek beschreven

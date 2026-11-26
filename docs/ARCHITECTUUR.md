@@ -301,7 +301,7 @@ zonder https en FAQ-links naar een ander domein (`//…`). Een RLS-weigering gee
 
 **Contract met de website:** de sleutels in `website_blokken` (bv. `home.hero.titel1`). Niet
 hernoemen of verwijderen; toevoegen kan, maar de website toont een nieuwe sleutel pas als die
-hem gebruikt. Zie §11 voor wat de website-kant nog moet doen.
+hem gebruikt. Zie §11 voor hoe de website de velden leest.
 
 ## 6. Klantportaal (`KlantApp.jsx`)
 
@@ -379,7 +379,7 @@ geblokkeerd is, zoals in een privévenster).
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
 | `taken` | takenlijst beheerder | alleen admin (eigen) |
-| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `max_afspraken_per_dag`, `website_content`, `inkoop_bewaar_dagen` | iedereen lezen; admin wijzigen |
+| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `max_afspraken_per_dag`, `inkoop_bewaar_dagen` (`website_content`: oud, niet meer gebruikt) | iedereen lezen; admin wijzigen |
 | `inkoop_leads` / `inkoop_radar_status` / `inkoop_populair` / `inkoop_aanvragen` | inkoop-radar en inkoopaanvragen van de website | alleen admin (+ service role) |
 | `push_abonnementen` | pushapparaten van admins | admin: eigen |
 | `push_log` / `push_sleutels` | verstuurde meldingen, VAPID-sleutels | alleen server (service role) |
@@ -470,8 +470,9 @@ heeft geen service-role key. Elke pagina wordt per verzoek opgebouwd (geen ISR/c
 
 | Website | Database | Richting |
 |---|---|---|
-| Alle pagina's (`layout.tsx` → `getInstellingen.ts`) | `instellingen` (openingstijden, gesloten dagen/weken, `max_afspraken_per_dag`, opmerking, tarieven, soorten, `website_content`) | lezen |
-| Occasions, occasion-detail, home, proefrit, sitemap, llms.txt (`lib/motors.ts`) | `voorraad` (status beschikbaar/gereserveerd; o.a. merk, model, bouwjaar, km, `km_eenheid`, prijs, foto's) | lezen |
+| Alle pagina's (`layout.tsx` → `getInstellingen.ts`) | `instellingen` (openingstijden, gesloten dagen/weken, `max_afspraken_per_dag`, opmerking, tarieven, soorten) | lezen |
+| Alle pagina's (`lib/cms.ts`, `lib/faq.ts`, `lib/blog.ts`, `lib/paginas.ts`) | `website_blokken`, `website_faq`, `blog_posts`, `website_paginas` (website-beheer, §5b) | lezen |
+| Occasions, occasion-detail, home, proefrit, sitemap, llms.txt (`lib/motors.ts`) | `voorraad` (te koop + 30 dagen na verkoop, alleen de websitekolommen; o.a. merk, model, bouwjaar, km, `km_eenheid`, prijs, foto's, `verkocht_op`) | lezen |
 | Onderdelen, sitemap (`lib/producten.ts`) | `producten` (actief, niet verkocht) | lezen |
 | Proefrit- en werkplaatsformulier (`forms/shared.tsx`) | rpc `get_drukke_datums` (vandaag + 120 dagen) | lezen in de browser |
 | Proefritformulier (`ProefritForm.tsx`) | rpc `maak_afspraak` (type `proefrit`) | schrijven |
@@ -481,29 +482,29 @@ heeft geen service-role key. Elke pagina wordt per verzoek opgebouwd (geen ISR/c
 
 Wat de beheerder in de app doet, verschijnt dus direct op de website: voorraad op
 "beschikbaar" zetten, foto's, prijs, producten, openingstijden en gesloten dagen
-(Instellingen), en `website_content`. Aanvragen van de website komen in de app binnen als
+(Instellingen), en alles uit "Website aanpassen" (§5b). Aanvragen van de website komen in de app binnen als
 afspraak met status `aangevraagd` (agenda/dashboard, pushmelding) of als inkoop-aanvraag.
 
 De website linkt niet naar de app (de app wordt alleen in tekst genoemd).
 
-**Website-beheer (§5b), nog te doen aan de website-kant** (werkplan §10):
-1. Eén helper die per bezoek alle `website_blokken` ophaalt (plus `website_faq`, `blog_posts`,
-   `website_paginas` waar nodig), met terugval op de huidige tekst in de code als een rij
-   ontbreekt, leeg is of de database onbereikbaar is.
-2. Alle teksten en afbeeldingen via die helper; codes (`{jaren}`, `{tarief:…}`) invullen;
-   `tekst_lang` en blog/pagina-inhoud renderen met de markdown-subset. Links alleen naar
-   `/pad` of `https://`; nooit HTML uit de database doorlaten.
-3. FAQ-pagina, FAQ-blokken en FAQ-structured data uit `website_faq`.
-4. Blog uit `blog_posts`, doorverwijzen vanaf `oude_slugs`, sitemap en `llms.txt`; de vier
-   bestaande artikelen uit `src/content/blog.ts` eenmalig in `blog_posts` zetten.
-5. SEO-velden (`seo.<pagina>.titel/omschrijving`) in `generateMetadata`, met de huidige titels
-   als terugval.
-6. Routes `/werkplaats/[slug]` en `/info/[slug]` voor `website_paginas` (404 bij concept,
-   doorverwijzen vanaf `oude_slugs`, Service/FAQPage-structured data, menu en footer).
-7. Daarna `instellingen.website_content` niet meer lezen (de 8 teksten zijn al overgenomen).
+**Website-beheer (§5b) aan de website-kant** (repo djm-website, sinds 26 november 2026):
+- `src/lib/cms.ts`: één query per bezoek naar `website_blokken` (React `cache`), met terugval
+  op de tekst in de code als een veld leeg is, een onbekende code bevat of de database
+  onbereikbaar is. Vult `{jaren}`, `{telefoon}`, `{whatsapp}` en `{tarief:…}` in. Ook de
+  Google-teksten (`seo.<pagina>.titel/omschrijving`) in `generateMetadata`.
+- `src/lib/faq.ts` (`website_faq`), `src/lib/blog.ts` (`blog_posts`, doorverwijzen vanaf
+  `oude_slugs`), `src/lib/paginas.ts` (`website_paginas`): FAQ en blog vallen bij een
+  onbereikbare database terug op de inhoud in de code. De vraag over openingstijden maakt de
+  website zelf.
+- Routes `/werkplaats/[slug]` (dienst) en `/info/[slug]` (info) via `components/EigenPagina.tsx`;
+  dienstpagina's als kaarten op `/werkplaats`; pagina's met "Tonen in menu" in de footer;
+  sitemap en `llms.txt` nemen blog en eigen pagina's mee.
+- `components/Markdown.tsx`: de markdown-subset; links alleen naar `/pad` of `https://`, HTML
+  en `javascript:` worden gewone tekst.
+- `instellingen.website_content` wordt niet meer gelezen (kolom kan later weg).
 
-Tot die stappen klaar zijn, slaat de app wijzigingen wel op, maar toont de website nog de oude
-teksten.
+Een wijziging in de app staat dus direct op de website (elke pagina wordt per bezoek
+opgebouwd).
 
 **Bekende punten in de website-code** (repo djm-website, nog niet aangepast):
 - Formulieren kijken alleen naar `error`. Sinds november 2026 geeft `maak_afspraak` bij een
