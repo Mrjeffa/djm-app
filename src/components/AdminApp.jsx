@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { openOnderdelen, larssonZoekFallback, preloadLarsson, veiligeUrl } from "../lib/larsson.js";
 import { openAutoScout } from "../lib/autoscout.js";
 // Zelfde beoordeling als de wekelijkse prijscheck-mail (gedeeld met de edge function)
@@ -7,6 +7,9 @@ import { naarBedrag } from "../lib/getal.js";
 import { verkleinFotos, uploadFoto } from "../lib/foto.js";
 import { naarKm, vanKm, kmTekst } from "../lib/kmstand.js";
 import PushInstellingen from "./PushInstellingen.jsx";
+import { laadMetHerstel } from "../lib/laden.js";
+// Website-beheer apart geladen: alleen nodig als de beheerder het opent
+const WebsiteBeheer = laadMetHerstel(() => import("./WebsiteBeheer.jsx"));
 
 // Detecteer mobiel — wordt door alle componenten gebruikt
 const useIsMobile = () => {
@@ -70,7 +73,7 @@ const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
-const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","instellingen"];
+const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","instellingen","website"];
 
 // Afspraken met klantnaam, motor en de interne opmerking. Die opmerking staat in
 // een aparte tabel (afspraken_intern) die alleen de beheerder kan lezen; klanten
@@ -3871,7 +3874,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
+function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -4008,6 +4011,17 @@ function InstellingenPage({openingstijden,geslotenDagen,onSaveTijden,onToggleGes
 
   return(
     <div style={{maxWidth:600}}>
+      {/* Website aanpassen (teksten, foto's, FAQ, blog, Google-teksten, eigen pagina's) */}
+      {onOpenWebsite&&(
+        <div style={{...s.card,marginBottom:16}}>
+          <div style={s.sectionLabel}>Website</div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+            Pas teksten, foto's, veelgestelde vragen, blogartikelen, Google-teksten en eigen dienst- en infopagina's van www.dejongemotoren.nl aan. Een wijziging staat direct live.
+          </div>
+          <button style={{...s.btn,padding:"11px 18px",fontSize:14}} onClick={onOpenWebsite}>Website aanpassen →</button>
+        </div>
+      )}
+
       {/* Pushmeldingen op dit apparaat */}
       <PushInstellingen T={T} s={s}/>
 
@@ -4687,6 +4701,13 @@ export default function AdminApp(){
     }catch{ /* geen geldige url */ }
     return "dashboard";
   });
+  // Een scherm met niet-opgeslagen wijzigingen (website-beheer) kan het wisselen van tabblad tegenhouden
+  const verlaatGuard=useRef(null);
+  const zetVerlaatGuard=useRef((fn)=>{ verlaatGuard.current=fn; }).current;
+  const gaNaarPagina=(p)=>{
+    if(p!==page && verlaatGuard.current && !verlaatGuard.current()) return;
+    setPage(p);
+  };
   // App stond al open: de service worker vraagt om naar een pagina te gaan
   useEffect(()=>{
     if(!("serviceWorker" in navigator)) return;
@@ -5859,6 +5880,8 @@ export default function AdminApp(){
     return () => { gestopt = true; if(sub) import("../lib/supabase.js").then(({ supabase: sb }) => sb.removeChannel(sub)); };
   }, []);
 
+  // Website aanpassen hoort bij Instellingen (geen eigen knop in de navigatie)
+  const navActief = page==="website" ? "instellingen" : page;
   const nav=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
     {id:"klanten",icon:"◎",label:"Klanten"},
@@ -5867,6 +5890,8 @@ export default function AdminApp(){
     {id:"inkoop",icon:"⌖",label:"Inkoop"},
     {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
+
+  const paginaTitel = page==="website" ? "WEBSITE AANPASSEN" : nav.find(n=>n.id===page)?.label.toUpperCase();
 
   if(laden) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100dvh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
@@ -5883,7 +5908,13 @@ export default function AdminApp(){
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
-      {page==="instellingen"&&<InstellingenPage openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
+      {page==="website"&&(
+        <Suspense fallback={<div style={{color:T.muted,fontSize:13,padding:10}}>Laden…</div>}>
+          <WebsiteBeheer T={T} s={s} dienstenTarieven={dienstenTarieven} afspraakSoorten={afspraakSoorten}
+            zetVerlaatGuard={zetVerlaatGuard} onTerug={()=>setPage("instellingen")}/>
+        </Suspense>
+      )}
+      {page==="instellingen"&&<InstellingenPage onOpenWebsite={()=>setPage("website")} openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 
@@ -5907,7 +5938,7 @@ export default function AdminApp(){
         </div>
         {/* Page title */}
         <div style={{padding:"10px 14px 2px",flexShrink:0}}>
-          <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,letterSpacing:1}}>{nav.find(n=>n.id===page)?.label.toUpperCase()}</div>
+          <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:20,letterSpacing:1}}>{paginaTitel}</div>
         </div>
         {/* Content */}
         <div style={{flex:1,overflowY:"auto",padding:"8px 14px 14px"}}>
@@ -5916,7 +5947,7 @@ export default function AdminApp(){
         {/* Bottom nav */}
         <div style={{display:"flex",borderTop:`1px solid ${T.border}`,background:T.surf,flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
           {nav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${page===n.id?T.accent:"transparent"}`,color:page===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:page===n.id?600:400}}>
+            <button key={n.id} onClick={()=>gaNaarPagina(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${navActief===n.id?T.accent:"transparent"}`,color:navActief===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:navActief===n.id?600:400}}>
               <span style={{fontSize:15}}>{n.icon}</span>
               <span>{n.label}</span>
             </button>
@@ -5935,7 +5966,7 @@ export default function AdminApp(){
         </div>
         <nav style={{padding:"10px 0",flex:1}}>
           {nav.map(n=>(
-            <div key={n.id} style={s.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
+            <div key={n.id} style={s.navItem(navActief===n.id)} onClick={()=>gaNaarPagina(n.id)}>
               <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
               <span>{n.label}</span>
             </div>
@@ -5947,7 +5978,7 @@ export default function AdminApp(){
       </div>
       <div style={s.main}>
         <div style={s.header}>
-          <div style={s.headerTitle}>{nav.find(n=>n.id===page)?.label.toUpperCase()}</div>
+          <div style={s.headerTitle}>{paginaTitel}</div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{display:"flex",gap:1,background:T.surf2,borderRadius:5,padding:2,border:`1px solid ${T.border}`}}>
               {[["licht","☀"],["automatisch","◑"],["donker","☾"]].map(([m,ic])=>(

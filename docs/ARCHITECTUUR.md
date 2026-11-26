@@ -2,7 +2,7 @@
 
 Dit document beschrijft hoe de app in elkaar zit: onderdelen, tabbladen, datastromen, database,
 achtergrondtaken en de koppeling met de website. Bedoeld voor een ontwikkelaar die de app overneemt
-of uitbreidt. Stand: 6 november 2026.
+of uitbreidt. Stand: 26 november 2026.
 
 ---
 
@@ -87,7 +87,8 @@ djm-app/
 │  │  ├─ WachtwoordInstellen.jsx # na reset-link
 │  │  ├─ Juridisch.jsx        # privacybeleid, voorwaarden, cookiebanner
 │  │  ├─ AppInstalleren.jsx   # kader "App installeren" (klantportaal)
-│  │  └─ PushInstellingen.jsx # pushmeldingen aan/uit (admin)
+│  │  ├─ PushInstellingen.jsx # pushmeldingen aan/uit (admin)
+│  │  └─ WebsiteBeheer.jsx    # "Website aanpassen" (admin, apart geladen): zie §5b
 │  └─ lib/
 │     ├─ supabase.js          # Supabase-client + uitloggen/uitnodiging
 │     ├─ foto.js              # foto's verkleinen + uploaden naar Cloudinary
@@ -96,7 +97,9 @@ djm-app/
 │     ├─ pwa.js               # service worker registreren, installatievraag
 │     ├─ push.js              # pushabonnement aan/uit, testmelding
 │     ├─ larsson.js           # onderdelen-link zoeken (Larsson)
-│     └─ autoscout.js         # gegevens klaarzetten voor AutoScout24
+│     ├─ autoscout.js         # gegevens klaarzetten voor AutoScout24
+│     ├─ website.js           # website-beheer: paden, controles, codes, slug, markdown-hulp
+│     └─ laden.js             # lazy laden met één keer herladen na een update
 ├─ supabase/
 │  ├─ functions/              # edge functions (Deno): zie §9
 │  ├─ *.sql                   # migraties/stand van zaken per onderwerp (zie §8.5)
@@ -154,7 +157,8 @@ al open staat). Geldige pagina's staan in `ADMIN_PAGINAS`.
 | `voorraad` | `VoorraadPage` | Voorraadmotoren (foto's, km/mijl, interne opmerking, inkoopprijs, chassis), verkopen aan klant, terugkopen, proefrit, prijscheck, producten/onderdelen | voorraad (+ voorraad_intern/inkoop/chassis/prijscheck/service), producten |
 | `agenda` | `AgendaPage` | Dag/week-agenda, afspraken plannen/wijzigen/afwerken/herhalen, klussen in fases, proefritten | afspraken (+ afspraken_intern), klussen, service_beurten |
 | `inkoop` | `InkoopRadarPage` | Leads van 2dehands met inkoopadvies (Motoroccasion), populaire modellen | inkoop_leads, inkoop_radar_status, inkoop_populair |
-| `instellingen` | `InstellingenPage` | Pushmeldingen, bericht aan klanten, openingstijden, afspraken per dag, gesloten periodes, tarieven, afspraaksoorten, medewerkers, kleurcategorieën, inkoop-radar, import/export (xlsx) | instellingen, push_abonnementen |
+| `website` | `WebsiteBeheer` (via Instellingen → "Website aanpassen") | Teksten, foto's, FAQ, blog, Google-teksten en eigen dienst-/infopagina's van de website, zie §5b | website_blokken, website_faq, blog_posts, website_paginas (+ historie) |
+| `instellingen` | `InstellingenPage` | Knop "Website aanpassen", pushmeldingen, bericht aan klanten, openingstijden, afspraken per dag, gesloten periodes, tarieven, afspraaksoorten, medewerkers, kleurcategorieën, inkoop-radar, import/export (xlsx) | instellingen, push_abonnementen |
 
 **Belangrijke modals:** `AfspraakModal` (nieuwe afspraak: bestaande klant / nieuwe klant / intern,
 soorten, medewerkers, kleurcategorie, herhalen, klus-fases), `AfspraakEditModal`, `AfwerkModal`
@@ -263,6 +267,42 @@ flowchart TB
 | Portaal Service/Contact/Voorraad | Agenda + Dashboard | `afspraken` (`status = aangevraagd`) | realtime + pushmelding |
 | Instellingen | Agenda, portaal, website | `instellingen` (één rij) | openingstijden, gesloten dagen, max per dag, soorten, tarieven, opmerking |
 
+## 5b. Website aanpassen (`WebsiteBeheer.jsx`)
+
+Beheer van de inhoud van www.dejongemotoren.nl zonder developer. Uitgangspunt: **vaste velden per
+pagina, geen vrije paginabouwer** (werkplan "Website aanpassen in de DJM-app", fase 1 t/m 5).
+Ingang: Instellingen → "Website aanpassen" (`page = "website"`, ook `/?pagina=website`).
+
+| Scherm | Tabel | Wat |
+|---|---|---|
+| Startscherm | alle | Tegels per pagina + FAQ, Blog, Google-teksten, Dienst- en infopagina's, met "laatst gewijzigd" |
+| Pagina-editor (Home, Occasions, Werkplaats, Winterstalling, Motor verkopen, Proefrit, Over ons, Contact, Algemeen) | `website_blokken` (`pagina = …`) | Velden per sectie, volledig gestuurd door de data (`type`, `label`, `opties`). Alleen gewijzigde velden worden opgeslagen. Per veld: "Vorige versies" (`website_blokken_historie`) en "Standaard herstellen" (`standaard`). |
+| Google-teksten | `website_blokken` (`pagina = 'seo'`) | Titel (max 45) en omschrijving (120–160) per pagina, met Google-voorbeeld. Leeg = website gebruikt de huidige tekst. |
+| Veelgestelde vragen | `website_faq` | 4 groepen (Kopen, Verkopen, Werkplaats, Langskomen); vraag, antwoord, interne link, tonen ja/nee, volgorde (↑↓) |
+| Blog | `blog_posts` | Lijst + editor: titel, slug (automatisch uit titel), korte beschrijving (= Google), categorie, afbeelding, inhoud (markdown-subset met werkbalk en voorbeeld), concept/gepubliceerd. Slug van een gepubliceerd artikel wijzigen → oude slug in `oude_slugs` (website verwijst door). |
+| Dienst- en infopagina's | `website_paginas` (+ `_historie`) | Sjabloon Dienst (`/werkplaats/<slug>`) of Info (`/info/<slug>`); prijs, duur, afspraaksoort, FAQ (max 8), Google-teksten, in menu, volgorde, vorige versies. Bij publiceren waarschuwingen (te kort, geen prijs, lijkt op een andere pagina). |
+
+**Veldtypes** (`website_blokken.type`): `tekst` (één regel, `opties.max`), `tekst_lang` (alinea's,
+`**vet**`, `[tekst](/pad)`), `afbeelding` (`{url, alt, breedte, hoogte}`; upload naar Cloudinary
+via `uploadAfbeelding` in `lib/foto.js`, alt-tekst 10–125 tekens verplicht), `lijst` (items met
+`opties.velden`, `min_items`/`max_items`).
+
+**Codes** die de website bij elk bezoek invult: `{jaren}`, `{telefoon}`, `{whatsapp}`,
+`{tarief:<sleutel uit instellingen.diensten_tarieven>}`. Onder een tekstveld staan ze als knopjes
+om in te voegen; een onbekende code blokkeert het opslaan.
+
+**Veiligheid:** schrijven alleen met de ingelogde admin-sessie (RLS `is_admin()`), geen
+service-role in de app. De database weigert bovendien `javascript:`/`data:`-links, afbeeldingen
+zonder https en FAQ-links naar een ander domein (`//…`). Een RLS-weigering geeft geen fout maar
+0 rijen: de editor controleert dat en meldt "Niet opgeslagen".
+
+**Niet opgeslagen wijzigingen:** waarschuwing bij teruggaan, bij een ander tabblad in de app
+(`zetVerlaatGuard` in AdminApp) en bij sluiten/verversen van de browser.
+
+**Contract met de website:** de sleutels in `website_blokken` (bv. `home.hero.titel1`). Niet
+hernoemen of verwijderen; toevoegen kan, maar de website toont een nieuwe sleutel pas als die
+hem gebruikt. Zie §11 voor wat de website-kant nog moet doen.
+
 ## 6. Klantportaal (`KlantApp.jsx`)
 
 Navigatie: state `tab` (onderbalk; instellingen via het tandwiel).
@@ -343,6 +383,11 @@ geblokkeerd is, zoals in een privévenster).
 | `inkoop_leads` / `inkoop_radar_status` / `inkoop_populair` / `inkoop_aanvragen` | inkoop-radar en inkoopaanvragen van de website | alleen admin (+ service role) |
 | `push_abonnementen` | pushapparaten van admins | admin: eigen |
 | `push_log` / `push_sleutels` | verstuurde meldingen, VAPID-sleutels | alleen server (service role) |
+| `website_blokken` | alle teksten/foto's van de website per pagina (`sleutel`, `pagina`, `sectie`, `label`, `type`, `waarde`, `standaard`, `opties`) | iedereen lezen; admin wijzigen |
+| `website_blokken_historie` / `website_paginas_historie` | eerdere versies (trigger bij elke wijziging) | alleen admin |
+| `website_faq` | veelgestelde vragen per groep | iedereen: actieve vragen; admin: alles |
+| `blog_posts` | blogartikelen (markdown-subset), `oude_slugs` voor doorverwijzen | iedereen: gepubliceerd; admin: alles |
+| `website_paginas` | eigen dienst- en infopagina's (sjabloon `dienst`/`info`) | iedereen: gepubliceerd; admin: alles |
 
 ### 8.2 Functies (RPC) — aan te roepen via de API
 
@@ -386,10 +431,11 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `supabase/*.sql`: `beveiliging.sql`, `rls.sql`, `push.sql`, `voorraad_velden.sql`,
 `afspraken_intern_en_motoren.sql`, `dagcapaciteit.sql`, `website_koppeling.sql`,
 `links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens),
-`verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper), plus
+`verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper),
+`website_cms.sql` (website-beheer: tabellen, regels, startinhoud), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
-`dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`.
+`dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 
@@ -439,6 +485,25 @@ Wat de beheerder in de app doet, verschijnt dus direct op de website: voorraad o
 afspraak met status `aangevraagd` (agenda/dashboard, pushmelding) of als inkoop-aanvraag.
 
 De website linkt niet naar de app (de app wordt alleen in tekst genoemd).
+
+**Website-beheer (§5b), nog te doen aan de website-kant** (werkplan §10):
+1. Eén helper die per bezoek alle `website_blokken` ophaalt (plus `website_faq`, `blog_posts`,
+   `website_paginas` waar nodig), met terugval op de huidige tekst in de code als een rij
+   ontbreekt, leeg is of de database onbereikbaar is.
+2. Alle teksten en afbeeldingen via die helper; codes (`{jaren}`, `{tarief:…}`) invullen;
+   `tekst_lang` en blog/pagina-inhoud renderen met de markdown-subset. Links alleen naar
+   `/pad` of `https://`; nooit HTML uit de database doorlaten.
+3. FAQ-pagina, FAQ-blokken en FAQ-structured data uit `website_faq`.
+4. Blog uit `blog_posts`, doorverwijzen vanaf `oude_slugs`, sitemap en `llms.txt`; de vier
+   bestaande artikelen uit `src/content/blog.ts` eenmalig in `blog_posts` zetten.
+5. SEO-velden (`seo.<pagina>.titel/omschrijving`) in `generateMetadata`, met de huidige titels
+   als terugval.
+6. Routes `/werkplaats/[slug]` en `/info/[slug]` voor `website_paginas` (404 bij concept,
+   doorverwijzen vanaf `oude_slugs`, Service/FAQPage-structured data, menu en footer).
+7. Daarna `instellingen.website_content` niet meer lezen (de 8 teksten zijn al overgenomen).
+
+Tot die stappen klaar zijn, slaat de app wijzigingen wel op, maar toont de website nog de oude
+teksten.
 
 **Bekende punten in de website-code** (repo djm-website, nog niet aangepast):
 - Formulieren kijken alleen naar `error`. Sinds november 2026 geeft `maak_afspraak` bij een

@@ -23,7 +23,7 @@ AFGESCHERMD = [
     "taken", "klussen", "voorraad_chassis", "voorraad_service", "voorraad_inkoop",
     "voorraad_prijscheck", "inkoop_leads", "inkoop_aanvragen", "inkoop_populair",
     "inkoop_radar_status", "voorraad_intern", "push_abonnementen", "push_log", "push_sleutels",
-    "afspraken_intern",
+    "afspraken_intern", "website_blokken_historie", "website_paginas_historie",
 ]
 # Functies die een buitenstaander niet mag kunnen uitvoeren (onschuldige argumenten).
 RPC_VERBODEN = {
@@ -77,6 +77,12 @@ for kolom in ("kenteken", "verkocht_aan", "*"):
     controleer(f"voorraad kolom {kolom}", not zichtbaar, f"HTTP {status}, {'leesbaar!' if zichtbaar else 'afgeschermd'}")
 status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select=id,merk,model,prijs,fotos,status,verkocht_op&limit=1")
 controleer("website kan voorraad lezen", status == 200, f"HTTP {status}")
+
+# Website-beheer: een bezoeker ziet alleen gepubliceerde artikelen/pagina's en actieve vragen
+for tabel, filter_ in (("blog_posts", "status=eq.concept"), ("website_paginas", "status=eq.concept"), ("website_faq", "actief=eq.false")):
+    status, body, _ = verzoek("GET", f"{URL}/rest/v1/{tabel}?select=id&{filter_}&limit=1")
+    zichtbaar = status == 200 and body.strip() not in ("[]", "")
+    controleer(f"{tabel} niet-openbaar", not zichtbaar, f"HTTP {status}, {'zichtbaar!' if zichtbaar else 'niets zichtbaar'}")
 
 for f, args in RPC_VERBODEN.items():
     status, body, _ = verzoek("POST", f"{URL}/rest/v1/rpc/{f}", args)

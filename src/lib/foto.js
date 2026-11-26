@@ -93,3 +93,22 @@ export const uploadFoto = async (file) => {
   // HEIC e.d. als jpg opvragen, zodat elke browser (en de website) hem kan tonen
   return data.secure_url.replace(/\.(heic|heif|avif|tiff?|bmp)$/i, ".jpg");
 };
+
+// Afbeelding voor de website (website-beheer): het origineel gaat naar Cloudinary, de
+// website verkleint en comprimeert zelf. Geeft { url, breedte, hoogte } terug.
+const WEBSITE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+export const uploadAfbeelding = async (file) => {
+  const naam = file?.name || "afbeelding";
+  if (!WEBSITE_TYPES.includes(file?.type)) throw new Error(`"${naam}" is geen jpg, png of webp.`);
+  if (file.size > CLOUDINARY_MAX) throw new Error(`"${naam}" is ${mb(file.size)} MB; maximaal 10 MB.`);
+  let bestand;
+  try { bestand = new File([await file.arrayBuffer()], naam, { type: file.type }); }
+  catch { throw new Error(`"${naam}" kon niet worden gelezen. Kies hem opnieuw.`); }
+  const fd = new FormData();
+  fd.append("file", bestand);
+  fd.append("upload_preset", CL_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_CLOUD}/image/upload`, { method: "POST", body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error || !data.secure_url) throw new Error(data.error?.message || `Uploaden mislukt (${res.status})`);
+  return { url: data.secure_url, breedte: data.width || 0, hoogte: data.height || 0 };
+};
