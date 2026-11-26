@@ -24,6 +24,7 @@ AFGESCHERMD = [
     "voorraad_prijscheck", "inkoop_leads", "inkoop_aanvragen", "inkoop_populair",
     "inkoop_radar_status", "voorraad_intern", "push_abonnementen", "push_log", "push_sleutels",
     "afspraken_intern", "website_blokken_historie", "website_paginas_historie",
+    "motor_verkoop_extras",
 ]
 # Functies die een buitenstaander niet mag kunnen uitvoeren (onschuldige argumenten).
 RPC_VERBODEN = {
@@ -71,7 +72,7 @@ for t in AFGESCHERMD:
 
 # Voorraad: de website mag motoren tonen (ook 30 dagen na verkoop), maar kenteken en
 # klantnummer van de koper zijn voor een bezoeker niet op te vragen (kolomrechten).
-for kolom in ("kenteken", "verkocht_aan", "*"):
+for kolom in ("kenteken", "verkocht_aan", "extras_niet_aanbieden", "*"):
     status, body, _ = verzoek("GET", f"{URL}/rest/v1/voorraad?select={kolom}&limit=1")
     zichtbaar = status == 200 and body.strip() not in ("[]", "")
     controleer(f"voorraad kolom {kolom}", not zichtbaar, f"HTTP {status}, {'leesbaar!' if zichtbaar else 'afgeschermd'}")

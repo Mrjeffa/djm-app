@@ -192,6 +192,16 @@ nieuwe klant). Kanalen worden bij sluiten met `removeChannel` opgeruimd.
 - *Verkopen aan klant* (`verkoop`): voorraad → `verkocht` (+ `verkocht_aan`, foto's 30 dagen
   bewaard), nieuwe klantmotor met `source_voorraad_id`, servicehistorie gekopieerd naar
   `service_beurten`. Mislukt de eerste stap, dan verandert er niets.
+- *Extra's bij verkoop*: de lijst (Afleverpakket, Garantiepakket, Slot, …) staat in
+  `instellingen.verkoop_extras` en is aan te passen in Instellingen → Extra's bij verkoop
+  (toevoegen, verwijderen, volgorde; direct opgeslagen). In het voorraadformulier vink je per
+  motor uit wat hij al heeft; dat komt in `voorraad.extras_niet_aanbieden` (wat níet wordt
+  aangeboden, zodat een later toegevoegde extra bij bestaande motoren gewoon wordt aangeboden).
+  In "Motor verkopen" staan alleen de aangeboden extra's als vinkjes, plus een vrij veld
+  "Overige extra's". De keuze gaat naar `motor_verkoop_extras` (per klantmotor, alleen admin;
+  de voorraadregel verdwijnt na 30 dagen) en wordt vooraf ingevuld in de opmerkingen van de
+  afspraak "Motor klaarmaken". Bij de klant staat de regel "Extra's bij aankoop" op de
+  motorkaart; aan te passen via de motor → Wijzigen (alles leeg = regel weg).
 - *Inruilen* (`inruilMotorVanKlant`): nieuwe voorraadmotor (hoogste km-stand, `km_eenheid` km),
   servicehistorie naar `voorraad_service` (`kopieerServiceNaarVoorraad`), pas dan de klantmotor
   verwijderen. Mislukt de voorraadmotor of het kopiëren, dan blijft de klantmotor staan.
@@ -206,7 +216,8 @@ geüploade foto's van een mislukte opslag worden opgeruimd.
 
 **Gevoelige gegevens staan apart** (omdat `voorraad` en `afspraken` voor anderen leesbaar zijn):
 `voorraad_inkoop` (inkoopprijs), `voorraad_chassis`, `voorraad_intern` (interne opmerking),
-`afspraken_intern` (interne opmerking bij afspraak). Alleen admin (RLS).
+`afspraken_intern` (interne opmerking bij afspraak), `motor_verkoop_extras` (extra's bij
+aankoop; klanten mogen hun eigen motor wijzigen, dit niet). Alleen admin (RLS).
 
 ## 5a. Hoe de tabbladen samenhangen
 
@@ -265,7 +276,7 @@ flowchart TB
 | Portaal Voorraad | Portaal Contact | `onNaarContact` | "Neem contact op" bij een motor/product |
 | Portaal Motor | Portaal Instellingen | `onNaarInstellingen` | "Motor toevoegen" (opent het formulier) |
 | Agenda (afwerken) | Klanten / portaal Motor | `service_beurten`, `km_historie`, `motoren` | servicebeurt + km + banden bij de klantmotor |
-| Voorraad (verkopen) | Klanten / portaal Motor | `motoren` (`source_voorraad_id`), `service_beurten` | klant krijgt de motor met servicehistorie |
+| Voorraad (verkopen) | Klanten / portaal Motor | `motoren` (`source_voorraad_id`), `service_beurten`, `motor_verkoop_extras` | klant krijgt de motor met servicehistorie; gekozen extra's staan bij de klantmotor (alleen beheerder) |
 | Portaal Service/Contact/Voorraad | Agenda + Dashboard | `afspraken` (`status = aangevraagd`) | realtime + pushmelding |
 | Instellingen | Agenda, portaal, website | `instellingen` (één rij) | openingstijden, gesloten dagen, max per dag, soorten, tarieven, opmerking |
 
@@ -384,12 +395,13 @@ geblokkeerd is, zoals in een privévenster).
 | `service_beurten` | onderhoud (`klant_invoer` = door klant ingevoerd) | klant: lezen eigen, eigen invoer toevoegen/wijzigen; admin: alles |
 | `afspraken` | afspraken en aanvragen (`status`, `dag_gekozen`, `type`, `soort`, `medewerker_namen`, `categorie`, klus-velden) | klant: eigen lezen/aanvragen; admin: alles; website: alleen via `maak_afspraak` |
 | `afspraken_intern` | interne opmerking bij een afspraak | alleen admin |
-| `voorraad` | voorraadmotoren (`km` altijd km, `km_eenheid` km/mijl, foto's, status, `verkocht_op`, `verkocht_aan` = klant-id koper) | bezoeker (anon): te koop + 30 dagen na verkoop, **alleen de websitekolommen** (kolomrechten: geen `kenteken`, `verkocht_aan`, onderdelen-link, banden); klant: niet rechtstreeks, via `voorraad_overzicht()`; admin: alles |
+| `voorraad` | voorraadmotoren (`km` altijd km, `km_eenheid` km/mijl, foto's, status, `verkocht_op`, `verkocht_aan` = klant-id koper, `extras_niet_aanbieden` = extra's die de motor al heeft) | bezoeker (anon): te koop + 30 dagen na verkoop, **alleen de websitekolommen** (kolomrechten: geen `kenteken`, `verkocht_aan`, onderdelen-link, banden, extra's); klant: niet rechtstreeks, via `voorraad_overzicht()`; admin: alles |
 | `voorraad_inkoop` / `voorraad_chassis` / `voorraad_intern` / `voorraad_prijscheck` / `voorraad_service` | inkoopprijs, chassisnr., interne opmerking, Motoroccasion-check, onderhoud vóór verkoop | alleen admin |
+| `motor_verkoop_extras` | extra's bij aankoop per klantmotor (`extras` text[], `overig`); verdwijnt met de motor | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
 | `taken` | takenlijst beheerder | alleen admin (eigen) |
-| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `max_afspraken_per_dag`, `inkoop_bewaar_dagen` (`website_content`: oud, niet meer gebruikt) | iedereen lezen; admin wijzigen |
+| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `verkoop_extras` (lijst extra's bij verkoop), `max_afspraken_per_dag`, `inkoop_bewaar_dagen` (`website_content`: oud, niet meer gebruikt) | iedereen lezen; admin wijzigen |
 | `inkoop_leads` / `inkoop_radar_status` / `inkoop_populair` / `inkoop_aanvragen` | inkoop-radar en inkoopaanvragen van de website | alleen admin (+ service role) |
 | `push_abonnementen` | pushapparaten van admins | admin: eigen |
 | `push_log` / `push_sleutels` | verstuurde meldingen, VAPID-sleutels | alleen server (service role) |
@@ -442,10 +454,12 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `afspraken_intern_en_motoren.sql`, `dagcapaciteit.sql`, `website_koppeling.sql`,
 `links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens),
 `verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper),
-`website_cms.sql` (website-beheer: tabellen, regels, startinhoud), plus
+`website_cms.sql` (website-beheer: tabellen, regels, startinhoud), `verkoop_extras.sql`
+(extra's bij verkoop), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
-`dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`.
+`dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`,
+`verkoop-extras-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 
