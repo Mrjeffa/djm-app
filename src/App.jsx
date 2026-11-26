@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase.js'
 import { laadMetHerstel } from './lib/laden.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
+import UpdateMelding from './components/UpdateMelding.jsx'
 
 // Apart geladen: klanten downloaden de beheercode niet (kleiner, sneller, en
 // de admin-functies staan niet in hun browser). Wie admin is, bepaalt de
@@ -82,7 +83,8 @@ const koppelKlant = (user) =>
   }, null)
 
 export default function App() {
-  return <FoutVangnet><AppInner/></FoutVangnet>
+  // UpdateMelding staat buiten AppInner: zichtbaar op elk scherm (ook inloggen en laden)
+  return <FoutVangnet><AppInner/><UpdateMelding/></FoutVangnet>
 }
 
 function AppInner() {
