@@ -572,6 +572,46 @@ const AS_CARROSSERIE = ["Naked bike","Sport Touring","Sport/Superbike","Touring"
 const AS_KLEUREN = ["Zwart","Wit","Zilver","Grijs","Blauw","Rood","Groen","Geel","Oranje","Bruin","Beige","Goud","Paars","Roze"];
 const AS_UITRUSTING = ["ABS","Antislipregeling","Boordcomputer","Cruise control","Verwarmde handvatten","Kuip","Windscherm","Topkoffer","Zijkoffers","Middenbok","Valbeugel","LED-verlichting","USB-aansluiting","Navigatie","Alarm","Startonderbreker","Handkappen"];
 
+// Extra's die je bij het verkopen van een motor kunt aanbieden. De echte lijst staat in
+// instellingen.verkoop_extras (aan te passen in Instellingen); dit is alleen de terugval.
+const DEFAULT_VERKOOP_EXTRAS = ["Afleverpakket","Garantiepakket","Slot","Navigatiesysteem","Telefoonhouder","Verwarmde handvatten","GPS-tracker"];
+// Wat de koper erbij nam, als één regel: "Slot, Telefoonhouder · Overig: topkoffer"
+const verkoopExtrasTekst = (ve) => [
+  (ve?.extras||[]).join(", "),
+  ve?.overig ? `Overig: ${ve.overig}` : "",
+].filter(Boolean).join(" · ");
+
+// Voorraadformulier: welke extra's bied je bij verkoop aan? Opgeslagen wordt wat NIET
+// wordt aangeboden (voorraad.extras_niet_aanbieden), zodat een extra die later aan de lijst
+// wordt toegevoegd bij bestaande motoren gewoon wordt aangeboden.
+function ExtrasAanbiedenVeld({extras=[], f, setF}){
+  const niet=Array.isArray(f.extras_niet_aanbieden)?f.extras_niet_aanbieden:[];
+  const toggle=(naam)=>setF(p=>{
+    const cur=Array.isArray(p.extras_niet_aanbieden)?p.extras_niet_aanbieden:[];
+    return {...p,extras_niet_aanbieden:cur.includes(naam)?cur.filter(x=>x!==naam):[...cur,naam]};
+  });
+  return(
+    <>
+      <div style={s.sectionLabel}>Extra's aanbieden bij verkoop</div>
+      {extras.length===0?(
+        <div style={{fontSize:12,color:T.muted,marginBottom:12}}>Nog geen extra's ingesteld. Voeg ze toe bij Instellingen → Extra's bij verkoop.</div>
+      ):(
+        <>
+          <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:10}}>Vink uit wat deze motor al heeft (bijv. een telefoonhouder): dat wordt bij verkoop dan niet aangeboden.</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:"2px 12px",marginBottom:12}}>
+            {extras.map(naam=>(
+              <label key={naam} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",userSelect:"none",fontSize:13}}>
+                <input type="checkbox" checked={!niet.includes(naam)} onChange={()=>toggle(naam)} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+                <span style={{color:niet.includes(naam)?T.muted:T.text}}>{naam}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 // Gedeelde advertentievelden voor het toevoeg- én wijzig-formulier van een
 // voorraadmotor. Werkt op { kleur, carrosserietype, uitvoering, uitrusting[], beschrijving }.
 function AdvertentieVelden({f,setF}){
@@ -618,9 +658,9 @@ function AdvertentieVelden({f,setF}){
   );
 }
 
-function VoorraadModal({onSave,onClose}){
+function VoorraadModal({onSave,onClose,verkoopExtras=[]}){
   const [kenteken,setKenteken]=useState("");
-  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",km_eenheid:"km",prijs:"",inkoopprijs:"",datum_in:TODAY,chassis_nummer:"",interne_opmerking:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:""});
+  const [f,setF]=useState({merk:"",model:"",bouwjaar:"",km:"",km_eenheid:"km",prijs:"",inkoopprijs:"",datum_in:TODAY,chassis_nummer:"",interne_opmerking:"",voorband_datum:"",achterband_datum:"",voorband_maat:"",achterband_maat:"",op_website:true,onderdelen_link:"",kleur:"",carrosserietype:"",uitvoering:"",uitrusting:[],beschrijving:"",extras_niet_aanbieden:[]});
   const [rdwStatus,setRdwStatus]=useState(null);
   const [fotoItems,setFotoItems]=useState([]); // [{preview,file}]
   const [dragFotoIdx,setDragFotoIdx]=useState(null);
@@ -728,6 +768,9 @@ function VoorraadModal({onSave,onClose}){
       <div style={s.sectionLabel}>Advertentiegegevens (voor AutoScout / website)</div>
       <AdvertentieVelden f={f} setF={setF}/>
 
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <ExtrasAanbiedenVeld extras={verkoopExtras} f={f} setF={setF}/>
+
       {/* Stap 3: bandendatums */}
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
       <div style={s.sectionLabel}>Stap 3 — Bandendatums (optioneel)</div>
@@ -780,7 +823,7 @@ function VoorraadModal({onSave,onClose}){
   );
 }
 
-function VoorraadEditModal({motor, onSave, onClose}){
+function VoorraadEditModal({motor, onSave, onClose, verkoopExtras=[]}){
   const [f,setF]=useState({
     merk:motor.merk||"", model:motor.model||"", bouwjaar:motor.bouwjaar||"",
     km:motor.km?vanKm(motor.km,motor.km_eenheid):"", km_eenheid:motor.km_eenheid==="mijl"?"mijl":"km",
@@ -791,6 +834,7 @@ function VoorraadEditModal({motor, onSave, onClose}){
     onderdelen_link:motor.onderdelen_link||"",
     kleur:motor.kleur||"", carrosserietype:motor.carrosserietype||"", uitvoering:motor.uitvoering||"",
     uitrusting:Array.isArray(motor.uitrusting)?motor.uitrusting:[], beschrijving:motor.beschrijving||"",
+    extras_niet_aanbieden:Array.isArray(motor.extras_niet_aanbieden)?motor.extras_niet_aanbieden:[],
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
   // Unified foto list: {type:"bestaand",url} | {type:"nieuw",preview,file}
@@ -853,6 +897,8 @@ function VoorraadEditModal({motor, onSave, onClose}){
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Advertentiegegevens (voor AutoScout / website)</div>
       <AdvertentieVelden f={f} setF={setF}/>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
+      <ExtrasAanbiedenVeld extras={verkoopExtras} f={f} setF={setF}/>
       <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0 12px"}}/>
       <div style={s.sectionLabel}>Bandendatums</div>
       <Grid2>
@@ -931,7 +977,7 @@ const DEFAULT_AFSPRAAK_SOORTEN = [
 ];
 const makeDuurMap = (groepen) => Object.fromEntries((groepen||[]).flatMap(g=>(g.items||[]).map(i=>[i.naam,i.duur||1])));
 
-function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[],onAddKlus=async()=>null,initialModus="bestaand",initialInternMotorId="",initialInternMotorType="voorraad",initialInternKlantId="",initialInternKlantNaam="",initialSelKlantId="",initialMotorId="",initialDatum=TODAY,initialKlusId="",initialFaseNaam="",initialOmschrijving="",initialMeerdaagse=false,initialCategorie="",initialDuur="",initialVrijeTijd=false,titel="AFSPRAAK INPLANNEN",infoBanner=null,klantVergrendeld=false}){
+function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDagen=[],openingstijden=null,afspraakSoorten=[],klussen=[],medewerkers=[],afspraakCategorieen=[],onAddKlus=async()=>null,initialModus="bestaand",initialInternMotorId="",initialInternMotorType="voorraad",initialInternKlantId="",initialInternKlantNaam="",initialSelKlantId="",initialMotorId="",initialDatum=TODAY,initialKlusId="",initialFaseNaam="",initialOmschrijving="",initialOpmerking="",initialMeerdaagse=false,initialCategorie="",initialDuur="",initialVrijeTijd=false,titel="AFSPRAAK INPLANNEN",infoBanner=null,klantVergrendeld=false}){
   // initialVrijeTijd: vrije tijdstip-keuze (06:00–23:00, ook tussen volle dagdelen
   // door) — bedoeld voor korte afhaal/aflever-afspraken die "even tussendoor" kunnen.
   const vrijeTijd=initialVrijeTijd;
@@ -993,7 +1039,7 @@ function AfspraakModal({afspraken,klanten,voorraad=[],onSave,onClose,geslotenDag
       return next;
     });
   };
-  const [f,setF]=useState({motor:initialMotorId||"",datum:initialDatum,duur:initialDuur||"1",omschrijving:"",tijd:""});
+  const [f,setF]=useState({motor:initialMotorId||"",datum:initialDatum,duur:initialDuur||"1",omschrijving:initialOpmerking,tijd:""});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value,...(k==="datum"?{tijd:""}:{})}));
 
   const selectedKlant=selKlantId?klanten.find(k=>k.id===selKlantId):null;
@@ -1780,7 +1826,7 @@ function Dashboard({klanten,showroom,afspraken,onNav,onEditAfspraak,onDeleteAfsp
   );
 }
 
-function MotorEditModal({motor, onSave, onClose}){
+function MotorEditModal({motor, onSave, onClose, verkoopExtras=[]}){
   const [f,setF]=useState({
     merk:motor.merk||"", model:motor.model||"", kenteken:motor.kenteken||"",
     bouwjaar:motor.bouwjaar||"", aankoopdatum:motor.aankoopdatum||"",
@@ -1790,6 +1836,12 @@ function MotorEditModal({motor, onSave, onClose}){
     chassis_nummer:motor.chassis_nummer||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  // Extra's bij aankoop: de lijst uit de instellingen plus wat er eerder is gekozen maar
+  // inmiddels niet meer in die lijst staat (dat blijft dan zichtbaar en uit te vinken)
+  const [extras,setExtras]=useState(motor.verkoop_extras?.extras||[]);
+  const [overig,setOverig]=useState(motor.verkoop_extras?.overig||"");
+  const extrasOpties=[...verkoopExtras,...extras.filter(x=>!verkoopExtras.includes(x))];
+  const toggleExtra=(naam)=>setExtras(p=>p.includes(naam)?p.filter(x=>x!==naam):[...p,naam]);
   return(
     <Modal title="MOTOR WIJZIGEN" onClose={onClose}>
       <div style={s.sectionLabel}>Algemeen</div>
@@ -1818,7 +1870,24 @@ function MotorEditModal({motor, onSave, onClose}){
         <input style={s.input} value={f.onderdelen_link} onChange={set("onderdelen_link")} placeholder={onderdelenZoekLink(f.merk,f.model)}/>
       </Field>
       <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:12}}>Zonder link wordt automatisch gezocht op merk en model.</div>
-      <ModalFooter onClose={onClose} label="Opslaan" onClick={()=>{onSave(motor.id,f);onClose();}}/>
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"14px 0"}}/>
+      <div style={s.sectionLabel}>Extra's bij aankoop</div>
+      <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:10}}>Alleen zichtbaar voor jou, niet voor de klant.</div>
+      {extrasOpties.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:"2px 12px",marginBottom:8}}>
+          {extrasOpties.map(naam=>(
+            <label key={naam} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",userSelect:"none",fontSize:13}}>
+              <input type="checkbox" checked={extras.includes(naam)} onChange={()=>toggleExtra(naam)} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+              <span>{naam}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <Field label="Overige extra's"><input style={s.input} value={overig} onChange={e=>setOverig(e.target.value)} placeholder="Bijv. topkoffer monteren, extra sleutel…"/></Field>
+      <ModalFooter onClose={onClose} label="Opslaan" onClick={()=>{
+        onSave(motor.id,{...f,verkoop_extras:{extras:extrasOpties.filter(x=>extras.includes(x)),overig:overig.trim()}});
+        onClose();
+      }}/>
     </Modal>
   );
 }
@@ -1841,7 +1910,7 @@ function KlantEditModal({klant,onSave,onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[]}){
+function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[]}){
   const [modal,setModal]=useState(null);
   const [editKlantOpen,setEditKlantOpen]=useState(false);
   const [selMotorId,setSelMotorId]=useState(null);
@@ -1956,6 +2025,11 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
                 </div>
               )}
               {motor.bijzonderheden&&<div style={{fontSize:12,color:T.muted,marginTop:3,fontStyle:"italic"}}>{motor.bijzonderheden}</div>}
+              {verkoopExtrasTekst(motor.verkoop_extras)&&(
+                <div style={{fontSize:12,color:T.muted,marginTop:4}} title="Extra's bij aankoop (alleen zichtbaar voor jou)">
+                  Extra's bij aankoop: <span style={{color:T.text}}>{verkoopExtrasTekst(motor.verkoop_extras)}</span>
+                </div>
+              )}
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
               <button style={{...s.btn,flexShrink:0}} onClick={()=>{setSelMotorId(motor.id);setModal("addService");}}>+ Service</button>
@@ -2056,7 +2130,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
       {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)}/>}
       {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
       {editSvc&&<ServiceModal initial={editSvc} onSave={f=>{ onUpdateService(klant.id,editSvc.motorId,editSvc.id,f); setEditSvc(null); }} onClose={()=>setEditSvc(null)}/>}
-      {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)}/>}
+      {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)} verkoopExtras={verkoopExtras}/>}
       {editKlantOpen&&<KlantEditModal klant={klant} onSave={onUpdateKlant} onClose={()=>setEditKlantOpen(false)}/>}
       {meerdaagseMotor&&(
         <AfspraakModal afspraken={afspraken||[]} klanten={[klant]} voorraad={[]}
@@ -2068,7 +2142,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{},klussen=[],afspraken=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{},geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[]}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{},klussen=[],afspraken=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{},geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[]}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -2242,7 +2316,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
             onDeleteMotor={onDeleteMotor}
             onBack={()=>setSel(null)}
             isMobile={true}
-            klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>
+            klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
         ):(
           <div>
             {tabBar}
@@ -2286,7 +2360,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
                 onDeleteMotor={onDeleteMotor}
                 onBack={()=>setSel(null)}
                 isMobile={false}
-                klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>
+                klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
             )}
           </div>
         </div>
@@ -2476,10 +2550,15 @@ function PrijscheckBlok({motor:m, onCheck}){
   );
 }
 
-function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,onCheckPrijs=async()=>{},onTerugkopen=()=>{},afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht,afspraakSoorten=[],klussen=[],onAddKlus=async()=>{},medewerkers=[],afspraakCategorieen=[]}){
+function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelete,onToggleStatus,onCheckPrijs=async()=>{},onTerugkopen=()=>{},afspraken,onAddAfspraak,onDeleteAfspraak,geslotenDagen=[],openingstijden=null,producten=[],onAddProduct,onUpdateProduct,onDeleteProduct,onVerkocht,afspraakSoorten=[],klussen=[],onAddKlus=async()=>{},medewerkers=[],afspraakCategorieen=[],verkoopExtras=[]}){
   const [modal,setModal]=useState(null);
   const [verkoopMotor,setVerkoopMotor]=useState(null);
   const [verkoopKlant,setVerkoopKlant]=useState("");
+  const [verkoopKeuze,setVerkoopKeuze]=useState([]);   // gekozen extra's
+  const [verkoopOverig,setVerkoopOverig]=useState(""); // "Overige extra's"
+  const [verkoopBezig,setVerkoopBezig]=useState(false);
+  const openVerkoop=(m)=>{setVerkoopMotor(m);setVerkoopKlant("");setVerkoopKeuze([]);setVerkoopOverig("");};
+  const toggleKeuze=(naam)=>setVerkoopKeuze(p=>p.includes(naam)?p.filter(x=>x!==naam):[...p,naam]);
   const [lichtbakFoto,setLichtbakFoto]=useState(null);
   const [delMotor,setDelMotor]=useState(null);
   const [terugkoopMotor,setTerugkoopMotor]=useState(null);
@@ -2609,7 +2688,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
                   {/* Acties */}
                   <div style={{display:"flex",gap:8,marginBottom:10}}>
                     {!m.verkocht_op&&(
-                      <button onClick={()=>{setVerkoopMotor(m);setVerkoopKlant("");}} style={{...s.btnOutline,flex:1}}
+                      <button onClick={()=>openVerkoop(m)} style={{...s.btnOutline,flex:1}}
                         disabled={m.status==="niet_beschikbaar"}>
                         Verkopen aan klant →
                       </button>
@@ -2688,8 +2767,8 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
             })}
           </div>
 
-          {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)}/>}
-          {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)}/>}
+          {modal==="add"&&<VoorraadModal onSave={onAddMotor} onClose={()=>setModal(null)} verkoopExtras={verkoopExtras}/>}
+          {editMotor&&<VoorraadEditModal motor={editMotor} onSave={onEditMotor} onClose={()=>setEditMotor(null)} verkoopExtras={verkoopExtras}/>}
           {proefritMotor&&<ProefritModal motor={proefritMotor} klanten={klanten} afspraken={afspraken||[]} geslotenDagen={geslotenDagen} openingstijden={openingstijden} onSave={f=>{onAddAfspraak(f);setProefritMotor(null);}} onClose={()=>setProefritMotor(null)}/>}
           {internAfspraakMotor&&<AfspraakModal afspraken={afspraken||[]} klanten={klanten} voorraad={showroom.filter(m=>!m.verkocht_op)} initialModus="intern" initialInternMotorId={internAfspraakMotor.id} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={onAddKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onSave={f=>{onAddAfspraak(f);setInternAfspraakMotor(null);}} onClose={()=>setInternAfspraakMotor(null)}/>}
           {meerdaagseMotor&&(
@@ -2776,8 +2855,13 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
       )}
 
       {/* Confirm dialogs — buiten tab condities zodat ze altijd renderen */}
-      {verkoopMotor&&(
-        <Modal title="MOTOR VERKOPEN" onClose={()=>setVerkoopMotor(null)}>
+      {verkoopMotor&&(()=>{
+        const nietAanbieden=Array.isArray(verkoopMotor.extras_niet_aanbieden)?verkoopMotor.extras_niet_aanbieden:[];
+        const aangeboden=verkoopExtras.filter(x=>!nietAanbieden.includes(x));
+        const heeftAl=verkoopExtras.filter(x=>nietAanbieden.includes(x));
+        const sluit=()=>{if(!verkoopBezig) setVerkoopMotor(null);};
+        return(
+        <Modal title="MOTOR VERKOPEN" onClose={sluit}>
           <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
             <div style={{fontSize:14,fontWeight:500}}>{verkoopMotor.merk} {verkoopMotor.model} — {verkoopMotor.kenteken}</div>
             <div style={{fontSize:12,color:T.muted,marginTop:4}}>Vraagprijs: €{(verkoopMotor.prijs??0).toLocaleString()}</div>
@@ -2788,24 +2872,49 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
               {klanten.map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
             </select>
           </Field>
-          <ModalFooter onClose={()=>setVerkoopMotor(null)} label="Verkopen"
+          <Field label="Extra's">
+            {aangeboden.length>0?(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:"2px 12px"}}>
+                {aangeboden.map(naam=>(
+                  <label key={naam} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",cursor:"pointer",userSelect:"none",fontSize:13}}>
+                    <input type="checkbox" checked={verkoopKeuze.includes(naam)} onChange={()=>toggleKeuze(naam)} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+                    <span>{naam}</span>
+                  </label>
+                ))}
+              </div>
+            ):(
+              <div style={{fontSize:12,color:T.muted}}>{verkoopExtras.length?"Voor deze motor worden geen extra's aangeboden.":"Nog geen extra's ingesteld (Instellingen → Extra's bij verkoop)."}</div>
+            )}
+            {heeftAl.length>0&&<div style={{fontSize:11,color:T.muted,marginTop:6}}>Heeft de motor al: {heeftAl.join(", ")}</div>}
+          </Field>
+          <Field label="Overige extra's">
+            <input style={s.input} value={verkoopOverig} onChange={e=>setVerkoopOverig(e.target.value)} placeholder="Bijv. topkoffer monteren, extra sleutel…"/>
+          </Field>
+          <ModalFooter onClose={sluit} label={verkoopBezig?"Bezig…":"Verkopen"} disabled={!verkoopKlant||verkoopBezig}
             onClick={async()=>{
-              if(!verkoopKlant) return;
+              if(!verkoopKlant||verkoopBezig) return;
               const m=verkoopMotor;
-              const nieuweMotor=await onVerkoop(m,verkoopKlant);
+              // In de volgorde van de lijst, niet in de volgorde van aanklikken
+              const extras={extras:aangeboden.filter(x=>verkoopKeuze.includes(x)),overig:verkoopOverig.trim()};
+              setVerkoopBezig(true);
+              let nieuweMotor=null;
+              try{ nieuweMotor=await onVerkoop(m,verkoopKlant,extras); }
+              finally{ setVerkoopBezig(false); }
               setVerkoopMotor(null);
               if(nieuweMotor){
-                setNaVerkoop({klantId:verkoopKlant,motorId:nieuweMotor.id,merk:m.merk,model:m.model,bouwjaar:m.bouwjaar,stap:"klaarmaken"});
+                const tekst=verkoopExtrasTekst(extras);
+                setNaVerkoop({klantId:verkoopKlant,motorId:nieuweMotor.id,merk:m.merk,model:m.model,bouwjaar:m.bouwjaar,stap:"klaarmaken",opmerking:tekst?`Extra's: ${tekst}`:""});
               }
             }}/>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* ── Verkoop-workflow: 2 afspraken via hetzelfde afspraakformulier ── */}
       {naVerkoop&&naVerkoop.stap==="klaarmaken"&&(
         <AfspraakModal afspraken={afspraken||[]} klanten={klanten} voorraad={[]}
           initialModus="bestaand" initialSelKlantId={naVerkoop.klantId} initialMotorId={naVerkoop.motorId}
-          klantVergrendeld titel="MOTOR KLAARMAKEN — AFSPRAAK 1 VAN 2"
+          klantVergrendeld titel="MOTOR KLAARMAKEN — AFSPRAAK 1 VAN 2" initialOpmerking={naVerkoop.opmerking||""}
           infoBanner={<>De motor is toegewezen aan de klant. <strong>Plan eerst het klaarmaken</strong> in (poetsen, controle, kleine klussen). Sla over met “Annuleer” als er niets klaargemaakt hoeft te worden.</>}
           geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={onAddKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}
           onSave={f=>{onAddAfspraak(f);setNaVerkoop(p=>({...p,stap:"afhaal"}));}}
@@ -3874,7 +3983,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
+function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,verkoopExtras=[],onSaveVerkoopExtras=async()=>{},klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -3894,6 +4003,9 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
   const [categorieen,setCategorieen]=useState(afspraakCategorieen);
   const [categorieenStatus,setCategorieenStatus]=useState(null);
   useEffect(()=>setCategorieen(afspraakCategorieen),[afspraakCategorieen]);
+  const [extrasLijst,setExtrasLijst]=useState(verkoopExtras);
+  const [extrasStatus,setExtrasStatus]=useState(null);
+  useEffect(()=>setExtrasLijst(verkoopExtras),[verkoopExtras]);
   // Medewerkers en kleurcategorieën worden direct opgeslagen bij toevoegen/verwijderen
   // (voorheen pas met een losse knop "Opslaan", die makkelijk werd overgeslagen).
   const bewaarLijst=async(nieuw,vorige,zet,zetStatus,opslaan)=>{
@@ -3914,6 +4026,16 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
     bewaarLijst([...categorieen,{naam,kleur}],categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
   };
   const verwijderCategorie=(i)=>bewaarLijst(categorieen.filter((_,j)=>j!==i),categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
+  const voegExtraToe=(naam)=>{
+    if(bestaatAl(extrasLijst,naam)){ setExtrasStatus(`"${naam}" staat er al.`); return; }
+    bewaarLijst([...extrasLijst,naam],extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
+  };
+  const verwijderExtra=(i)=>bewaarLijst(extrasLijst.filter((_,j)=>j!==i),extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
+  const verplaatsExtra=(i,stap)=>{
+    const j=i+stap; if(j<0||j>=extrasLijst.length) return;
+    const nieuw=[...extrasLijst]; [nieuw[i],nieuw[j]]=[nieuw[j],nieuw[i]];
+    bewaarLijst(nieuw,extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
+  };
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
@@ -4260,6 +4382,30 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
         </div>
         <NieuweNaamRij placeholder="Naam medewerker" onAdd={voegMedewerkerToe}/>
         <OpslaanStatus status={medewerkersStatus}/>
+      </div>
+
+      {/* Extra's bij verkoop */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Extra's bij verkoop</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
+          Opties die je bij het verkopen van een motor kunt aanbieden (Voorraad → Verkopen). Per voorraadmotor vink je uit wat hij al heeft. "Overige extra's" staat er altijd bij als vrij veld. Toevoegen, verwijderen en verplaatsen wordt direct opgeslagen.
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
+          {extrasLijst.map((naam,i)=>(
+            <div key={naam} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:13}}>
+              <span style={{flex:1,minWidth:0}}>{naam}</span>
+              <button onClick={()=>verplaatsExtra(i,-1)} disabled={i===0||extrasStatus==="bezig"} title="Omhoog" aria-label={`${naam} omhoog`}
+                style={{background:"none",border:"none",cursor:i===0?"default":"pointer",color:T.muted,opacity:i===0?0.3:1,fontSize:13,padding:"2px 6px"}}>▲</button>
+              <button onClick={()=>verplaatsExtra(i,1)} disabled={i===extrasLijst.length-1||extrasStatus==="bezig"} title="Omlaag" aria-label={`${naam} omlaag`}
+                style={{background:"none",border:"none",cursor:i===extrasLijst.length-1?"default":"pointer",color:T.muted,opacity:i===extrasLijst.length-1?0.3:1,fontSize:13,padding:"2px 6px"}}>▼</button>
+              <button onClick={()=>verwijderExtra(i)} disabled={extrasStatus==="bezig"} title="Verwijderen" aria-label={`${naam} verwijderen`}
+                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
+            </div>
+          ))}
+          {extrasLijst.length===0&&<div style={{fontSize:12,color:T.muted}}>Nog geen extra's. Voeg er hieronder een toe.</div>}
+        </div>
+        <NieuweNaamRij placeholder="Nieuwe extra (bijv. Topkoffer)" onAdd={voegExtraToe}/>
+        <OpslaanStatus status={extrasStatus}/>
       </div>
 
       {/* Kleurcategorieën */}
@@ -4794,7 +4940,7 @@ export default function AdminApp(){
         // Alles in één ronde tegelijk ophalen (voorheen drie rondes na elkaar).
         // Motoren/km/service: alles in één keer (admin ziet alles) i.p.v. .in(klant_id, …):
         // bij honderden klanten wordt die URL te lang voor de server.
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData, mot, km, svc, inst] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData, mot, km, svc, inst, vExtrasData] = await Promise.all([
           alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id")),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           alleRijen(()=>sb.from("afspraken").select(AFSPRAAK_VELDEN).gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
@@ -4813,7 +4959,8 @@ export default function AdminApp(){
           alleRijen(()=>sb.from("motoren").select("*").not("klant_id","is",null).order("created_at").order("id")),
           alleRijen(()=>sb.from("km_historie").select("motor_id,datum,km").order("datum").order("id")),
           alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin,voorband_datum,achterband_datum").order("datum",{ascending:false}).order("id")),
-          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag").single(),
+          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag,verkoop_extras").single(),
+          alleRijen(()=>sb.from("motor_verkoop_extras").select("motor_id,extras,overig").order("motor_id")), // extra's bij verkoop: alleen admin leesbaar
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
@@ -4822,6 +4969,7 @@ export default function AdminApp(){
         const vInkoopMap = Object.fromEntries((vInkoopData.data||[]).map(r=>[r.voorraad_id,r.inkoopprijs]));
         const prijscheckMap = Object.fromEntries((prijscheckData.data||[]).map(r=>[r.voorraad_id,r]));
         const internMap = Object.fromEntries((internData.data||[]).map(r=>[r.voorraad_id,r.opmerking]));
+        const extrasMap = new Map((vExtrasData.data||[]).map(r=>[r.motor_id,{extras:r.extras||[],overig:r.overig||""}]));
         // Opruimen op de achtergrond — blokkeert het eerste scherm niet
         ruimVerlopenOp(sb, verlopen.data).catch(e=>console.error("Opruimen mislukt:", e));
 
@@ -4840,6 +4988,7 @@ export default function AdminApp(){
               : [];
             return {
               ...m,
+              verkoop_extras: extrasMap.get(m.id)||null,
               kmHistory: (kmPerMotor.get(m.id)||[]).map(x=>({datum:x.datum,km:x.km})),
               service: [...klantSvc,...vrdSvc].sort((a,b)=>(b.datum||"").localeCompare(a.datum||"")),
             };
@@ -4872,6 +5021,7 @@ export default function AdminApp(){
         if(inst.data?.afspraak_soorten?.length) setAfspraakSoorten(inst.data.afspraak_soorten);
         if(inst.data?.medewerkers) setMedewerkers(inst.data.medewerkers);
         if(inst.data?.afspraak_categorieen) setAfspraakCategorieen(inst.data.afspraak_categorieen);
+        if(Array.isArray(inst.data?.verkoop_extras)) setVerkoopExtras(inst.data.verkoop_extras);
         if(inst.data?.inkoop_bewaar_dagen != null) setInkoopBewaarDagen(inst.data.inkoop_bewaar_dagen);
         if(inst.data?.max_afspraken_per_dag != null) setMaxPerDag(inst.data.max_afspraken_per_dag);
 
@@ -5060,17 +5210,27 @@ export default function AdminApp(){
 
   const updateMotor = async (motorId, f) => {
     const sb = (await import("../lib/supabase.js")).supabase;
+    const {verkoop_extras, ...velden} = f;
     await sb.from("motoren").update({
-      merk:f.merk, model:f.model, kenteken:f.kenteken,
-      bouwjaar:parseInt(f.bouwjaar)||0, aankoopdatum:f.aankoopdatum||null,
-      voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
-      voorband_datum:f.voorband_datum||null, achterband_datum:f.achterband_datum||null,
-      bijzonderheden:f.bijzonderheden||null, onderdelen_link:f.onderdelen_link||null,
-      chassis_nummer:f.chassis_nummer||null,
+      merk:velden.merk, model:velden.model, kenteken:velden.kenteken,
+      bouwjaar:parseInt(velden.bouwjaar)||0, aankoopdatum:velden.aankoopdatum||null,
+      voorband_maat:velden.voorband_maat||null, achterband_maat:velden.achterband_maat||null,
+      voorband_datum:velden.voorband_datum||null, achterband_datum:velden.achterband_datum||null,
+      bijzonderheden:velden.bijzonderheden||null, onderdelen_link:velden.onderdelen_link||null,
+      chassis_nummer:velden.chassis_nummer||null,
     }).eq("id", motorId);
+    // Extra's bij aankoop alleen wegschrijven als ze echt gewijzigd zijn
+    const huidig = klanten.flatMap(k=>k.motoren||[]).find(m=>m.id===motorId)?.verkoop_extras||null;
+    const zelfde = (a,b)=>JSON.stringify([a?.extras||[],(a?.overig||"").trim()])===JSON.stringify([b?.extras||[],(b?.overig||"").trim()]);
+    let nieuweExtras = huidig;
+    if(verkoop_extras!==undefined && !zelfde(huidig, verkoop_extras)){
+      const {waarde, error} = await bewaarVerkoopExtras(sb, motorId, verkoop_extras);
+      if(error) alert("Extra's bij aankoop opslaan mislukt: "+error.message);
+      else nieuweExtras = waarde;
+    }
     setKlanten(prev => prev.map(k => ({
       ...k,
-      motoren: (k.motoren||[]).map(m => m.id===motorId ? {...m,...f,bouwjaar:parseInt(f.bouwjaar)||m.bouwjaar} : m)
+      motoren: (k.motoren||[]).map(m => m.id===motorId ? {...m,...velden,bouwjaar:parseInt(velden.bouwjaar)||m.bouwjaar,verkoop_extras:nieuweExtras} : m)
     })));
   };
 
@@ -5165,6 +5325,7 @@ export default function AdminApp(){
       onderdelen_link:f.onderdelen_link||null,
       kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
       uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
+      extras_niet_aanbieden:Array.isArray(f.extras_niet_aanbieden)?f.extras_niet_aanbieden:[],
       status: f.op_website===false ? "niet_beschikbaar" : "beschikbaar",
     }).select().single();
     if(insertFout||!v){
@@ -5196,6 +5357,7 @@ export default function AdminApp(){
       voorband_maat:f.voorband_maat||null, achterband_maat:f.achterband_maat||null,
       kleur:f.kleur||null, carrosserietype:f.carrosserietype||null, uitvoering:f.uitvoering||null,
       uitrusting:Array.isArray(f.uitrusting)?f.uitrusting:[], beschrijving:f.beschrijving||null,
+      extras_niet_aanbieden:Array.isArray(f.extras_niet_aanbieden)?f.extras_niet_aanbieden:[],
       fotos:[...behoudeFotos, ...nieuweUrls],
     };
     // Inkoopprijs alleen wegschrijven als hij echt gewijzigd is. Onleesbare invoer
@@ -5228,7 +5390,20 @@ export default function AdminApp(){
     if(verwijderdeUrls.length>0) verwijderCloudinaryFotos(verwijderdeUrls);
   };
 
-  const verkoop = async (motor, klantId) => {
+  // Extra's die de koper erbij nam (tabel motor_verkoop_extras, alleen admin). Niets gekozen
+  // en geen "overig": de regel weghalen. Geeft {waarde, error}.
+  const bewaarVerkoopExtras = async (sb, motorId, ve) => {
+    const extras = Array.isArray(ve?.extras) ? ve.extras : [];
+    const overig = (ve?.overig||"").trim();
+    if(!extras.length && !overig){
+      const {error} = await sb.from("motor_verkoop_extras").delete().eq("motor_id",motorId);
+      return {waarde:null, error};
+    }
+    const {error} = await sb.from("motor_verkoop_extras").upsert({motor_id:motorId, extras, overig:overig||null, bijgewerkt_op:new Date().toISOString()});
+    return {waarde:{extras, overig}, error};
+  };
+
+  const verkoop = async (motor, klantId, gekozenExtras=null) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const k = klanten.find(k=>k.id===klantId);
     if(!k) return;
@@ -5245,6 +5420,12 @@ export default function AdminApp(){
       source_voorraad_id:motor.id,
     }).select().single();
     if(motorFout) alert("Motor is als verkocht gemarkeerd, maar kon niet aan de klant worden gekoppeld: "+motorFout.message+". Voeg hem bij de klant handmatig toe.");
+    let opgeslagenExtras = null;
+    if(nieuwMotor && (gekozenExtras?.extras?.length || gekozenExtras?.overig)){
+      const {waarde, error:extrasFout} = await bewaarVerkoopExtras(sb, nieuwMotor.id, gekozenExtras);
+      if(extrasFout) alert("De motor is verkocht, maar de extra's zijn niet opgeslagen: "+extrasFout.message+". Vul ze in bij de klant via Wijzigen.");
+      else opgeslagenExtras = waarde;
+    }
     if(nieuwMotor){
       // Kopieer voorraad servicehistorie naar klant motor
       const {data:vs} = await sb.from("voorraad_service").select("*").eq("voorraad_motor_id",motor.id);
@@ -5254,7 +5435,7 @@ export default function AdminApp(){
         const {data:inserted} = await sb.from("service_beurten").insert(recs).select();
         overgedragenSvc = inserted||[];
       }
-      setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,kmHistory:[],service:overgedragenSvc}]}:k));
+      setKlanten(p=>p.map(k=>k.id===klantId?{...k,motoren:[...k.motoren,{...nieuwMotor,verkoop_extras:opgeslagenExtras,kmHistory:[],service:overgedragenSvc}]}:k));
     }
     setShowroom(p=>p.map(m=>m.id===motor.id?{...m,verkocht_op:TODAY,verkocht_aan:klantId,status:"verkocht",fotos_bewaren_tot:bewarenStr}:m));
     // Foto's worden na 30 dagen verwijderd via fotos_bewaren_tot — NIET direct
@@ -5703,6 +5884,7 @@ export default function AdminApp(){
   const [dienstenTarieven, setDienstenTarieven] = useState({});
   const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [medewerkers, setMedewerkers] = useState([]);
+  const [verkoopExtras, setVerkoopExtras] = useState(DEFAULT_VERKOOP_EXTRAS);
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
   const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
   // Dagcapaciteit voor klantportaal en website (de database bewaakt hem, zie supabase/dagcapaciteit.sql)
@@ -5758,6 +5940,13 @@ export default function AdminApp(){
     const { error } = await sb.from("instellingen").update({ medewerkers: namen }).eq("id", 1);
     if (error) throw new Error(error.message);
     setMedewerkers(namen);
+  };
+
+  const slaVerkoopExtrasOp = async (namen) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { error } = await sb.from("instellingen").update({ verkoop_extras: namen }).eq("id", 1);
+    if (error) throw new Error(error.message);
+    setVerkoopExtras(namen);
   };
 
   const slaAfspraakCategorieenOp = async (categorieen) => {
@@ -5904,8 +6093,8 @@ export default function AdminApp(){
   const pageContent = (
     <>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
-      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>}
+      {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
       {page==="website"&&(
@@ -5914,7 +6103,7 @@ export default function AdminApp(){
             zetVerlaatGuard={zetVerlaatGuard} onTerug={()=>setPage("instellingen")}/>
         </Suspense>
       )}
-      {page==="instellingen"&&<InstellingenPage onOpenWebsite={()=>setPage("website")} openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
+      {page==="instellingen"&&<InstellingenPage onOpenWebsite={()=>setPage("website")} openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} verkoopExtras={verkoopExtras} onSaveVerkoopExtras={slaVerkoopExtrasOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
     </>
   );
 
