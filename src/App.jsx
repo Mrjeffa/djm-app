@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, Component, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, Component, Suspense } from 'react'
 import { supabase } from './lib/supabase.js'
+import { laadMetHerstel } from './lib/laden.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 
@@ -8,17 +9,6 @@ import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 // database (tabel admins + RLS), niet deze splitsing.
 // Na een nieuwe versie kan een lang openstaand scherm nog naar verdwenen
 // bestanden wijzen: dan één keer herladen in plaats van een foutmelding.
-const HERLAAD_SLEUTEL = 'djm_herladen_na_update'
-const laadMetHerstel = (laad) => lazy(() => laad().then(
-  (mod) => { try { sessionStorage.removeItem(HERLAAD_SLEUTEL) } catch (_) {} return mod },
-  (fout) => {
-    let alGeprobeerd = true
-    try { alGeprobeerd = sessionStorage.getItem(HERLAAD_SLEUTEL) === '1'; sessionStorage.setItem(HERLAAD_SLEUTEL, '1') } catch (_) {}
-    if (alGeprobeerd) throw fout
-    window.location.reload()
-    return new Promise(() => {})
-  }
-))
 const AdminApp = laadMetHerstel(() => import('./components/AdminApp.jsx'))
 const KlantApp = laadMetHerstel(() => import('./components/KlantApp.jsx'))
 
