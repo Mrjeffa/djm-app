@@ -22,6 +22,21 @@ export const STANDAARD_SJABLOON = {
     "Balhoofdlagers", "Algemene visuele inspectie",
   ],
   groot: ["Oliefilter", "Luchtfilter", "Bougies", "Kleppen stellen"],
+  // Controlepunten waar materiaal voor nodig is: bij Oké of Vervangen komen ze als regel op de
+  // factuur, met deze tekst (en de toelichting erachter). Met dezelfde tekst in de prijslijst
+  // vindt de factuur ook de prijs. Twee punten met dezelfde tekst geven één regel.
+  materiaal: {
+    "Fuel conditioner": "Fuel conditioner",
+    "Olie": "Olie",
+    "Oliefilter": "Oliefilter",
+    "Koelvloeistof check, niveau, kleur": "Koelvloeistof",
+    "Cardan olie": "Cardanolie",
+    "Remvloeistof voor": "Remvloeistof",
+    "Remvloeistof achter": "Remvloeistof",
+  },
+  // Staan op elke factuur. Regels die met "Arbeid" beginnen krijgen als aantal de duur van de
+  // afspraak (uren).
+  factuur_standaard: ["Klein materiaal, milieu-afvalkosten", "Arbeid"],
 };
 
 export const STATUSSEN = [
@@ -33,9 +48,15 @@ export const STATUSSEN = [
 
 const lijstVan = (x, terugval) => (Array.isArray(x) ? x.filter((n) => typeof n === "string" && n.trim()) : terugval);
 
+const materiaalVan = (m) => (m && typeof m === "object" && !Array.isArray(m)
+  ? Object.fromEntries(Object.entries(m).filter(([k, v]) => k.trim() && typeof v === "string" && v.trim()).map(([k, v]) => [k, v.trim()]))
+  : STANDAARD_SJABLOON.materiaal);
+
 export const geldigSjabloon = (s) => ({
   controle: lijstVan(s?.controle, STANDAARD_SJABLOON.controle),
   groot: lijstVan(s?.groot, STANDAARD_SJABLOON.groot),
+  materiaal: materiaalVan(s?.materiaal),
+  factuur_standaard: lijstVan(s?.factuur_standaard, STANDAARD_SJABLOON.factuur_standaard),
 });
 
 // "Kleine beurt, Voorband vervangen" → ["Kleine beurt", "Voorband vervangen"]
