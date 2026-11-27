@@ -195,7 +195,8 @@ nieuwe klant). Kanalen worden bij sluiten met `removeChannel` opgeruimd.
   `service_beurten`. Mislukt de eerste stap, dan verandert er niets.
 - *Verkoopproces* (`VerkoopProces`): altijd dezelfde stappen — klant + extra's kiezen en
   verkopen, dan de afspraak "Motor klaarmaken", dan "Afhalen / afleveren". Start vanuit
-  Voorraad → Verkopen, of vanuit Klant toevoegen met "Uit voorraad": dan wordt eerst de klant
+  Voorraad → Verkopen, vanuit een bestaande klant (+ Motor → "Uit voorraad", `MotorModal`; klant
+  staat vast), of vanuit Klant toevoegen met "Uit voorraad": dan wordt eerst de klant
   opgeslagen (`addKlant`, geeft `{fout, klant}`), loopt het verkoopproces met die klant vast
   gekozen, en volgt daarna de uitnodiging voor het klantportaal. Breek je de verkoop af, dan
   staat de klant er zonder motor en verkoop je later via Voorraad.

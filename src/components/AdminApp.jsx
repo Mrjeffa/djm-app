@@ -373,7 +373,6 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
   const [verkoop,setVerkoop]=useState(null); // { motor, klantId, klantNaam } zolang het verkoopproces loopt
   const [fout,setFout]=useState("");
   const [bezig,setBezig]=useState(false);
-  const beschikbaar=voorraad.filter(m=>!m.verkocht_op);
   const [motorKeuze,setMotorKeuze]=useState(null); // null | "voorraad" | "nieuw"
   const [geselecteerdeVoorraad,setGeselecteerdeVoorraad]=useState(null);
   // eigen motor velden
@@ -384,7 +383,7 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
   const normK=k=>k.replace(/-/g,"").toUpperCase();
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
 
-  if(verkoop) return <VerkoopProces {...verkoopProps} motor={verkoop.motor} klantId={verkoop.klantId} klantNaam={verkoop.klantNaam} onKlaar={()=>setVerkoop(null)}/>;
+  if(verkoop) return <VerkoopProces {...verkoopProps} motor={verkoop.motor} klantId={verkoop.klantId} klantNaam={verkoop.klantNaam} klantNotitie="net toegevoegd" onKlaar={()=>setVerkoop(null)}/>;
   if(opgeslagen) return <UitnodigingModal klant={opgeslagen} onClose={onClose}/>;
 
   const haalRDWOp = async () => {
@@ -451,27 +450,8 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
       {/* Uit voorraad */}
       {motorKeuze==="voorraad"&&(
         <div>
-          {beschikbaar.length===0?(
-            <div style={{fontSize:13,color:T.muted,padding:"10px 0"}}>Geen motors in voorraad</div>
-          ):(
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {beschikbaar.map(m=>(
-                <div key={m.id} onClick={()=>setGeselecteerdeVoorraad(m)}
-                  style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${geselecteerdeVoorraad?.id===m.id?T.accent:T.border}`,background:geselecteerdeVoorraad?.id===m.id?`${T.accent}20`:"transparent",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:500}}>{m.merk} {m.model}</div>
-                    <div style={{fontSize:11,color:T.muted,marginTop:2}}>{m.kenteken} · {m.bouwjaar} · {kmTekst(m.km??0, m.km_eenheid)}</div>
-                  </div>
-                  <div style={{fontSize:13,color:T.accent,fontWeight:600}}>€{(m.prijs??0).toLocaleString()}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {verkoopMotor&&(
-            <div style={{fontSize:12,color:T.muted,marginTop:10,lineHeight:1.5}}>
-              Na opslaan ga je verder met <strong style={{color:T.text}}>Motor verkopen</strong>: extra's kiezen en de afspraken voor klaarmaken en afhalen plannen.
-            </div>
-          )}
+          <VoorraadKeuze voorraad={voorraad} gekozen={geselecteerdeVoorraad} onKies={setGeselecteerdeVoorraad}
+            uitleg={<>Na opslaan ga je verder met <strong style={{color:T.text}}>Motor verkopen</strong>: extra's kiezen en de afspraken voor klaarmaken en afhalen plannen.</>}/>
         </div>
       )}
 
@@ -504,20 +484,72 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
   );
 }
 
-function MotorModal({onSave,onClose}){
+// Keuzelijst van voorraadmotoren die nog te koop zijn (Klant toevoegen, + Motor bij een klant)
+function VoorraadKeuze({voorraad=[], gekozen, onKies, uitleg=null}){
+  const beschikbaar=voorraad.filter(m=>!m.verkocht_op);
+  return(
+    <>
+      {beschikbaar.length===0?(
+        <div style={{fontSize:13,color:T.muted,padding:"10px 0"}}>Geen motoren in voorraad</div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {beschikbaar.map(m=>(
+            <div key={m.id} onClick={()=>onKies(m)} role="button" aria-pressed={gekozen?.id===m.id}
+              style={{padding:"10px 12px",borderRadius:4,border:`1px solid ${gekozen?.id===m.id?T.accent:T.border}`,background:gekozen?.id===m.id?`${T.accent}20`:"transparent",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:500}}>{m.merk} {m.model}</div>
+                <div style={{fontSize:11,color:T.muted,marginTop:2}}>{m.kenteken} · {m.bouwjaar} · {kmTekst(m.km??0, m.km_eenheid)}</div>
+              </div>
+              <div style={{fontSize:13,color:T.accent,fontWeight:600,flexShrink:0}}>€{(m.prijs??0).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {gekozen&&uitleg&&<div style={{fontSize:12,color:T.muted,marginTop:10,lineHeight:1.5}}>{uitleg}</div>}
+    </>
+  );
+}
+
+// + Motor bij een bestaande klant: een eigen motor (kenteken) of een motor uit de voorraad.
+// Uit voorraad gaat via onUitVoorraad naar het gewone verkoopproces (VerkoopProces).
+function MotorModal({onSave,onClose,voorraad=[],onUitVoorraad=null}){
+  const [keuze,setKeuze]=useState("nieuw"); // "voorraad" | "nieuw"
+  const [gekozen,setGekozen]=useState(null);
   const [f,setF]=useState({kenteken:"",merk:"",model:"",bouwjaar:"",km:"",aankoopdatum:TODAY});
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+  const keuzeKnop=(id,label)=>(
+    <button type="button" onClick={()=>setKeuze(id)} aria-pressed={keuze===id}
+      style={{flex:1,padding:"10px",borderRadius:4,border:`1px solid ${keuze===id?T.accent:T.border}`,background:keuze===id?`${T.accent}20`:"transparent",color:keuze===id?T.accent:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Barlow, sans-serif",fontWeight:keuze===id?600:400}}>
+      {label}
+    </button>
+  );
   return(
     <Modal title="MOTOR TOEVOEGEN" onClose={onClose}>
-      <Grid2>
-        <Field label="Kenteken *"><input style={s.input} value={f.kenteken} onChange={set("kenteken")} placeholder="AB-123-C"/></Field>
-        <Field label="Aankoopdatum"><input style={s.input} type="date" value={f.aankoopdatum} onChange={set("aankoopdatum")}/></Field>
-        <Field label="Merk *"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
-        <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
-        <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
-        <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
-      </Grid2>
-      <ModalFooter onClose={onClose} label="Motor Toevoegen" onClick={()=>{if(f.kenteken&&f.merk){onSave(f);onClose();}}}/>
+      {onUitVoorraad&&(
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          {keuzeKnop("voorraad","📋 Uit voorraad")}
+          {keuzeKnop("nieuw","🔍 Eigen motor")}
+        </div>
+      )}
+      {keuze==="voorraad"&&onUitVoorraad?(
+        <>
+          <VoorraadKeuze voorraad={voorraad} gekozen={gekozen} onKies={setGekozen}
+            uitleg={<>Hierna ga je verder met <strong style={{color:T.text}}>Motor verkopen</strong>: extra's kiezen en de afspraken voor klaarmaken en afhalen plannen.</>}/>
+          <ModalFooter onClose={onClose} label="Verder naar verkopen →" disabled={!gekozen} onClick={()=>{if(gekozen) onUitVoorraad(gekozen);}}/>
+        </>
+      ):(
+        <>
+          <Grid2>
+            <Field label="Kenteken *"><input style={s.input} value={f.kenteken} onChange={set("kenteken")} placeholder="AB-123-C"/></Field>
+            <Field label="Aankoopdatum"><input style={s.input} type="date" value={f.aankoopdatum} onChange={set("aankoopdatum")}/></Field>
+            <Field label="Merk *"><input style={s.input} value={f.merk} onChange={set("merk")} placeholder="Honda"/></Field>
+            <Field label="Model"><input style={s.input} value={f.model} onChange={set("model")} placeholder="CB500F"/></Field>
+            <Field label="Bouwjaar"><input style={s.input} value={f.bouwjaar} onChange={set("bouwjaar")} placeholder="2022"/></Field>
+            <Field label="Kilometerstand"><input style={s.input} value={f.km} onChange={set("km")} placeholder="15000"/></Field>
+          </Grid2>
+          <ModalFooter onClose={onClose} label="Motor Toevoegen" onClick={()=>{if(f.kenteken&&f.merk){onSave(f);onClose();}}}/>
+        </>
+      )}
     </Modal>
   );
 }
@@ -1922,7 +1954,7 @@ function KlantEditModal({klant,onSave,onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[]}){
+function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[],voorraad=[],verkoopProps=null}){
   const [modal,setModal]=useState(null);
   const [editKlantOpen,setEditKlantOpen]=useState(false);
   const [selMotorId,setSelMotorId]=useState(null);
@@ -1937,6 +1969,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
   const [motorMenuId,setMotorMenuId]=useState(null);
   const [delMotorId,setDelMotorId]=useState(null);
   const [meerdaagseMotor,setMeerdaagseMotor]=useState(null);
+  const [verkoopMotor,setVerkoopMotor]=useState(null); // + Motor → Uit voorraad: verkoopproces voor deze klant
   const klantMotoren=klant?.motoren||[];
   const addMotor=f=>onAddMotor(klant.id,f);
   const addService=f=>{ if(selMotorId) onAddService(klant.id,selMotorId,f); };
@@ -2139,7 +2172,11 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
           )}
         </div>
       ))}
-      {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)}/>}
+      {modal==="addMotor"&&<MotorModal onSave={addMotor} onClose={()=>setModal(null)} voorraad={voorraad}
+        onUitVoorraad={verkoopProps?(m=>{setModal(null);setVerkoopMotor(m);}):null}/>}
+      {verkoopMotor&&verkoopProps&&(
+        <VerkoopProces {...verkoopProps} motor={verkoopMotor} klantId={klant.id} klantNaam={klant.naam} onKlaar={()=>setVerkoopMotor(null)}/>
+      )}
       {modal==="addService"&&<ServiceModal onSave={addService} onClose={()=>setModal(null)}/>}
       {editSvc&&<ServiceModal initial={editSvc} onSave={f=>{ onUpdateService(klant.id,editSvc.motorId,editSvc.id,f); setEditSvc(null); }} onClose={()=>setEditSvc(null)}/>}
       {editMotorItem&&<MotorEditModal motor={editMotorItem} onSave={onUpdateMotor} onClose={()=>setEditMotorItem(null)} verkoopExtras={verkoopExtras}/>}
@@ -2331,6 +2368,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
             onDeleteMotor={onDeleteMotor}
             onBack={()=>setSel(null)}
             isMobile={true}
+            voorraad={voorraad} verkoopProps={verkoopProps}
             klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
         ):(
           <div>
@@ -2375,6 +2413,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
                 onDeleteMotor={onDeleteMotor}
                 onBack={()=>setSel(null)}
                 isMobile={false}
+                voorraad={voorraad} verkoopProps={verkoopProps}
                 klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
             )}
           </div>
@@ -2572,7 +2611,7 @@ function PrijscheckBlok({motor:m, onCheck}){
 //  3. Afspraak "Afhalen / afleveren"
 // Gebruikt vanuit Voorraad (knop Verkopen) en vanuit Klant toevoegen (motor uit voorraad).
 // Met klantId staat de klant vast (net aangemaakt). onKlaar: proces klaar of afgebroken.
-function VerkoopProces({motor, klanten=[], klantId:vasteKlantId="", klantNaam="", verkoopExtras=[], onVerkoop, onKlaar,
+function VerkoopProces({motor, klanten=[], klantId:vasteKlantId="", klantNaam="", klantNotitie="", verkoopExtras=[], onVerkoop, onKlaar,
   afspraken=[], onAddAfspraak=()=>{}, geslotenDagen=[], openingstijden=null, afspraakSoorten=[], klussen=[],
   onAddKlus=async()=>{}, medewerkers=[], afspraakCategorieen=[]}){
   const [klantId,setKlantId]=useState(vasteKlantId||"");
@@ -2619,7 +2658,7 @@ function VerkoopProces({motor, klanten=[], klantId:vasteKlantId="", klantNaam=""
       onClose={onKlaar}/>
   );
 
-  const vasteKlant=vasteKlantId?(klanten.find(k=>k.id===vasteKlantId)?.naam||klantNaam||"Nieuwe klant"):null;
+  const vasteKlant=vasteKlantId?(klanten.find(k=>k.id===vasteKlantId)?.naam||klantNaam||"Klant"):null;
   return(
     <Modal title="MOTOR VERKOPEN" onClose={sluit}>
       <div style={{marginBottom:16,padding:14,background:T.surf2,borderRadius:4}}>
@@ -2630,7 +2669,7 @@ function VerkoopProces({motor, klanten=[], klantId:vasteKlantId="", klantNaam=""
         {vasteKlant?(
           <div style={{...s.input,display:"flex",alignItems:"center",gap:8}}>
             <span style={{color:T.green}}>✓</span><span>{vasteKlant}</span>
-            <span style={{marginLeft:"auto",fontSize:11,color:T.muted}}>net toegevoegd</span>
+            {klantNotitie&&<span style={{marginLeft:"auto",fontSize:11,color:T.muted}}>{klantNotitie}</span>}
           </div>
         ):(
           <select style={s.input} value={klantId} onChange={e=>setKlantId(e.target.value)}>
