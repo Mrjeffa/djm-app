@@ -3406,10 +3406,15 @@ function OnderhoudslijstModal({afspraak, motor, klantNaam, onClose}){
             )}
           </div>
           <div style={{fontSize:11,color:T.muted,margin:"6px 0 4px"}}>N.v.t. = niet aanwezig op deze motor. Tik nog een keer om te wissen.</div>
-          {lijst.controle.map((x,i)=>(
+          {lijst.controle.map((x,i)=>{
+            const materiaal=sjabloon.materiaal?.[x.naam];
+            return(
             <div key={x.naam} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <div style={{flex:"1 1 170px",fontSize:13,minWidth:0}}>{x.naam}</div>
+                <div style={{flex:"1 1 170px",fontSize:13,minWidth:0}}>
+                  {x.naam}
+                  {materiaal&&<span title={`Bij Oké of Vervangen komt "${materiaal}" op de factuur`} style={{marginLeft:6,fontSize:11,color:T.muted}}>🧾</span>}
+                </div>
                 <div role="group" aria-label={x.naam} style={{display:"flex",gap:4,flex:"0 0 auto"}}>
                   {STATUSSEN.map(st=>{
                     const aan=x.status===st.id;
@@ -3422,13 +3427,14 @@ function OnderhoudslijstModal({afspraak, motor, klantNaam, onClose}){
                   })}
                 </div>
               </div>
-              {(x.status==="advies"||x.status==="vervangen"||x.notitie)&&(
+              {(x.status==="advies"||x.status==="vervangen"||x.notitie||(materiaal&&x.status==="oke"))&&(
                 <input style={{...s.input,marginTop:6,padding:"6px 8px",fontSize:12}} value={x.notitie||""} aria-label={`Toelichting ${x.naam}`}
                   onChange={e=>zetPunt("controle",i,{notitie:e.target.value})}
-                  placeholder={x.status==="advies"?"Toelichting voor de klant (bijv. nog 3 mm, binnenkort vervangen)":"Toelichting (bijv. merk/type)"}/>
+                  placeholder={x.status==="advies"?"Toelichting voor de klant (bijv. nog 3 mm, binnenkort vervangen)":materiaal?"Merk/type, komt op de factuur (bijv. Motul 10W40 of HF303)":"Toelichting (bijv. merk/type)"}/>
               )}
             </div>
-          ))}
+            );
+          })}
 
           <div style={{...s.sectionLabel,marginTop:20}}>Groot onderhoud</div>
           {lijst.groot.map((x,i)=>(
@@ -3508,9 +3514,10 @@ function FactuurModal({afspraak, motor, klant, onClose}){
       if(ol.error||beheer.error){ setLaadFout("De gegevens konden niet worden geladen. Controleer de verbinding."); setLaden(false); return; }
       const pl=prijzen.error?[]:(prijzen.data||[]);
       const l=bouwLijst(leesReservekopie(afspraak.id)?.lijst||ol.data?.lijst,sjabloon,afspraak);
-      // Onderhoudslijst ingevuld: wat er is gedaan. Anders: de werkzaamheden uit de afspraak.
-      const start=isIngevuld(l)?factuurRegels(l,pl)
-        :soortenVan(afspraak.soort).map(naam=>({aantal:1,omschrijving:naam,prijs:zoekInPrijslijst(naam,"",pl)?.verkoop??null}));
+      // Onderhoudslijst ingevuld: wat er is gedaan, met materiaal en de vaste regels (klein
+      // materiaal, arbeid = duur van de afspraak). Anders: de werkzaamheden uit de afspraak.
+      const opties={materiaal:sjabloon.materiaal||{},standaard:sjabloon.factuur_standaard||[],arbeidUren:Number(afspraak.duur)||null};
+      const start=factuurRegels(isIngevuld(l)?l:{...l,werkzaamheden:l.werkzaamheden.map(w=>({...w,gedaan:true}))},pl,opties);
       const laatsteNr=beheer.data?.laatste_factuurnummer??null;
       setLijst(l); setPrijslijst(pl); setLaatste(laatsteNr);
       setNummer(String(l.factuur?.nummer??(laatsteNr!=null?Number(laatsteNr)+1:"")));
@@ -3654,7 +3661,7 @@ function FactuurModal({afspraak, motor, klant, onClose}){
 }
 
 // Instellingen → Facturen en prijslijst
-function FactuurInstellingen(){
+function FactuurInstellingen({sjabloon=STANDAARD_SJABLOON, onSaveSjabloon=async()=>{}}){
   const [nummer,setNummer]=useState("");
   const [opgeslagen,setOpgeslagen]=useState(null);
   const [nrStatus,setNrStatus]=useState(null);
@@ -3727,11 +3734,18 @@ function FactuurInstellingen(){
       <OpslaanStatus status={nrStatus}/>
 
       <div style={{borderTop:`1px solid ${T.border}`,margin:"18px 0"}}/>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Vaste regels op elke factuur</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.6}}>
+        Deze regels staan altijd op de factuur, met de prijs uit de prijslijst (zelfde tekst). Een regel die met "Arbeid" begint krijgt als aantal de duur van de afspraak in uren; dat kun je op de factuur aanpassen.
+      </div>
+      <LijstBeheer lijst={sjabloon.factuur_standaard||[]} onSave={l=>onSaveSjabloon({...sjabloon,factuur_standaard:l})} placeholder="Nieuwe vaste regel" leeg="Geen vaste regels."/>
+
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"18px 0"}}/>
       <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Prijslijst <span style={{fontWeight:400,color:T.muted}}>(alle prijzen ex btw)</span></div>
       <div style={{fontSize:12,color:T.muted,lineHeight:1.7,marginBottom:12}}>
         {aantal!=null&&<div style={{color:T.text,marginBottom:4}}>{aantal} artikel{aantal===1?"":"en"} in de app.</div>}
-        1. Download de prijslijst. 2. Vul hem aan in Excel: plak onder de kopregel bijvoorbeeld de regels uit je Larsson-bestelling (JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs…) of typ eigen regels, zoals "Kleine beurt" met jouw prijs. 3. Upload het bestand: het vervangt de prijslijst in de app.
-        Op een factuur zoekt de app de prijs op artikelnummer (bijvoorbeeld HF303 als type bij het oliefilter) of op precies dezelfde omschrijving.
+        1. Download de prijslijst. 2. Vul hem aan in Excel: plak onder de kopregel bijvoorbeeld de regels uit je Larsson-bestelling (JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs…) of typ eigen regels, zoals "Arbeid", "Olie" of "Klein materiaal, milieu-afvalkosten" met jouw prijs. 3. Upload het bestand: het vervangt de prijslijst in de app.
+        Op een factuur zoekt de app de prijs op artikelnummer (bijvoorbeeld HF303 als type bij het oliefilter), op precies dezelfde omschrijving, of op de naam zonder type ("Olie" bij "Olie 10W40").
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button style={s.btnGhost} onClick={downloadPrijslijst} disabled={plStatus==="bezig"}>⬇ Prijslijst downloaden</button>
@@ -4608,6 +4622,51 @@ function NieuweNaamRij({onAdd,placeholder="Naam"}){
     </div>
   );
 }
+// Instellingen → Onderhoudslijst: welke controlepunten materiaal zijn en met welke tekst ze op
+// de factuur komen (sjabloon.materiaal). Direct opgeslagen.
+function MateriaalInstellingen({sjabloon, onSave}){
+  const [teksten,setTeksten]=useState(sjabloon.materiaal||{});
+  const [status,setStatus]=useState(null);
+  useEffect(()=>setTeksten(sjabloon.materiaal||{}),[sjabloon.materiaal]);
+  const bewaar=async(nieuw)=>{
+    const vorige=teksten;
+    setTeksten(nieuw); setStatus("bezig");
+    try{ await onSave({...sjabloon,materiaal:nieuw}); setStatus("ok"); setTimeout(()=>setStatus(st=>st==="ok"?null:st),2000); }
+    catch(e){ setTeksten(vorige); setStatus("Opslaan mislukt: "+(e.message||"onbekende fout")); }
+  };
+  const zet=(naam,aan)=>{
+    const nieuw={...teksten};
+    if(aan) nieuw[naam]=naam; else delete nieuw[naam];
+    bewaar(nieuw);
+  };
+  const tekstKlaar=(naam,waarde)=>{
+    const t=waarde.trim();
+    if(!t||t===(sjabloon.materiaal||{})[naam]){ setTeksten(p=>({...p,[naam]:(sjabloon.materiaal||{})[naam]})); return; }
+    bewaar({...teksten,[naam]:t});
+  };
+  return(
+    <>
+      {sjabloon.controle.map(naam=>{
+        const aan=teksten[naam]!=null;
+        return(
+          <div key={naam} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,flex:"1 1 200px",cursor:"pointer",fontSize:13,userSelect:"none"}}>
+              <input type="checkbox" checked={aan} onChange={e=>zet(naam,e.target.checked)} disabled={status==="bezig"} style={{accentColor:T.accent,width:15,height:15,flexShrink:0}}/>
+              <span style={{color:aan?T.text:T.muted}}>{naam}</span>
+            </label>
+            {aan&&(
+              <input style={{...s.input,flex:"1 1 160px",padding:"5px 8px",fontSize:12}} value={teksten[naam]} aria-label={`Tekst op de factuur voor ${naam}`}
+                onChange={e=>setTeksten(p=>({...p,[naam]:e.target.value}))} onBlur={e=>tekstKlaar(naam,e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&e.currentTarget.blur()}/>
+            )}
+          </div>
+        );
+      })}
+      <OpslaanStatus status={status}/>
+    </>
+  );
+}
+
 // Lijst met namen in Instellingen: toevoegen, verwijderen en verplaatsen; direct opgeslagen
 // via onSave (gooit bij een fout, dan gaat de lijst terug). Voor extra's bij verkoop en de
 // onderhoudslijst.
@@ -5075,10 +5134,16 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
         <div style={{borderTop:`1px solid ${T.border}`,margin:"16px 0"}}/>
         <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Groot onderhoud <span style={{fontWeight:400,color:T.muted}}>(uitgevoerd + type)</span></div>
         <LijstBeheer lijst={onderhoudSjabloon.groot} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,groot:l})} placeholder="Nieuw punt groot onderhoud"/>
+        <div style={{borderTop:`1px solid ${T.border}`,margin:"16px 0"}}/>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Materiaal op de factuur</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.6}}>
+          Aangevinkte controlepunten komen bij Oké of Vervangen automatisch als regel op de factuur, met de tekst rechts (plus wat je bij de toelichting typt, zoals het merk of type). Zet dezelfde tekst in de prijslijst, dan staat de prijs er ook meteen bij. Punten met dezelfde tekst (zoals remvloeistof voor en achter) worden één regel.
+        </div>
+        <MateriaalInstellingen sjabloon={onderhoudSjabloon} onSave={onSaveOnderhoudSjabloon}/>
       </div>
 
       {/* Facturen en prijslijst */}
-      <FactuurInstellingen/>
+      <FactuurInstellingen sjabloon={onderhoudSjabloon} onSaveSjabloon={onSaveOnderhoudSjabloon}/>
 
       {/* Kleurcategorieën */}
       <div style={{...s.card,marginTop:16}}>

@@ -240,12 +240,18 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
 (`samenvatting()` in `lib/onderhoudslijst.js`).
 
 **Factuur (Excel)** (afspraak openen → Factuur maken; `FactuurModal`, logica in `lib/factuur.js`):
-- Regels uit de onderhoudslijst (`factuurRegels`): uitgevoerde werkzaamheden, groot onderhoud
-  met type, vervangen onderdelen met toelichting, adviespunten als tekstregel. Niet ingevuld:
-  de werkzaamheden uit de afspraak. Te controleren en aan te vullen (max 26 regels).
+- Regels uit de onderhoudslijst (`factuurRegels`), op volgorde: uitgevoerde werkzaamheden, groot
+  onderhoud met type, **materiaal** (controlepunten uit `sjabloon.materiaal` bij Oké of Vervangen,
+  met de factuurtekst + toelichting; dezelfde tekst één keer, en niet als het al bij groot
+  onderhoud staat), overige vervangen onderdelen met toelichting, de **vaste regels**
+  (`sjabloon.factuur_standaard`, standaard "Klein materiaal, milieu-afvalkosten" en "Arbeid";
+  "Arbeid…" krijgt als aantal de duur van de afspraak) en adviespunten als tekstregel. Niet
+  ingevuld: de werkzaamheden uit de afspraak + de vaste regels. Te controleren en aan te vullen
+  (max 26 regels). Materiaalpunten en vaste regels staan in het sjabloon van de onderhoudslijst
+  (`instellingen.onderhoudslijst`) en zijn in Instellingen aan te passen.
 - Prijzen ex btw uit de `prijslijst`: eerst op artikelcode in type/toelichting (woorden met een
   cijfer, bv. HF303 → artikelnummer, JM-nummer of in de omschrijving), dan op exact dezelfde
-  omschrijving. Leeg = in Excel invullen.
+  omschrijving, dan op de naam zonder type ("Olie" bij "Olie 10W40"). Leeg = in Excel invullen.
 - Factuurnummer: `beheer_instellingen.laatste_factuurnummer` + 1, per factuur aan te passen;
   na downloaden wordt het laatste nummer bijgewerkt (als het hoger is) en komt
   `{nummer, datum}` in `lijst.factuur` van de afspraak (opnieuw downloaden = zelfde nummer).

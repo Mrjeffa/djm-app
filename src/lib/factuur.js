@@ -85,7 +85,8 @@ export const prijslijstRijen = (regels) => [
 
 // Voorbeeldregels voor een lege prijslijst: eigen werk dat op de onderhoudslijst staat
 export const VOORBEELD_PRIJSLIJST = [
-  "Kleine beurt", "Grote beurt", "Arbeid (per uur)", "Klein materiaal, milieu-afvalkosten",
+  "Arbeid", "Klein materiaal, milieu-afvalkosten", "Olie", "Oliefilter", "Fuel conditioner",
+  "Koelvloeistof", "Cardanolie", "Remvloeistof", "Luchtfilter", "Bougies",
 ].map((omschrijving, volgorde) => ({ omschrijving, artikelnummer: null, jm_nummer: null, inkoop: null, verkoop: null, volgorde }));
 
 const normaal = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -106,15 +107,21 @@ export function zoekInPrijslijst(omschrijving, extraTekst, prijslijst) {
 }
 
 // ── Factuurregels uit de onderhoudslijst ────────────────────────────────────
-// Uitgevoerde werkzaamheden, groot onderhoud (met type), vervangen onderdelen (met toelichting),
-// en adviespunten als tekstregel (zonder bedrag).
-export function factuurRegels(lijst, prijslijst) {
+// Op volgorde: uitgevoerde werkzaamheden, groot onderhoud (met type), materiaal (controlepunten
+// die materiaal zijn, bij Oké of Vervangen), overige vervangen onderdelen (met toelichting), de
+// vaste regels (klein materiaal, arbeid) en tot slot adviespunten als tekstregel (zonder bedrag).
+// opties: { materiaal: {punt: factuurtekst}, standaard: [tekst], arbeidUren: getal }
+export function factuurRegels(lijst, prijslijst, { materiaal = {}, standaard = [], arbeidUren = null } = {}) {
   const l = lijst || {};
   const regels = [];
-  const voeg = (omschrijving, extra = "") => {
-    const hit = zoekInPrijslijst(omschrijving, extra, prijslijst);
-    regels.push({ aantal: 1, omschrijving, prijs: hit?.verkoop ?? null });
+  // basis: de naam zonder type/toelichting ("Olie" bij "Olie 10W40"), als de prijslijst op
+  // artikelcode of volledige tekst niets vindt
+  const voeg = (omschrijving, extra = "", aantal = 1, basis = "") => {
+    const hit = zoekInPrijslijst(omschrijving, extra, prijslijst) || (basis && basis !== omschrijving ? zoekInPrijslijst(basis, "", prijslijst) : null);
+    regels.push({ aantal, omschrijving, prijs: hit?.verkoop ?? null });
   };
+  const gehad = new Set(); // materiaal dat al op de factuur staat (bv. oliefilter bij groot onderhoud)
+  const sleutel = (t) => String(t || "").trim().toLowerCase();
   const werk = (l.werkzaamheden || []).filter((x) => x.gedaan);
   const heeftBeurt = (re) => werk.some((x) => re.test(x.naam));
   if (l.klein_onderhoud && !heeftBeurt(/kleine beurt|klein onderhoud/i)) voeg("Klein onderhoud");
@@ -122,11 +129,24 @@ export function factuurRegels(lijst, prijslijst) {
   for (const x of werk) voeg(x.naam);
   for (const x of (l.groot || []).filter((g) => g.gedaan)) {
     const type = (x.type || "").trim();
-    voeg(type ? `${x.naam} ${type}` : x.naam, type);
+    voeg(type ? `${x.naam} ${type}` : x.naam, type, 1, x.naam);
+    gehad.add(sleutel(x.naam));
   }
-  for (const x of (l.controle || []).filter((c) => c.status === "vervangen")) {
+  for (const x of l.controle || []) {
     const notitie = (x.notitie || "").trim();
-    voeg(notitie ? `${x.naam} ${notitie}` : x.naam, notitie);
+    const tekst = materiaal[x.naam];
+    if (tekst && (x.status === "oke" || x.status === "vervangen")) {
+      if (gehad.has(sleutel(tekst))) continue;
+      gehad.add(sleutel(tekst));
+      voeg(notitie ? `${tekst} ${notitie}` : tekst, notitie, 1, tekst);
+    } else if (!tekst && x.status === "vervangen") {
+      voeg(notitie ? `${x.naam} ${notitie}` : x.naam, notitie, 1, x.naam);
+    }
+  }
+  for (const tekst of standaard || []) {
+    if (regels.some((r) => sleutel(r.omschrijving) === sleutel(tekst))) continue;
+    const uren = /^arbeid/i.test(tekst) && Number(arbeidUren) > 0 ? Number(arbeidUren) : 1;
+    voeg(tekst, "", uren);
   }
   for (const x of (l.controle || []).filter((c) => c.status === "advies")) {
     const notitie = (x.notitie || "").trim();
