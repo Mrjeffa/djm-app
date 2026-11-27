@@ -494,7 +494,7 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
 `dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`,
-`verkoop-extras-test.sql`.
+`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 
