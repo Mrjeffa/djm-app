@@ -31,7 +31,10 @@ export const euro = (n) => (n == null ? "" : `€ ${n.toLocaleString("nl-NL", { 
 
 // ── Prijslijst ──────────────────────────────────────────────────────────────
 // Kolommen zoals in de bestellijst van Larsson, zodat regels er zo in te plakken zijn.
-export const PRIJSLIJST_KOPPEN = ["JM-Nr.", "Omschrijving", "Fabrikant artikel nummer", "Inkoop-Netto", "Verkoopprijs", "Aantal", "Totale aankoopprijs", "Totaal verkoopprijs"];
+// Prijzen per stuk, per dienst of per uur; het aantal komt op de factuur. Dezelfde volgorde als
+// de eerste vijf kolommen van een Larsson-bestelling, zodat een geplakte regel goed valt (wat er
+// na de verkoopprijs komt, zoals aantal en totalen, wordt genegeerd).
+export const PRIJSLIJST_KOPPEN = ["JM-Nr.", "Omschrijving", "Fabrikant artikel nummer", "Inkoopprijs ex btw", "Verkoopprijs ex btw"];
 
 const kop = (v) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
 const KOLOM_HERKENNING = {
@@ -203,17 +206,76 @@ export function zetCel(xml, ref, waarde) {
   return xml.replace(rijRe, () => rm[1] + rm[2].slice(0, pos) + nieuw + rm[2].slice(pos) + rm[3]);
 }
 
+// Afronden zoals Excel (ROUND: half van nul af)
+const rond2 = (x) => Math.sign(x) * Math.round(Math.abs(x) * 100 + 1e-9) / 100;
+
+const BETAALTEKST = {
+  "Contant/pin": "Te voldoen contant of per pin bij afhalen. Bij voorbaat hartelijk dank!",
+  "Bank 8 dagen": "Gelieve het factuurbedrag binnen 8 dagen over te maken o.v.v. het factuurnummer. Bij voorbaat hartelijk dank!",
+  "Voldaan": "Dit bedrag is reeds voldaan. Hartelijk dank!",
+  "Aanbetaling": "Gelieve de aanbetaling over te maken o.v.v. het factuurnummer. Bij voorbaat hartelijk dank!",
+};
+
+// Uitkomsten van alle formules in het sjabloon, voor wat de app invult (documenttype Factuur,
+// NL 21%, geen korting, type of aanbetaling). Die zetten we als bewaarde uitkomst bij de formule,
+// zodat alles klopt in beeld, ook in de beveiligde weergave van Excel (die rekent niet) en in
+// voorbeeldweergaven. De formules blijven staan: past je in Excel iets aan, dan rekent het mee.
+export function formuleUitkomsten(c, btwTarief = 0.21) {
+  const u = {
+    F3: "Factuurdatum:", F4: "Leverdatum:", G4: c.G3,
+    A12: c.B12 ? "E-mail:" : "", A13: c.B13 ? "Tel:" : "", A14: c.B14 ? "Btw-id:" : "",
+    F12: c.G12 !== "" ? "Kenteken:" : "", F14: c.G14 !== "" ? "VIN:" : "",
+    F13: c.G13 !== "" ? (c.kmLabel || "Km-stand:") : "",
+    J12: c.J11 === "" ? "" : Number(c.J11) + 1,
+    A16: "Factuurnr:",
+    B45: "", B46: "", B47: "", B48: "", G48: "",
+    A51: 0, B51: 0, E51: btwTarief,
+    A53: BETAALTEKST[c.J5] || "",
+  };
+  let som = 0, prijsZonderAantal = false;
+  for (let rij = 19; rij <= 44; rij++) {
+    const a = c[`A${rij}`], f = c[`F${rij}`];
+    u[`E${rij}`] = "";
+    if (a === "" || f === "") { u[`G${rij}`] = ""; if (f !== "" && a === "") prijsZonderAantal = true; continue; }
+    const g = rond2(Number(a) * Number(f));
+    u[`G${rij}`] = g;
+    som += g;
+  }
+  som = rond2(som);
+  u.C51 = som;
+  u.F51 = rond2(som * btwTarief);
+  u.G51 = rond2(som + u.F51);
+  u.J14 = c.C16 === "" ? "Factuurnr ontbreekt"
+    : u.J12 !== "" && Number(c.C16) !== Number(u.J12) ? `Let op: volgnummer is ${u.J12}`
+    : prijsZonderAantal ? "Regel met prijs zonder aantal" : "OK";
+  return u;
+}
+
+// Bewaarde uitkomst bij een formulecel zetten (de formule zelf blijft)
+export function zetUitkomst(xml, ref, waarde) {
+  const celRe = new RegExp(`<c r="${ref}"([^>]*?)>(<f>[\\s\\S]*?</f>)(?:<v>[\\s\\S]*?</v>|<v/>)?</c>`);
+  const m = xml.match(celRe);
+  if (!m) return xml;
+  const stijl = (m[1].match(/\ss="(\d+)"/) || [])[1];
+  const s = stijl ? ` s="${stijl}"` : "";
+  const nieuw = typeof waarde === "number"
+    ? `<c r="${ref}"${s}>${m[2]}<v>${waarde}</v></c>`
+    : `<c r="${ref}"${s} t="str">${m[2]}<v>${esc(waarde ?? "")}</v></c>`;
+  return xml.replace(celRe, () => nieuw);
+}
+
 // Alle cellen van de factuur invullen (zie het sjabloon: links de factuur, rechts de instellingen)
 export function vulWerkblad(xml, g) {
   const nummer = Number(g.nummer);
-  const km = g.motor?.km;
+  const kmGetal = Number(String(g.motor?.km ?? "").replace(/\D/g, ""));
+  const mijl = g.motor?.kmEenheid === "mijl";
   const cellen = {
     G3: excelDatum(g.datum), J3: "Factuur", J5: g.betaalwijze || "Contant/pin",
     J11: Number.isFinite(nummer) ? nummer - 1 : "", C16: Number.isFinite(nummer) ? nummer : String(g.nummer ?? ""),
     B9: g.klant?.naam || "", B10: g.klant?.adres || "", B11: g.klant?.plaats || "",
     B12: g.klant?.email || "", B13: g.klant?.telefoon || "", B14: "",
     F11: g.motor?.omschrijving || "", G12: g.motor?.kenteken ? kentekenMetStreepjes(g.motor.kenteken) : "",
-    G13: km === "" || km == null ? "" : Number.isFinite(Number(km)) ? Number(km) : String(km),
+    G13: String(g.motor?.km ?? "").trim() && kmGetal > 0 ? kmGetal : "",
     G14: g.motor?.vin || "", G47: "",
   };
   const regels = (g.regels || []).slice(0, MAX_REGELS);
@@ -228,6 +290,18 @@ export function vulWerkblad(xml, g) {
   }
   let uit = xml;
   for (const [ref, waarde] of Object.entries(cellen)) uit = zetCel(uit, ref, waarde);
+  // Tekstregel (zonder aantal en prijs, bv. een adviespunt): de kortingscel leeg maken zodat de
+  // tekst kan doorlopen tot aan de prijs (een formule die "" geeft houdt de tekst tegen)
+  for (let i = 0; i < regels.length; i++) {
+    const rij = 19 + i;
+    if (cellen[`A${rij}`] === "" && cellen[`F${rij}`] === "" && cellen[`B${rij}`]) uit = zetCel(uit, `E${rij}`, "");
+  }
+  // Mijlen: label "Mijlenstand:" (ook in de formule, zodat Excel het bij herberekenen houdt)
+  if (mijl) uit = uit.replace(/(<c r="F13"[^>]*><f>[^<]*)Km-stand:/, "$1Mijlenstand:");
+  // Btw-tarief zoals het in het sjabloon staat (J7)
+  const btw = Number((uit.match(/<c r="J7"[^>]*><v>([^<]+)<\/v>/) || [])[1]);
+  const uitkomsten = formuleUitkomsten({ ...cellen, kmLabel: mijl ? "Mijlenstand:" : "Km-stand:" }, Number.isFinite(btw) ? btw : 0.21);
+  for (const [ref, waarde] of Object.entries(uitkomsten)) uit = zetUitkomst(uit, ref, waarde);
   return uit;
 }
 
