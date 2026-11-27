@@ -8,7 +8,8 @@
 //   werkzaamheden: [{ naam, gedaan, extra? }],      // uit de afspraak (soort) + zelf toegevoegd
 //   controle:      [{ naam, status, notitie }],      // status: oke | advies | vervangen | nvt | null
 //   groot:         [{ naam, gedaan, type }],         // groot onderhoud: uitgevoerd + type onderdeel
-//   opmerking: "" }
+//   opmerking: "",
+//   factuur: { nummer, datum } | null }                // laatst gemaakte factuur voor deze afspraak
 
 export const STANDAARD_SJABLOON = {
   controle: [
@@ -66,6 +67,8 @@ export function bouwLijst(opgeslagen, sjabloon, afspraak) {
     controle: voegSamen(o.controle, sj.controle, (naam) => ({ naam, status: null, notitie: "" }), (x) => !!x.status || !!x.notitie),
     groot: voegSamen(o.groot, sj.groot, (naam) => ({ naam, gedaan: false, type: "" }), (x) => !!x.gedaan || !!x.type),
     opmerking: typeof o.opmerking === "string" ? o.opmerking : "",
+    // gemaakte factuur (nummer + datum), zie FactuurModal
+    factuur: o.factuur && typeof o.factuur === "object" ? o.factuur : null,
   };
 }
 
