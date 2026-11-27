@@ -8,6 +8,8 @@ import { verkleinFotos, uploadFoto } from "../lib/foto.js";
 import { naarKm, vanKm, kmTekst } from "../lib/kmstand.js";
 import PushInstellingen from "./PushInstellingen.jsx";
 import AppVersie from "./AppVersie.jsx";
+import { appOrigin } from "../lib/appAdres.js";
+import * as WS from "../lib/winterstalling.js";
 import { STANDAARD_SJABLOON, STATUSSEN, geldigSjabloon, bouwLijst, voortgangTekst, samenvatting, isIngevuld, soortenVan, leesReservekopie, schrijfReservekopie, wisReservekopie } from "../lib/onderhoudslijst.js";
 import { MAX_REGELS, BETAALWIJZEN, naarPrijs, euro as euroCent, leesPrijslijst, prijslijstRijen, VOORBEELD_PRIJSLIJST, zoekInPrijslijst, factuurRegels, regelTotaal, totaalExBtw, bestandsnaam, maakFactuur } from "../lib/factuur.js";
 import { laadMetHerstel } from "../lib/laden.js";
@@ -76,7 +78,7 @@ const DAYS_NL = ["Ma","Di","Wo","Do","Vr","Za"];
 const TYPE_LABEL = {schade:"Schademelding",consignatie:"Consignatie",aankoopkeuring:"Aankoopkeuring",zoekopdracht:"Zoekopdracht",winterstalling:"Winterstalling",seizoenscheck:"Seizoenscheck",service:"Service",proefrit:"Proefrit"};
 const fmtDate = d => { const [,mm,dd]=d.split("-"); return `${dd}/${mm}`; };
 
-const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","inkoop","instellingen","website"];
+const ADMIN_PAGINAS = ["dashboard","agenda","klanten","voorraad","stalling","inkoop","instellingen","website"];
 
 // Afspraken met klantnaam, motor en de interne opmerking. Die opmerking staat in
 // een aparte tabel (afspraken_intern) die alleen de beheerder kan lezen; klanten
@@ -275,8 +277,8 @@ function UitnodigingModal({klant, onClose}){
   const [stap, setStap] = useState("keuze");
   const [gekopieerd, setGekopieerd] = useState(false);
   const [bezig, setBezig] = useState(false);
-  const inviteLink = `${window.location.origin}`;
-  const whatsappTekst = `Hallo ${(klant.naam||"").split(' ')[0]||"motorrijder"}! 👋\n\nBij De Jonge Motoren kunt u uw motorgegevens en servicehistorie inzien via onze app.\n\n📱 Ga naar: ${window.location.origin}\n\nMaak een account aan met uw e-mailadres: ${klant.email}\n\nTot ziens!`;
+  const inviteLink = appOrigin();
+  const whatsappTekst = `Hallo ${(klant.naam||"").split(' ')[0]||"motorrijder"}! 👋\n\nBij De Jonge Motoren kunt u uw motorgegevens en servicehistorie inzien via onze app.\n\n📱 Ga naar: ${appOrigin()}\n\nMaak een account aan met uw e-mailadres: ${klant.email}\n\nTot ziens!`;
 
   const stuurEmail = async () => {
     setBezig(true);
@@ -304,18 +306,18 @@ function UitnodigingModal({klant, onClose}){
         <>
           <div style={{padding:"14px 16px",background:T.surf2,borderRadius:5,marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:500}}>{klant.naam}</div>
-            <div style={{fontSize:12,color:T.muted,marginTop:3}}>{klant.email}</div>
+            <div style={{fontSize:12,color:T.muted,marginTop:3}}>{klant.email||klant.telefoon||"Geen e-mailadres bekend"}</div>
           </div>
-          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Hoe wil je de uitnodiging versturen?</div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>{klant.email?"Hoe wil je de uitnodiging versturen?":"Er is geen e-mailadres bekend, dus uitnodigen kan via WhatsApp."}</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <button style={{...s.btn,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
+            {klant.email&&<button style={{...s.btn,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
               onClick={stuurEmail} disabled={bezig}>
               <span style={{fontSize:16}}>✉</span>
               <div>
                 <div>{bezig ? "Versturen..." : "Stuur via e-mail"}</div>
                 <div style={{fontSize:11,opacity:0.7,fontWeight:400,marginTop:1}}>Klant ontvangt een inloglink op {klant.email}</div>
               </div>
-            </button>
+            </button>}
             <button style={{...s.btnOutline,width:"100%",padding:"12px 16px",textAlign:"left",display:"flex",alignItems:"center",gap:10}}
               onClick={()=>setStap("link")}>
               <span style={{fontSize:16}}>🔗</span>
@@ -409,17 +411,18 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
 
   const verkoopMotor = motorKeuze==="voorraad" ? geselecteerdeVoorraad : null;
   const sla_op = async () => {
-    if(!f.naam||!f.email||bezig) return;
+    if(!f.naam.trim()||(!f.email.trim()&&!f.telefoon.trim())){ setFout("Vul een naam in en een e-mailadres of telefoonnummer."); return; }
+    if(bezig) return;
     // Een motor uit de voorraad wordt niet hier gekoppeld maar via het verkoopproces
     const motor = motorKeuze==="nieuw" && normK(kenteken)
       ? {...motorF, kenteken: normK(kenteken), bouwjaar:parseInt(motorF.bouwjaar)||0, km:naarBedrag(motorF.km)||0}
       : null;
     // Eerst wachten tot de klant echt is opgeslagen, pas dan verder
     setBezig(true); setFout("");
-    const {fout:err, klant} = await onSave({...f, email:f.email.trim().toLowerCase(), motor});
+    const {fout:err, klant} = await onSave({...f, email:f.email.trim().toLowerCase()||null, motor});
     setBezig(false);
     if(err){ setFout(err); return; }
-    setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email.trim().toLowerCase()});
+    setOpgeslagen({id:Date.now(), naam:f.naam, email:f.email.trim().toLowerCase()||null, telefoon:f.telefoon.trim()||null});
     if(verkoopMotor&&klant) setVerkoop({motor:verkoopMotor, klantId:klant.id, klantNaam:klant.naam});
   };
 
@@ -428,7 +431,7 @@ function KlantModal({onSave, onClose, voorraad=[], verkoopProps={}}){
       <div style={s.sectionLabel}>Klantgegevens</div>
       <Field label="Naam *"><input style={s.input} value={f.naam} onChange={set("naam")} placeholder="Voor- en achternaam"/></Field>
       <Grid2>
-        <Field label="E-mail *"><input style={s.input} value={f.email} onChange={set("email")} placeholder="email@voorbeeld.nl"/></Field>
+        <Field label="E-mail"><input style={s.input} value={f.email} onChange={set("email")} placeholder="email@voorbeeld.nl"/></Field>
         <Field label="Telefoon"><input style={s.input} value={f.telefoon} onChange={set("telefoon")} placeholder="06-12345678"/></Field>
         <Field label="Adres"><input style={s.input} value={f.adres} onChange={set("adres")} placeholder="Straat + nr"/></Field>
         <Field label="Postcode"><input style={s.input} value={f.postcode} onChange={set("postcode")} placeholder="4691AA"/></Field>
@@ -1956,7 +1959,7 @@ function KlantEditModal({klant,onSave,onClose}){
   );
 }
 
-function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[],voorraad=[],verkoopProps=null}){
+function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,onUitnodig,onInruil=()=>{},onDeleteMotor=()=>{},onBack,isMobile,klussen=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},afspraken=[],geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[],voorraad=[],verkoopProps=null,stalling=[]}){
   const [modal,setModal]=useState(null);
   const [editKlantOpen,setEditKlantOpen]=useState(false);
   const [selMotorId,setSelMotorId]=useState(null);
@@ -2053,6 +2056,10 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
               <div style={{fontFamily:"Barlow Condensed, sans-serif",fontWeight:700,fontSize:17}}>
                 {motor.merk} {motor.model}
                 <span style={{...s.badge(T.accent),marginLeft:10,fontSize:10}}>{motor.kenteken}</span>
+                {(()=>{ // staat hij nu binnen, anders dit seizoen, anders het laatste seizoen
+                  const rijen=stalling.filter(x=>x.motor_id===motor.id).sort((a,b)=>b.seizoen-a.seizoen);
+                  const w=rijen.find(x=>x.status==="binnen")||rijen.find(x=>x.seizoen===WS.huidigSeizoen())||rijen[0];
+                  return w&&<span title={`Winterstalling ${WS.seizoenLabel(w.seizoen)}`} style={{...s.badge(WS.statusVan(w.status).kleur),marginLeft:6,fontSize:10}}>❄ {w.seizoen} · {WS.statusVan(w.status).label}</span>; })()}
                 {motor.klant_verwijderd_op&&(
                   <span title="De klant heeft deze motor verwijderd; jouw onderhoudshistorie is bewaard. Klant ziet hem niet meer."
                     style={{...s.badge(T.muted),marginLeft:6,fontSize:10}}>Door klant verwijderd</span>
@@ -2193,7 +2200,7 @@ function KlantDetail({klant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=
   );
 }
 
-function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{},klussen=[],afspraken=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{},geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[],onVerkoop=async()=>null}){
+function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onArchiveerKlant=()=>{},onAddMotor,onAddService,onUpdateService,onDeleteService,onDeleteKlant,onUpdateMotorInterval,onUpdateMotor,voorraad=[],onKeurGoed,onMarkeerGezien,onInruil=()=>{},onDeleteMotor=()=>{},klussen=[],afspraken=[],onAddAfspraak=()=>{},onAddKlus=async()=>{},onRondKlusAf=()=>{},onHeropenKlus=()=>{},onDeleteKlus=()=>{},onVoegFaseToe=()=>{},onHernoemFase=()=>{},onVerwijderFase=()=>{},onRondFaseAf=()=>{},onHeropenFase=()=>{},geslotenDagen=[],openingstijden=null,afspraakSoorten=[],medewerkers=[],afspraakCategorieen=[],verkoopExtras=[],onVerkoop=async()=>null,stalling=[]}){
   const isMobile=useIsMobile();
   const [pageTab,setPageTab]=useState("klanten");
   const [search,setSearch]=useState("");
@@ -2370,7 +2377,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
             onDeleteMotor={onDeleteMotor}
             onBack={()=>setSel(null)}
             isMobile={true}
-            voorraad={voorraad} verkoopProps={verkoopProps}
+            voorraad={voorraad} verkoopProps={verkoopProps} stalling={stalling}
             klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
         ):(
           <div>
@@ -2415,7 +2422,7 @@ function KlantenPage({klanten,onAddKlant,onUpdateKlant,onAfwijsKlant=()=>{},onAr
                 onDeleteMotor={onDeleteMotor}
                 onBack={()=>setSel(null)}
                 isMobile={false}
-                voorraad={voorraad} verkoopProps={verkoopProps}
+                voorraad={voorraad} verkoopProps={verkoopProps} stalling={stalling}
                 klussen={klussen} afspraken={afspraken} onAddAfspraak={onAddAfspraak} onAddKlus={onAddKlus} onRondKlusAf={onRondKlusAf} onHeropenKlus={onHeropenKlus} onDeleteKlus={onDeleteKlus} onVoegFaseToe={onVoegFaseToe} onHernoemFase={onHernoemFase} onVerwijderFase={onVerwijderFase} onRondFaseAf={onRondFaseAf} onHeropenFase={onHeropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>
             )}
           </div>
@@ -3472,6 +3479,10 @@ function OnderhoudslijstModal({afspraak, motor, klantNaam, onClose}){
 const laadBeheer = async () => {
   const sb = (await import("../lib/supabase.js")).supabase;
   return sb.from("beheer_instellingen").select("laatste_factuurnummer").eq("id",1).maybeSingle();
+};
+const laadBeheerVelden = async (velden) => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return sb.from("beheer_instellingen").select(velden).eq("id",1).maybeSingle();
 };
 const laadPrijslijst = async () => {
   const sb = (await import("../lib/supabase.js")).supabase;
@@ -5290,6 +5301,371 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
   );
 }
 
+// ── Winterstalling ───────────────────────────────────────────────────────────
+// Eén regel per motor per seizoen (tabel winterstalling, logica in lib/winterstalling.js).
+// Aanvragen komen van de website en het klantportaal; de beheerder koppelt ze aan een (nieuwe)
+// klant en motor. Doorzetten maakt dezelfde reservering aan voor het volgende seizoen.
+
+// Klant kiezen: zoeken in bestaande klanten, of een nieuwe klant invullen
+function KlantKiezer({klanten, klantId, onKies, nieuw, onNieuw, voorstel=[]}){
+  const [zoek,setZoek]=useState("");
+  const gekozen=klantId?klanten.find(k=>k.id===klantId):null;
+  if(gekozen) return(
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:4}}>
+      <span style={{color:T.green}}>✓</span>
+      <span style={{flex:1,minWidth:0,fontSize:13}}><strong>{gekozen.naam}</strong>{[gekozen.telefoon,gekozen.email].filter(Boolean).length?<span style={{color:T.muted}}> · {[gekozen.telefoon,gekozen.email].filter(Boolean).join(" · ")}</span>:null}</span>
+      <button type="button" onClick={()=>onKies(null)} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:16}} aria-label="Andere klant kiezen">×</button>
+    </div>
+  );
+  const z=zoek.trim().toLowerCase(), zTel=zoek.replace(/\D/g,"");
+  const gevonden=z.length<2?[]:klanten.filter(k=>(k.naam||"").toLowerCase().includes(z)||(k.email||"").toLowerCase().includes(z)||(zTel.length>=4&&(k.telefoon||"").replace(/\D/g,"").includes(zTel))).slice(0,6);
+  const lijst=[...voorstel.filter(v=>!gevonden.some(g=>g.id===v.id)),...gevonden];
+  return(
+    <>
+      {nieuw==null&&(
+        <>
+          <input style={s.input} value={zoek} onChange={e=>setZoek(e.target.value)} placeholder="Zoek klant op naam, telefoon of e-mail" aria-label="Klant zoeken"/>
+          {lijst.length>0&&(
+            <div style={{border:`1px solid ${T.border}`,borderRadius:4,marginTop:4,overflow:"hidden"}}>
+              {lijst.map(k=>(
+                <button key={k.id} type="button" onClick={()=>{onKies(k.id);setZoek("");}}
+                  style={{display:"block",width:"100%",textAlign:"left",padding:"8px 12px",background:voorstel.some(v=>v.id===k.id)?`${T.green}12`:"transparent",border:"none",borderBottom:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"Barlow, sans-serif",color:T.text,fontSize:13}}>
+                  {voorstel.some(v=>v.id===k.id)&&<span style={{color:T.green,fontSize:11,fontWeight:700,marginRight:6}}>BESTAANDE KLANT</span>}
+                  {k.naam} <span style={{color:T.muted}}>{[k.telefoon,k.email].filter(Boolean).join(" · ")}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={()=>onNieuw({naam:zoek.trim(),telefoon:"",email:""})} style={{...s.btnGhost,marginTop:8,fontSize:12,padding:"6px 12px"}}>+ Nieuwe klant</button>
+        </>
+      )}
+      {nieuw!=null&&voorstel.length>0&&(
+        <div style={{padding:"8px 12px",background:`${T.green}12`,border:`1px solid ${T.green}55`,borderRadius:4,marginBottom:8,fontSize:12}}>
+          <div style={{marginBottom:6}}>Dit lijkt een bestaande klant (zelfde telefoon of e-mail):</div>
+          {voorstel.map(k=>(
+            <button key={k.id} type="button" onClick={()=>onKies(k.id)} style={{...s.btnGhost,fontSize:12,padding:"5px 10px",marginRight:6,marginBottom:4}}>
+              ✓ {k.naam}{k.telefoon?` · ${k.telefoon}`:""} kiezen
+            </button>
+          ))}
+        </div>
+      )}
+      {nieuw!=null&&(
+        <div style={{padding:12,border:`1px dashed ${T.border}`,borderRadius:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:12,fontWeight:600}}>Nieuwe klant</span>
+            <button type="button" onClick={()=>onNieuw(null)} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:12}}>Bestaande klant kiezen</button>
+          </div>
+          <Grid2>
+            <Field label="Naam *"><input style={s.input} value={nieuw.naam} onChange={e=>onNieuw({...nieuw,naam:e.target.value})} aria-label="Naam nieuwe klant"/></Field>
+            <Field label="Telefoon"><input style={s.input} value={nieuw.telefoon} onChange={e=>onNieuw({...nieuw,telefoon:e.target.value})} aria-label="Telefoon nieuwe klant"/></Field>
+          </Grid2>
+          <Field label="E-mail (optioneel)"><input style={s.input} value={nieuw.email} onChange={e=>onNieuw({...nieuw,email:e.target.value})} aria-label="E-mail nieuwe klant"/></Field>
+        </div>
+      )}
+    </>
+  );
+}
+
+function StallingModal({rij, klanten, alle, onBewaar, onVerwijder, onDoorzetten, onAfspraak, onClose}){
+  const isAanvraag=rij.status==="aangevraagd";
+  const tel=(x)=>(x||"").replace(/\D/g,"");
+  // Bij een aanvraag: bestaande klant met hetzelfde telefoonnummer of e-mailadres voorstellen
+  const voorstel=!rij.klant_id&&(rij.telefoon||rij.email)
+    ?klanten.filter(k=>(tel(rij.telefoon).length>=9&&tel(k.telefoon)===tel(rij.telefoon))||(rij.email&&(k.email||"").toLowerCase()===rij.email.toLowerCase())).slice(0,3):[];
+  const [f,setF]=useState(()=>({
+    ...rij,
+    status:isAanvraag?"gereserveerd":rij.status,
+    klantId:rij.klant_id||null,
+    nieuweKlant:!rij.klant_id&&rij.naam?{naam:rij.naam||"",telefoon:rij.telefoon||"",email:rij.email||""}:null,
+    // bestaande reservering zonder motor: blijft "geen motor" tot er een gekozen wordt
+    motorId:rij.motor_id||(rij.klant_id?(rij.id&&!isAanvraag?"geen":""):"nieuw"),
+    nieuweMotor:{merk:rij.merk||"",model:rij.model||"",kenteken:rij.kenteken||""},
+    nummer:rij.nummer??(isAanvraag?WS.volgendNummer(alle.filter(w=>w.seizoen===rij.seizoen)):""),
+  }));
+  const [bezig,setBezig]=useState(false);
+  const [fout,setFout]=useState(null);
+  const [bevestig,setBevestig]=useState(false);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const klant=f.klantId?klanten.find(k=>k.id===f.klantId):null;
+  const klantMotoren=klant?.motoren||[];
+  const zetStatus=(st)=>setF(p=>({...p,status:st,
+    binnen_op:st==="binnen"&&!p.binnen_op?TODAY:p.binnen_op,
+    opgehaald_op:st==="opgehaald"&&!p.opgehaald_op?TODAY:p.opgehaald_op}));
+  const kiesKlant=(id)=>setF(p=>{
+    const k=id?klanten.find(x=>x.id===id):null;
+    // motor met hetzelfde kenteken, of anders hetzelfde merk en type, alvast kiezen
+    const m=k?.motoren?.find(x=>p.nieuweMotor.kenteken&&WS.normKenteken(x.kenteken)===WS.normKenteken(p.nieuweMotor.kenteken))
+      ||k?.motoren?.find(x=>p.nieuweMotor.merk&&(x.merk||"").toLowerCase()===p.nieuweMotor.merk.toLowerCase()&&(x.model||"").toLowerCase()===(p.nieuweMotor.model||"").toLowerCase());
+    return {...p,klantId:id,nieuweKlant:id?null:p.nieuweKlant,motorId:m?m.id:(k?(k.motoren?.length?"":"nieuw"):"nieuw")};
+  });
+  const volgendSeizoen=Number(f.seizoen)+1;
+  const doorgezet=rij.id&&WS.isDoorgezet(rij,alle);
+  const kanBewaren=(f.klantId||f.nieuweKlant?.naam?.trim()||f.naam)&&f.motorId!=="";
+
+  const bewaar=async(extra={})=>{
+    if(!kanBewaren){ setFout(f.motorId===""?"Kies een motor (of Nieuwe motor / Geen motor).":"Kies of vul een klant in."); return null; }
+    setBezig(true); setFout(null);
+    try{ const r=await onBewaar({...f,...extra}); setBezig(false); return r; }
+    catch(e){ setBezig(false); setFout(e.message||"Opslaan mislukt"); return null; }
+  };
+  const titel=!rij.id?"RESERVERING TOEVOEGEN":isAanvraag?"AANVRAAG VERWERKEN":"RESERVERING";
+  return(
+    <Modal title={titel} onClose={onClose}>
+      {isAanvraag&&(
+        <div style={{padding:"10px 12px",background:`${T.yellow}15`,border:`1px solid ${T.yellow}55`,borderRadius:4,marginBottom:14,fontSize:12,lineHeight:1.6}}>
+          Aanvraag via {rij.bron==="klantportaal"?"het klantportaal":"de website"}{rij.aangemaakt?` op ${new Date(rij.aangemaakt).toLocaleDateString("nl-NL")}`:""}.
+          Koppel een klant en motor en sla op: de aanvraag wordt een reservering.
+          {rij.pakket&&<><br/>Pakket: <strong>{rij.pakket}</strong></>}
+        </div>
+      )}
+      <div style={s.sectionLabel}>Klant</div>
+      <KlantKiezer klanten={klanten} klantId={f.klantId} onKies={kiesKlant} nieuw={f.klantId?null:f.nieuweKlant}
+        onNieuw={v=>setF(p=>({...p,nieuweKlant:v,klantId:null,motorId:v?"nieuw":p.motorId}))} voorstel={voorstel}/>
+
+      <div style={{...s.sectionLabel,marginTop:16}}>Motor</div>
+      {klant&&(
+        <select style={s.input} value={f.motorId} onChange={e=>set("motorId",e.target.value)} aria-label="Motor">
+          <option value="">— Kies motor —</option>
+          {klantMotoren.map(m=><option key={m.id} value={m.id}>{[m.merk,m.model].filter(Boolean).join(" ")}{m.kenteken?` (${m.kenteken})`:""}</option>)}
+          <option value="nieuw">+ Nieuwe motor</option>
+          <option value="geen">Geen motor (later invullen)</option>
+        </select>
+      )}
+      {(f.motorId==="nieuw"||!klant)&&f.motorId!=="geen"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginTop:klant?10:0}}>
+          <Field label="Merk"><input style={s.input} value={f.nieuweMotor.merk} onChange={e=>set("nieuweMotor",{...f.nieuweMotor,merk:e.target.value})} aria-label="Merk" placeholder="Honda"/></Field>
+          <Field label="Type"><input style={s.input} value={f.nieuweMotor.model} onChange={e=>set("nieuweMotor",{...f.nieuweMotor,model:e.target.value})} aria-label="Type" placeholder="CBF600"/></Field>
+          <Field label="Kenteken"><input style={{...s.input,textTransform:"uppercase"}} value={f.nieuweMotor.kenteken} onChange={e=>set("nieuweMotor",{...f.nieuweMotor,kenteken:e.target.value})} aria-label="Kenteken" placeholder="AB-123-C"/></Field>
+        </div>
+      )}
+
+      <div style={{...s.sectionLabel,marginTop:16}}>Stalling</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+        <Field label="Seizoen">
+          <select style={s.input} value={f.seizoen} onChange={e=>set("seizoen",Number(e.target.value))} aria-label="Seizoen">
+            {[f.seizoen-1,f.seizoen,f.seizoen+1,f.seizoen+2].map(x=><option key={x} value={x}>{WS.seizoenLabel(x)}</option>)}
+          </select>
+        </Field>
+        <Field label="Nummer"><input style={s.input} inputMode="numeric" value={f.nummer} onChange={e=>set("nummer",e.target.value.replace(/\D/g,""))} aria-label="Nummer"/></Field>
+        <Field label="Status">
+          <select style={s.input} value={f.status} onChange={e=>zetStatus(e.target.value)} aria-label="Status">
+            {WS.STATUSSEN.filter(x=>x.id!=="aangevraagd"||isAanvraag).map(x=><option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      {(f.status==="binnen"||f.status==="opgehaald"||f.binnen_op)&&(
+        <Grid2>
+          <Field label="Binnen op"><input style={s.input} type="date" value={f.binnen_op||""} onChange={e=>set("binnen_op",e.target.value||null)} aria-label="Binnen op"/></Field>
+          {(f.status==="opgehaald"||f.opgehaald_op)&&<Field label="Opgehaald op"><input style={s.input} type="date" value={f.opgehaald_op||""} onChange={e=>set("opgehaald_op",e.target.value||null)} aria-label="Opgehaald op"/></Field>}
+        </Grid2>
+      )}
+      <Field label="Pakket">
+        <input style={s.input} list="stalling-pakketten" value={f.pakket||""} onChange={e=>set("pakket",e.target.value)} placeholder="Bijv. Alleen stalling" aria-label="Pakket"/>
+        <datalist id="stalling-pakketten">{WS.PAKKETTEN.map(x=><option key={x} value={x}/>)}</datalist>
+      </Field>
+      <Field label="Werkzaamheden tijdens de stalling">
+        <textarea style={{...s.input,height:64,resize:"vertical",fontFamily:"Barlow, sans-serif"}} value={f.werkzaamheden||""} onChange={e=>set("werkzaamheden",e.target.value)} placeholder="Bijv. kleine beurt, nieuwe voorband" aria-label="Werkzaamheden"/>
+      </Field>
+      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:600}}>
+          <input type="checkbox" checked={!!f.betaald} onChange={e=>set("betaald",e.target.checked)} style={{accentColor:T.green,width:16,height:16}}/> Betaald
+        </label>
+        <select style={{...s.input,width:"auto"}} value={f.betaalwijze||""} onChange={e=>set("betaalwijze",e.target.value||null)} aria-label="Betaalwijze">
+          <option value="">Betaalwijze…</option>
+          {WS.BETAALWIJZEN.map(b=><option key={b.id} value={b.id}>{b.label}</option>)}
+        </select>
+      </div>
+      <Field label="Opmerking (intern)">
+        <textarea style={{...s.input,height:54,resize:"vertical",fontFamily:"Barlow, sans-serif"}} value={f.opmerking||""} onChange={e=>set("opmerking",e.target.value)} aria-label="Opmerking"/>
+      </Field>
+
+      {fout&&<div style={{fontSize:12,color:T.red,marginBottom:10}}>⚠ {fout}</div>}
+      {rij.id&&!isAanvraag&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+          {doorgezet
+            ?<span style={{fontSize:12,color:T.green,padding:"6px 0"}}>✓ Staat al op de lijst van {WS.seizoenLabel(rij.seizoen+1)}</span>
+            :<button type="button" style={{...s.btnGhost,fontSize:12,padding:"7px 12px"}} disabled={bezig}
+              onClick={async()=>{ const r=await bewaar(); if(r){ const n=await onDoorzetten([r],r.seizoen+1); if(n!=null) onClose(); } }}>
+              ➜ Doorzetten naar {WS.seizoenLabel(volgendSeizoen)}</button>}
+          {f.klantId&&f.motorId&&!["nieuw","geen"].includes(f.motorId)&&(
+            <button type="button" style={{...s.btnGhost,fontSize:12,padding:"7px 12px"}} disabled={bezig}
+              onClick={async()=>{ const r=await bewaar(); if(r) onAfspraak(r); }}>🔧 Werkplaats-afspraak</button>
+          )}
+        </div>
+      )}
+      <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:14,paddingTop:14,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+        <div>
+          {rij.id&&(bevestig
+            ?<span style={{display:"inline-flex",gap:6,alignItems:"center",fontSize:12}}>Zeker weten?
+              <button type="button" style={{...s.btn,background:T.red,padding:"6px 10px",fontSize:12}} onClick={async()=>{ setBezig(true); try{ await onVerwijder(rij.id); onClose(); }catch(e){ setFout(e.message); setBezig(false); } }}>Ja, verwijderen</button>
+              <button type="button" style={{...s.btnGhost,padding:"6px 10px",fontSize:12}} onClick={()=>setBevestig(false)}>Nee</button></span>
+            :<button type="button" style={{...s.btnGhost,color:T.red,fontSize:12}} onClick={()=>setBevestig(true)}>{isAanvraag?"Aanvraag afwijzen":"Verwijderen"}</button>)}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button type="button" style={s.btnGhost} onClick={onClose}>Annuleer</button>
+          <button type="button" style={s.btn} disabled={bezig} onClick={async()=>{ if(await bewaar()) onClose(); }}>{bezig?"Bezig…":isAanvraag?"Reservering maken":"Opslaan"}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onDoorzetten, onSnelStatus,
+  afspraken=[], onAddAfspraak=()=>{}, geslotenDagen=[], openingstijden=null, afspraakSoorten=[], klussen=[], onAddKlus=async()=>{}, medewerkers=[], afspraakCategorieen=[]}){
+  const [seizoen,setSeizoen]=useState(()=>WS.huidigSeizoen());
+  const [filter,setFilter]=useState("alle");
+  const [zoek,setZoek]=useState("");
+  const [bewerk,setBewerk]=useState(null); // rij | {nieuw}
+  const [afspraakVoor,setAfspraakVoor]=useState(null);
+  const [doorzetten,setDoorzetten]=useState(false);
+  const [melding,setMelding]=useState(null);
+  const [plaatsen,setPlaatsen]=useState("");
+  const [plaatsenOpgeslagen,setPlaatsenOpgeslagen]=useState(null);
+  useEffect(()=>{
+    laadBeheerVelden("winterstalling_plaatsen").then(({data})=>{ const n=data?.winterstalling_plaatsen; setPlaatsenOpgeslagen(n??null); setPlaatsen(n==null?"":String(n)); }).catch(()=>{});
+  },[]);
+  const slaPlaatsenOp=async()=>{
+    const n=plaatsen.trim()===""?null:Number(plaatsen);
+    if(n===plaatsenOpgeslagen||(n!=null&&!Number.isFinite(n))) return;
+    const sb=(await import("../lib/supabase.js")).supabase;
+    const {error}=await sb.from("beheer_instellingen").upsert({id:1,winterstalling_plaatsen:n,bijgewerkt_op:new Date().toISOString()});
+    if(error) setMelding("Aantal plaatsen opslaan mislukt: "+error.message); else setPlaatsenOpgeslagen(n);
+  };
+
+  const vanSeizoen=stalling.filter(w=>w.seizoen===seizoen);
+  const aanvragen=vanSeizoen.filter(w=>w.status==="aangevraagd").sort((a,b)=>String(a.aangemaakt).localeCompare(String(b.aangemaakt)));
+  const lijst=vanSeizoen.filter(w=>w.status!=="aangevraagd")
+    .filter(w=>filter==="alle"||(filter==="onbetaald"?!w.betaald:w.status===filter))
+    .filter(w=>WS.past(w,zoek)).sort(WS.sorteer);
+  const t=WS.telling(vanSeizoen);
+  const seizoenen=[...new Set([...stalling.map(w=>w.seizoen),WS.huidigSeizoen(),seizoen])].sort();
+  const teDoorzetten=WS.doorzetRegels(vanSeizoen,seizoen+1,stalling.filter(w=>w.seizoen===seizoen+1));
+  const aanvragenAndere=stalling.filter(w=>w.status==="aangevraagd"&&w.seizoen!==seizoen);
+  const nieuweRij=()=>({seizoen,status:"gereserveerd",nummer:WS.volgendNummer(vanSeizoen),betaald:false});
+
+  const exporteer=async()=>{
+    const {utils,writeFile}=await import("xlsx");
+    const ws=utils.aoa_to_sheet(WS.excelRijen(vanSeizoen.filter(w=>w.status!=="aangevraagd"),seizoen));
+    ws["!cols"]=[{wch:5},{wch:24},{wch:16},{wch:18},{wch:11},{wch:18},{wch:40},{wch:28},{wch:15},{wch:13},{wch:9},{wch:12},{wch:11},{wch:12},{wch:30}];
+    const wb=utils.book_new(); utils.book_append_sheet(wb,ws,`Winterstalling ${seizoen}`);
+    writeFile(wb,`Winterstalling ${seizoen}.xlsx`);
+  };
+  const chip=(id,label,n)=>(
+    <button key={id} type="button" onClick={()=>setFilter(id)} aria-pressed={filter===id}
+      style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${filter===id?T.accent:T.border}`,background:filter===id?`${T.accent}18`:"transparent",color:filter===id?T.accent:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontWeight:filter===id?600:400}}>
+      {label}{n!=null?` (${n})`:""}
+    </button>
+  );
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <button type="button" style={{...s.btnGhost,padding:"6px 10px"}} onClick={()=>setSeizoen(x=>x-1)} aria-label="Vorig seizoen">◀</button>
+          <select style={{...s.input,width:"auto",fontWeight:700}} value={seizoen} onChange={e=>setSeizoen(Number(e.target.value))} aria-label="Seizoen kiezen">
+            {seizoenen.map(x=><option key={x} value={x}>Winter {WS.seizoenLabel(x)}</option>)}
+          </select>
+          <button type="button" style={{...s.btnGhost,padding:"6px 10px"}} onClick={()=>setSeizoen(x=>x+1)} aria-label="Volgend seizoen">▶</button>
+        </div>
+        <div style={{flex:1}}/>
+        <button type="button" style={s.btnGhost} onClick={exporteer} disabled={!t.totaal}>⬇ Excel</button>
+        <button type="button" style={s.btn} onClick={()=>setBewerk(nieuweRij())}>+ Reservering</button>
+      </div>
+      <div style={{fontSize:13,color:T.muted,marginBottom:14,display:"flex",gap:14,flexWrap:"wrap",alignItems:"center"}}>
+        <span><strong style={{color:T.text}}>{t.totaal}</strong> motoren</span>
+        <span>{t.binnen} binnen</span><span>{t.gereserveerd} gereserveerd</span><span>{t.opgehaald} opgehaald</span>
+        <span>{t.betaald} betaald</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6}}>van
+          <input style={{...s.input,width:64,padding:"4px 6px",textAlign:"center"}} inputMode="numeric" value={plaatsen} onChange={e=>setPlaatsen(e.target.value.replace(/\D/g,""))} onBlur={slaPlaatsenOp} placeholder="?" aria-label="Aantal plaatsen"/> plaatsen
+          {plaatsenOpgeslagen!=null&&t.totaal>plaatsenOpgeslagen&&<span style={{color:T.red,fontWeight:600}}>vol</span>}
+        </span>
+      </div>
+      {melding&&<div style={{fontSize:12,color:melding.startsWith("✓")?T.green:T.red,marginBottom:10}}>{melding}</div>}
+
+      {aanvragen.length>0&&(
+        <div style={{...s.card,borderColor:`${T.yellow}88`,marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>Aanvragen ({aanvragen.length})</div>
+          {aanvragen.map(w=>(
+            <div key={w.id} onClick={()=>setBewerk(w)} role="button" tabIndex={0} onKeyDown={e=>e.key==="Enter"&&setBewerk(w)}
+              style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderTop:`1px solid ${T.border}`,cursor:"pointer",flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 220px",minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600}}>{w.naam||"Onbekend"} <span style={{fontWeight:400,color:T.muted}}>· {w.bron==="klantportaal"?"klantportaal":"website"} · {new Date(w.aangemaakt).toLocaleDateString("nl-NL")}</span></div>
+                <div style={{fontSize:12,color:T.muted}}>{[WS.motorTekst(w),w.pakket,w.telefoon].filter(Boolean).join(" · ")}</div>
+                {w.werkzaamheden&&<div style={{fontSize:12,color:T.muted,fontStyle:"italic"}}>{w.werkzaamheden}</div>}
+              </div>
+              <span style={{...s.btn,padding:"6px 12px",fontSize:12}}>Verwerken →</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {aanvragenAndere.length>0&&<div style={{fontSize:12,color:T.yellow,marginBottom:10}}>Er {aanvragenAndere.length===1?"staat 1 aanvraag":`staan ${aanvragenAndere.length} aanvragen`} bij een ander seizoen ({[...new Set(aanvragenAndere.map(w=>WS.seizoenLabel(w.seizoen)))].join(", ")}).</div>}
+
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+        <input style={{...s.input,flex:"1 1 200px"}} value={zoek} onChange={e=>setZoek(e.target.value)} placeholder="Zoek op naam, motor, kenteken…" aria-label="Zoeken in de stallingslijst"/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {chip("alle","Alle",t.totaal)}{chip("gereserveerd","Gereserveerd",t.gereserveerd)}{chip("binnen","Binnen",t.binnen)}{chip("opgehaald","Opgehaald",t.opgehaald)}{chip("onbetaald","Niet betaald",t.totaal-t.betaald)}
+        </div>
+      </div>
+
+      {lijst.length===0&&<div style={{color:T.muted,fontSize:13,textAlign:"center",padding:"40px 0"}}>{t.totaal?"Niets gevonden.":`Nog geen motoren in de stalling voor ${WS.seizoenLabel(seizoen)}.`}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {lijst.map(w=>{
+          const st=WS.statusVan(w.status);
+          return(
+            <div key={w.id} style={{...s.card,padding:"10px 12px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",cursor:"pointer",marginBottom:0}}
+              onClick={()=>setBewerk(w)} role="button" tabIndex={0} onKeyDown={e=>e.key==="Enter"&&setBewerk(w)} aria-label={`Reservering ${w.naam||""}`}>
+              <div style={{width:34,fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:18,color:T.muted,textAlign:"right",flexShrink:0}}>{w.nummer??"–"}</div>
+              <div style={{flex:"1 1 200px",minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600}}>{w.naam||"Onbekend"}</div>
+                <div style={{fontSize:12,color:T.muted}}>{WS.motorTekst(w)||"Motor nog niet bekend"}{w.telefoon?` · ${w.telefoon}`:""}</div>
+                {(w.pakket||w.werkzaamheden)&&<div style={{fontSize:12,color:T.text,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[w.pakket,w.werkzaamheden].filter(Boolean).join(" · ")}</div>}
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
+                {WS.isDoorgezet(w,stalling)&&<span title={`Staat ook op de lijst van ${WS.seizoenLabel(w.seizoen+1)}`} style={{...s.badge(T.muted),fontSize:10}}>✓ {w.seizoen+1}</span>}
+                <span style={{...s.badge(w.betaald?T.green:T.muted),fontSize:10}}>{w.betaald?`Betaald${w.betaalwijze?` · ${WS.BETAALWIJZEN.find(b=>b.id===w.betaalwijze)?.label}`:""}`:"Niet betaald"}</span>
+                <span style={{...s.badge(st.kleur),fontSize:10}}>{st.label}</span>
+                {w.status==="gereserveerd"&&<button type="button" style={{...s.btnGhost,fontSize:11,padding:"4px 8px"}} onClick={()=>onSnelStatus(w,"binnen")}>✓ Binnen</button>}
+                {w.status==="binnen"&&<button type="button" style={{...s.btnGhost,fontSize:11,padding:"4px 8px"}} onClick={()=>onSnelStatus(w,"opgehaald")}>Opgehaald</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {t.totaal>0&&(
+        <div style={{marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          {!doorzetten?(
+            <button type="button" style={s.btnGhost} disabled={!teDoorzetten.length} onClick={()=>setDoorzetten(true)}>
+              ➜ Alles doorzetten naar {WS.seizoenLabel(seizoen+1)}{teDoorzetten.length?` (${teDoorzetten.length})`:""}
+            </button>
+          ):(
+            <div style={{fontSize:13,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              {teDoorzetten.length} motor{teDoorzetten.length===1?"":"en"} op de lijst van {WS.seizoenLabel(seizoen+1)} zetten (gereserveerd, niet betaald)?
+              <button type="button" style={s.btn} onClick={async()=>{ const n=await onDoorzetten(vanSeizoen,seizoen+1); setDoorzetten(false); if(n!=null) setMelding(`✓ ${n} motor${n===1?"":"en"} doorgezet naar ${WS.seizoenLabel(seizoen+1)}.`); }}>Ja, doorzetten</button>
+              <button type="button" style={s.btnGhost} onClick={()=>setDoorzetten(false)}>Annuleer</button>
+            </div>
+          )}
+          {!teDoorzetten.length&&<span style={{fontSize:12,color:T.muted}}>Alles staat al op de lijst van {WS.seizoenLabel(seizoen+1)}.</span>}
+        </div>
+      )}
+
+      {bewerk&&(
+        <StallingModal rij={bewerk} klanten={klanten} alle={stalling} onBewaar={onBewaar} onVerwijder={onVerwijder}
+          onDoorzetten={async(r,naar)=>{ const n=await onDoorzetten(r,naar); if(n!=null) setMelding(`✓ Doorgezet naar ${WS.seizoenLabel(naar)}.`); return n; }}
+          onAfspraak={r=>{ setBewerk(null); setAfspraakVoor(r); }}
+          onClose={()=>setBewerk(null)}/>
+      )}
+      {afspraakVoor&&(
+        <AfspraakModal afspraken={afspraken} klanten={klanten} voorraad={[]}
+          initialModus="bestaand" initialSelKlantId={afspraakVoor.klant_id} initialMotorId={afspraakVoor.motor_id} klantVergrendeld
+          initialOpmerking={afspraakVoor.werkzaamheden?`Winterstalling: ${afspraakVoor.werkzaamheden}`:"Winterstalling"}
+          titel="WERKPLAATS-AFSPRAAK (WINTERSTALLING)"
+          geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={onAddKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}
+          onSave={f=>{onAddAfspraak(f);setAfspraakVoor(null);}} onClose={()=>setAfspraakVoor(null)}/>
+      )}
+    </div>
+  );
+}
+
 // ── Inkoop-radar ─────────────────────────────────────────────────────────────
 // Toont automatisch gevonden particuliere motoradvertenties (via de dagelijkse
 // GitHub Actions-job) als inkoop-leads. Alleen zichtbaar in de admin-app.
@@ -5721,7 +6097,7 @@ export default function AdminApp(){
         // Alles in één ronde tegelijk ophalen (voorheen drie rondes na elkaar).
         // Motoren/km/service: alles in één keer (admin ziet alles) i.p.v. .in(klant_id, …):
         // bij honderden klanten wordt die URL te lang voor de server.
-        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData, mot, km, svc, inst, vExtrasData] = await Promise.all([
+        const [k, v, a, verlopen, pData, vsData, klusData, chassisData, inkoopRes, inkoopStatusRes, inkoopPopulairRes, vInkoopData, prijscheckData, internData, mot, km, svc, inst, vExtrasData, stallingData] = await Promise.all([
           alleRijen(()=>sb.from("klanten").select("*").order("naam").order("id")),
           sb.from("voorraad").select("*").neq("status","verwijderd").or(`verkocht_op.is.null,verkocht_op.gte.${grens30}`).order("created_at",{ascending:false}),
           alleRijen(()=>sb.from("afspraken").select(AFSPRAAK_VELDEN).gte("datum", lokaleDatum(jaarTerug)).order("datum").order("id")),
@@ -5742,6 +6118,7 @@ export default function AdminApp(){
           alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin,voorband_datum,achterband_datum").order("datum",{ascending:false}).order("id")),
           sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag,verkoop_extras,onderhoudslijst").single(),
           alleRijen(()=>sb.from("motor_verkoop_extras").select("motor_id,extras,overig").order("motor_id")), // extra's bij verkoop: alleen admin leesbaar
+          alleRijen(()=>sb.from("winterstalling").select("*").order("seizoen").order("nummer").order("id")),
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
@@ -5778,6 +6155,7 @@ export default function AdminApp(){
 
         setKlanten(verrijkt);
         setKlussen(klusData.data||[]);
+        setStalling(stallingData.data||[]);
         setShowroom((v.data||[]).map(m=>({...m, chassis_nummer: chassisMap[m.id]||null,
           inkoopprijs: vInkoopMap[m.id]??null, prijscheck: prijscheckMap[m.id]||null, interne_opmerking: internMap[m.id]||null,
           service: vrdSvcPerMotor.get(m.id)||[]})));
@@ -5895,7 +6273,7 @@ export default function AdminApp(){
   const updateKlant = async (u) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     await sb.from("klanten").update({
-      naam:u.naam, email:u.email, telefoon:u.telefoon,
+      naam:u.naam, email:(u.email||"").trim().toLowerCase()||null, telefoon:u.telefoon,
       adres:u.adres, postcode:u.postcode, woonplaats:u.woonplaats,
       status:u.status||"goedgekeurd"
     }).eq("id",u.id);
@@ -6337,7 +6715,7 @@ export default function AdminApp(){
     if(f.nieuweKlant){
       const {data:nieuweK} = await sb.from("klanten").insert({
         naam: f.nieuweKlant.naam,
-        email: f.nieuweKlant.email||"",
+        email: (f.nieuweKlant.email||"").trim().toLowerCase()||null,
         telefoon: f.nieuweKlant.telefoon||"",
         adres: f.nieuweKlant.adres||"",
         postcode: f.nieuweKlant.postcode||"",
@@ -6657,6 +7035,7 @@ export default function AdminApp(){
   const [medewerkers, setMedewerkers] = useState([]);
   const [verkoopExtras, setVerkoopExtras] = useState(DEFAULT_VERKOOP_EXTRAS);
   const [onderhoudSjabloon, setOnderhoudSjabloon] = useState(STANDAARD_SJABLOON);
+  const [stalling, setStalling] = useState([]); // winterstalling, alle seizoenen
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
   const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
   // Dagcapaciteit voor klantportaal en website (de database bewaakt hem, zie supabase/dagcapaciteit.sql)
@@ -6732,6 +7111,83 @@ export default function AdminApp(){
     }
     setShowroom(p => p.map(m => (m.extras_niet_aanbieden||[]).includes(h.van) && !mislukt.includes(`${m.merk} ${m.model}`.trim()) ? { ...m, extras_niet_aanbieden: vervang(m.extras_niet_aanbieden) } : m));
     if (mislukt.length) alert(`De naam is gewijzigd, maar bij ${mislukt.join(", ")} kon "${h.naar}" niet als "heeft hij al" worden bijgewerkt. Controleer die motor(en) via Wijzigen.`);
+  };
+
+  // ── Winterstalling ──
+  // Opslaan van een reservering, met zo nodig eerst een nieuwe klant en/of motor
+  const bewaarStalling = async (f) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    let klantId = f.klantId || null;
+    let klant = klantId ? klanten.find(k => k.id === klantId) : null;
+    const nk = f.nieuweKlant;
+    if (!klantId && nk?.naam?.trim()) {
+      const { data, error } = await sb.from("klanten").insert({
+        naam: nk.naam.trim(), telefoon: nk.telefoon?.trim() || null,
+        email: nk.email?.trim().toLowerCase() || null, status: "goedgekeurd",
+      }).select().single();
+      if (error) throw new Error(/duplicate|unique/i.test(error.message) ? "Er bestaat al een klant met dit e-mailadres. Kies die klant in de lijst." : "Klant opslaan mislukt: " + error.message);
+      klant = { ...data, motoren: [] }; klantId = data.id;
+      setKlanten(p => p.some(k => k.id === data.id) ? p : [...p, klant]);
+    }
+    let motorId = f.motorId && !["nieuw", "geen"].includes(f.motorId) ? f.motorId : null;
+    let motor = motorId ? (klant?.motoren || []).find(m => m.id === motorId) : null;
+    const nm = f.nieuweMotor || {};
+    if (!motorId && klantId && f.motorId !== "geen" && nm.merk?.trim()) {
+      const { data, error } = await sb.from("motoren").insert({
+        klant_id: klantId, merk: nm.merk.trim(), model: nm.model?.trim() || null, kenteken: WS.normKenteken(nm.kenteken),
+      }).select().single();
+      if (error) throw new Error("Motor opslaan mislukt: " + error.message);
+      motor = data; motorId = data.id;
+      setKlanten(p => p.map(k => k.id === klantId ? { ...k, motoren: [...(k.motoren || []), { ...data, kmHistory: [], service: [] }] } : k));
+    }
+    const rij = {
+      seizoen: Number(f.seizoen), nummer: f.nummer === "" || f.nummer == null ? null : Number(f.nummer), status: f.status,
+      klant_id: klantId, motor_id: motorId,
+      naam: klant?.naam || nk?.naam?.trim() || f.naam || null,
+      telefoon: klant ? (klant.telefoon || null) : (nk?.telefoon?.trim() || f.telefoon || null),
+      email: klant ? (klant.email || null) : (nk?.email?.trim().toLowerCase() || f.email || null),
+      merk: motor ? motor.merk : (nm.merk?.trim() || null), model: motor ? (motor.model || null) : (nm.model?.trim() || null),
+      kenteken: motor ? (motor.kenteken || null) : (WS.normKenteken(nm.kenteken) || null),
+      pakket: f.pakket?.trim() || null, werkzaamheden: f.werkzaamheden?.trim() || null, opmerking: f.opmerking?.trim() || null,
+      betaald: !!f.betaald, betaalwijze: f.betaalwijze || null,
+      binnen_op: f.binnen_op || null, opgehaald_op: f.opgehaald_op || null, bijgewerkt_op: new Date().toISOString(),
+    };
+    const fout = (e) => new Error(e.code === "23505" ? `Deze motor staat al op de lijst van ${WS.seizoenLabel(rij.seizoen)}.` : "Opslaan mislukt: " + e.message);
+    if (f.id) {
+      const { data, error } = await sb.from("winterstalling").update(rij).eq("id", f.id).select().single();
+      if (error) throw fout(error);
+      setStalling(p => p.map(w => w.id === f.id ? data : w));
+      return data;
+    }
+    const { data, error } = await sb.from("winterstalling").insert({ ...rij, bron: "beheer" }).select().single();
+    if (error) throw fout(error);
+    setStalling(p => [...p, data]);
+    return data;
+  };
+  const verwijderStalling = async (id) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { error } = await sb.from("winterstalling").delete().eq("id", id);
+    if (error) throw new Error("Verwijderen mislukt: " + error.message);
+    setStalling(p => p.filter(w => w.id !== id));
+  };
+  // Doorzetten naar een volgend seizoen; geeft het aantal (null bij een fout)
+  const zetStallingDoor = async (rijen, naar) => {
+    const nieuw = WS.doorzetRegels(rijen, naar, stalling.filter(w => w.seizoen === naar));
+    if (!nieuw.length) return 0;
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const { data, error } = await sb.from("winterstalling").insert(nieuw).select();
+    if (error) { alert("Doorzetten mislukt: " + (error.code === "23505" ? "een van de motoren staat al op die lijst." : error.message)); return null; }
+    setStalling(p => [...p, ...(data || [])]);
+    return (data || []).length;
+  };
+  const snelStallingStatus = async (w, status) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const wijziging = { status, bijgewerkt_op: new Date().toISOString(),
+      ...(status === "binnen" && !w.binnen_op ? { binnen_op: TODAY } : {}),
+      ...(status === "opgehaald" && !w.opgehaald_op ? { opgehaald_op: TODAY } : {}) };
+    const { error } = await sb.from("winterstalling").update(wijziging).eq("id", w.id);
+    if (error) { alert("Status wijzigen mislukt: " + error.message); return; }
+    setStalling(p => p.map(x => x.id === w.id ? { ...x, ...wijziging } : x));
   };
 
   const slaOnderhoudSjabloonOp = async (sjabloon) => {
@@ -6856,6 +7312,10 @@ export default function AdminApp(){
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "klanten" }, ({ new: n }) => {
           setKlanten(p => p.map(k => k.id === n.id ? { ...k, ...n } : k));
         })
+        // Nieuwe stallingsaanvraag (website/klantportaal) of wat de app zelf net toevoegde
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "winterstalling" }, ({ new: n }) => {
+          setStalling(p => p.some(w => w.id === n.id) ? p : [...p, n]);
+        })
         .subscribe();
       if(gestopt) sb.removeChannel(sub);
     });
@@ -6868,12 +7328,13 @@ export default function AdminApp(){
     {id:"dashboard",icon:"◈",label:"Dashboard"},
     {id:"klanten",icon:"◎",label:"Klanten"},
     {id:"voorraad",icon:"◧",label:"Voorraad"},
+    {id:"stalling",icon:"❄",label:"Stalling",teller:stalling.filter(w=>w.status==="aangevraagd").length},
     {id:"agenda",icon:"◫",label:"Agenda"},
     {id:"inkoop",icon:"⌖",label:"Inkoop"},
     {id:"instellingen",icon:"◉",label:"Instellingen"},
   ];
 
-  const paginaTitel = page==="website" ? "WEBSITE AANPASSEN" : nav.find(n=>n.id===page)?.label.toUpperCase();
+  const paginaTitel = page==="website" ? "WEBSITE AANPASSEN" : page==="stalling" ? "WINTERSTALLING" : nav.find(n=>n.id===page)?.label.toUpperCase();
 
   if(laden) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100dvh",background:T.bg,color:T.accent,fontFamily:"Barlow, sans-serif",fontSize:14,gap:10}}>
@@ -6887,8 +7348,12 @@ export default function AdminApp(){
   const pageContent = (
     <OnderhoudSjabloonContext.Provider value={onderhoudSjabloon}>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
-      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras} onVerkoop={verkoop}/>}
+      {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras} onVerkoop={verkoop} stalling={stalling}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>}
+      {page==="stalling"&&<WinterstallingPage stalling={stalling} klanten={klanten} onBewaar={bewaarStalling} onVerwijder={verwijderStalling}
+        onDoorzetten={zetStallingDoor} onSnelStatus={snelStallingStatus} afspraken={afspraken} onAddAfspraak={addAfspraak}
+        geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus}
+        medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen}/>}
       {page==="agenda"&&<AgendaPage afspraken={afspraken} klanten={klanten} voorraad={showroom} onAddAfspraak={addAfspraak} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} geslotenDagen={geslotenDagen} onToggleGesloten={toggleGeslotenDag} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} klussen={klussen} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="inkoop"&&<InkoopRadarPage leads={inkoopLeads} status={inkoopStatus} populair={inkoopPopulair} bewaarDagen={inkoopBewaarDagen} onUpdateStatus={updateLeadStatus} onRefresh={herlaadInkoop}/>}
       {page==="website"&&(
@@ -6933,6 +7398,7 @@ export default function AdminApp(){
             <button key={n.id} onClick={()=>gaNaarPagina(n.id)} style={{position:"relative",flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 4px 10px",background:"none",border:"none",borderTop:`2px solid ${navActief===n.id?T.accent:"transparent"}`,color:navActief===n.id?T.accent:T.muted,cursor:"pointer",fontFamily:"Barlow, sans-serif",fontSize:9,fontWeight:navActief===n.id?600:400}}>
               <span style={{fontSize:15}}>{n.icon}</span>
               <span>{n.label}</span>
+              {n.teller>0&&<span aria-label={`${n.teller} nieuw`} style={{position:"absolute",top:4,right:"calc(50% - 20px)",minWidth:16,height:16,borderRadius:8,background:T.accent,color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{n.teller}</span>}
             </button>
           ))}
         </div>
@@ -6952,6 +7418,7 @@ export default function AdminApp(){
             <div key={n.id} style={s.navItem(navActief===n.id)} onClick={()=>gaNaarPagina(n.id)}>
               <span style={{fontSize:13,width:16,textAlign:"center"}}>{n.icon}</span>
               <span>{n.label}</span>
+              {n.teller>0&&<span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:9,background:T.accent,color:"#fff",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n.teller}</span>}
             </div>
           ))}
         </nav>
