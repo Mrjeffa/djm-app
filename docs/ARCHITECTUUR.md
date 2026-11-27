@@ -79,6 +79,7 @@ djm-app/
 │  ├─ _redirects              # SPA: alles → index.html
 │  ├─ manifest.webmanifest    # PWA-manifest
 │  ├─ sw.js                   # service worker: cache eigen bestanden, pushmeldingen
+│  ├─ factuur-sjabloon.xlsx   # factuursjabloon van de zaak (zonder klantgegevens), zie §5
 │  ├─ icons/                  # app-iconen, badge, favicons
 │  ├─ larsson_voertuigen.json # opzoektabel onderdelen (Larsson), lazy geladen
 │  └─ autoscout-djm.user.js   # Tampermonkey-script dat het AutoScout-formulier invult
@@ -109,6 +110,7 @@ djm-app/
 │     ├─ versie.js            # nieuwe versie online? (melding "Nieuwe versie beschikbaar")
 │     ├─ appAdres.js          # vast adres van de app, herkent deploy-adressen
 │     ├─ onderhoudslijst.js   # onderhoudslijst: sjabloon, opbouwen, voortgang, samenvatting
+│     ├─ factuur.js           # factuur: regels, prijzen, prijslijst lezen, Excel vullen
 │     └─ laden.js             # lazy laden met één keer herladen na een update
 ├─ supabase/
 │  ├─ functions/              # edge functions (Deno): zie §9
@@ -235,7 +237,28 @@ lijst de echte overschrijven). Het sjabloon staat in `instellingen.onderhoudslij
 Onderhoudslijst) en komt via `OnderhoudSjabloonContext`. Ingevulde punten worden met hun naam
 bewaard: een aangepast sjabloon voegt punten toe of laat lege punten weg, maar ingevulde blijven.
 Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst ingevuld
-(`samenvatting()` in `lib/onderhoudslijst.js`). Basis voor de werkbon/factuur (zonder prijzen).
+(`samenvatting()` in `lib/onderhoudslijst.js`).
+
+**Factuur (Excel)** (afspraak openen → Factuur maken; `FactuurModal`, logica in `lib/factuur.js`):
+- Regels uit de onderhoudslijst (`factuurRegels`): uitgevoerde werkzaamheden, groot onderhoud
+  met type, vervangen onderdelen met toelichting, adviespunten als tekstregel. Niet ingevuld:
+  de werkzaamheden uit de afspraak. Te controleren en aan te vullen (max 26 regels).
+- Prijzen ex btw uit de `prijslijst`: eerst op artikelcode in type/toelichting (woorden met een
+  cijfer, bv. HF303 → artikelnummer, JM-nummer of in de omschrijving), dan op exact dezelfde
+  omschrijving. Leeg = in Excel invullen.
+- Factuurnummer: `beheer_instellingen.laatste_factuurnummer` + 1, per factuur aan te passen;
+  na downloaden wordt het laatste nummer bijgewerkt (als het hoger is) en komt
+  `{nummer, datum}` in `lijst.factuur` van de afspraak (opnieuw downloaden = zelfde nummer).
+  In Instellingen → Facturen en prijslijst is het laatste nummer handmatig te zetten.
+- Het bestand: `public/factuur-sjabloon.xlsx` (de Standaardfactuur van de zaak, zonder
+  klantgegevens en zonder bewaarde formule-uitkomsten). `maakFactuur()` past alleen celwaarden
+  aan in het werkblad-XML (zip via `xlsx`.CFB), zodat opmaak, formules, keuzelijsten en het
+  afdrukbereik (A–G, briefpapier) blijven; Excel rekent bij openen opnieuw (`fullCalcOnLoad`).
+  Facturen worden niet in de app bewaard; de zaak slaat het bestand op de computer op.
+- Prijslijst: Instellingen → downloaden als Excel (kolommen zoals een Larsson-bestelling:
+  JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs, …), aanvullen,
+  uploaden. `leesPrijslijst()` zoekt de kopregel en slaat "voertuig:"- en totaalregels over;
+  uploaden vervangt de hele lijst in één transactie (`vervang_prijslijst`).
 
 **Foutafhandeling:** opslaan in de beheer-app controleert de `error` van Supabase en toont een
 melding (klant toevoegen, uitnodigen, voorraad toevoegen/wijzigen, verkoop, afwerken,
@@ -433,6 +456,8 @@ geblokkeerd is, zoals in een privévenster).
 | `voorraad_inkoop` / `voorraad_chassis` / `voorraad_intern` / `voorraad_prijscheck` / `voorraad_service` | inkoopprijs, chassisnr., interne opmerking, Motoroccasion-check, onderhoud vóór verkoop | alleen admin |
 | `motor_verkoop_extras` | extra's bij aankoop per klantmotor (`extras` text[], `overig`); verdwijnt met de motor | alleen admin |
 | `onderhoudslijsten` | ingevulde onderhoudslijst per afspraak (`afspraak_id`, `lijst` jsonb, `bijgewerkt_op`); verdwijnt met de afspraak | alleen admin |
+| `beheer_instellingen` | één rij (`id=1`) met instellingen die alleen de beheerder mag zien: `laatste_factuurnummer` | alleen admin |
+| `prijslijst` | artikelen voor facturen: `omschrijving`, `artikelnummer`, `jm_nummer`, `inkoop`, `verkoop` (ex btw), `volgorde` | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
 | `taken` | takenlijst beheerder | alleen admin (eigen) |
@@ -458,6 +483,7 @@ geblokkeerd is, zoals in een privévenster).
 | `voorraad_overzicht()` | ingelogd (klantportaal) | voorraad te koop + 30 dagen na verkoop, alleen veilige kolommen; kenteken alleen van motoren die nog te koop zijn |
 | `verwijder_eigen_account()` | klant | account opheffen (klantrecord gearchiveerd, login verwijderd) |
 | `delete_auth_user_by_id(id)` | admin | login van een klant verwijderen |
+| `vervang_prijslijst(regels)` | admin (security invoker, controleert `is_admin()`) | hele prijslijst in één transactie vervangen (upload) |
 
 Functies in schema `private` (niet via de API bereikbaar): `meld_push` (pushtrigger),
 `telt_voor_dagcapaciteit`, `max_afspraken_per_dag`, `bewaak_dagcapaciteit`,
@@ -490,11 +516,12 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens),
 `verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper),
 `website_cms.sql` (website-beheer: tabellen, regels, startinhoud), `verkoop_extras.sql`
-(extra's bij verkoop), `onderhoudslijst.sql` (onderhoudslijst per afspraak), plus
+(extra's bij verkoop), `onderhoudslijst.sql` (onderhoudslijst per afspraak), `facturen.sql`
+(factuurnummer en prijslijst), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
 `dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`,
-`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`.
+`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`, `facturen-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 

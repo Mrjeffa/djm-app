@@ -24,7 +24,7 @@ AFGESCHERMD = [
     "voorraad_prijscheck", "inkoop_leads", "inkoop_aanvragen", "inkoop_populair",
     "inkoop_radar_status", "voorraad_intern", "push_abonnementen", "push_log", "push_sleutels",
     "afspraken_intern", "website_blokken_historie", "website_paginas_historie",
-    "motor_verkoop_extras", "onderhoudslijsten",
+    "motor_verkoop_extras", "onderhoudslijsten", "beheer_instellingen", "prijslijst",
 ]
 # Functies die een buitenstaander niet mag kunnen uitvoeren (onschuldige argumenten).
 RPC_VERBODEN = {
@@ -34,6 +34,7 @@ RPC_VERBODEN = {
     "bewaak_afspraken_mutaties": {},
     "get_bezette_dagen": {},
     "voorraad_overzicht": {},
+    "vervang_prijslijst": {"regels": []},
 }
 # Edge functions die alleen voor admins zijn (lege opdracht: doet niets, ook als het lek zou zijn).
 EDGE_ALLEEN_ADMIN = {

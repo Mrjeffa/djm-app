@@ -8,7 +8,8 @@ import { verkleinFotos, uploadFoto } from "../lib/foto.js";
 import { naarKm, vanKm, kmTekst } from "../lib/kmstand.js";
 import PushInstellingen from "./PushInstellingen.jsx";
 import AppVersie from "./AppVersie.jsx";
-import { STANDAARD_SJABLOON, STATUSSEN, geldigSjabloon, bouwLijst, voortgangTekst, samenvatting, isIngevuld, leesReservekopie, schrijfReservekopie, wisReservekopie } from "../lib/onderhoudslijst.js";
+import { STANDAARD_SJABLOON, STATUSSEN, geldigSjabloon, bouwLijst, voortgangTekst, samenvatting, isIngevuld, soortenVan, leesReservekopie, schrijfReservekopie, wisReservekopie } from "../lib/onderhoudslijst.js";
+import { MAX_REGELS, BETAALWIJZEN, naarPrijs, euro as euroCent, leesPrijslijst, prijslijstRijen, VOORBEELD_PRIJSLIJST, zoekInPrijslijst, factuurRegels, regelTotaal, totaalExBtw, bestandsnaam, maakFactuur } from "../lib/factuur.js";
 import { laadMetHerstel } from "../lib/laden.js";
 // Website-beheer apart geladen: alleen nodig als de beheerder het opent
 const WebsiteBeheer = laadMetHerstel(() => import("./WebsiteBeheer.jsx"));
@@ -3458,11 +3459,308 @@ function OnderhoudslijstModal({afspraak, motor, klantNaam, onClose}){
   );
 }
 
+// ── Factuur (Excel) ──────────────────────────────────────────────────────────
+// Uit de onderhoudslijst van een afspraak: regels (met prijzen uit de prijslijst) controleren
+// en aanvullen, dan als Excel downloaden in het sjabloon van de zaak (lib/factuur.js). Het
+// factuurnummer loopt op (beheer_instellingen) en is per factuur aan te passen.
+const laadBeheer = async () => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return sb.from("beheer_instellingen").select("laatste_factuurnummer").eq("id",1).maybeSingle();
+};
+const laadPrijslijst = async () => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return alleRijen(()=>sb.from("prijslijst").select("omschrijving,artikelnummer,jm_nummer,inkoop,verkoop").order("volgorde").order("id"));
+};
+const bewaarLaatsteFactuurnummer = async (nummer) => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return sb.from("beheer_instellingen").upsert({id:1, laatste_factuurnummer:nummer, bijgewerkt_op:new Date().toISOString()});
+};
+// 8.56 → "8,56" (invoerveld in Nederlandse notatie)
+const metKomma = (n) => (n==null||n==="" ? "" : String(n).replace(".", ","));
+const downloadBestand = (bytes, naam, type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => {
+  const url = URL.createObjectURL(new Blob([bytes], {type}));
+  const a = document.createElement("a");
+  a.href = url; a.download = naam;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+};
+
+function FactuurModal({afspraak, motor, klant, onClose}){
+  const sjabloon=useContext(OnderhoudSjabloonContext);
+  const [laden,setLaden]=useState(true);
+  const [laadFout,setLaadFout]=useState(null);
+  const [lijst,setLijst]=useState(null);
+  const [prijslijst,setPrijslijst]=useState([]);
+  const [laatste,setLaatste]=useState(null);
+  const [nummer,setNummer]=useState("");
+  const [datum,setDatum]=useState(TODAY);
+  const [betaalwijze,setBetaalwijze]=useState(BETAALWIJZEN[0]);
+  const [regels,setRegels]=useState([]);
+  const [status,setStatus]=useState(null); // null | "bezig" | "klaar" | melding
+  const [herlaad,setHerlaad]=useState(0);
+
+  useEffect(()=>{
+    let weg=false;
+    setLaden(true); setLaadFout(null);
+    (async()=>{
+      const [ol,beheer,prijzen]=await Promise.all([laadOnderhoudslijst(afspraak.id),laadBeheer(),laadPrijslijst()]);
+      if(weg) return;
+      if(ol.error||beheer.error){ setLaadFout("De gegevens konden niet worden geladen. Controleer de verbinding."); setLaden(false); return; }
+      const pl=prijzen.error?[]:(prijzen.data||[]);
+      const l=bouwLijst(leesReservekopie(afspraak.id)?.lijst||ol.data?.lijst,sjabloon,afspraak);
+      // Onderhoudslijst ingevuld: wat er is gedaan. Anders: de werkzaamheden uit de afspraak.
+      const start=isIngevuld(l)?factuurRegels(l,pl)
+        :soortenVan(afspraak.soort).map(naam=>({aantal:1,omschrijving:naam,prijs:zoekInPrijslijst(naam,"",pl)?.verkoop??null}));
+      const laatsteNr=beheer.data?.laatste_factuurnummer??null;
+      setLijst(l); setPrijslijst(pl); setLaatste(laatsteNr);
+      setNummer(String(l.factuur?.nummer??(laatsteNr!=null?Number(laatsteNr)+1:"")));
+      if(l.factuur?.datum) setDatum(l.factuur.datum);
+      setRegels((start.length?start:[{aantal:1,omschrijving:"",prijs:null}]).map(r=>({...r,aantal:r.aantal??"",prijs:metKomma(r.prijs)})));
+      setLaden(false);
+    })().catch(e=>{ if(!weg){ setLaadFout(e.message||"Laden mislukt"); setLaden(false); } });
+    return ()=>{weg=true;};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[afspraak.id,herlaad]);
+
+  const klantGegevens={
+    naam:klant?.naam||afspraak.naam||afspraak.klant||"",
+    adres:klant?.adres||"",
+    plaats:[klant?.postcode,klant?.woonplaats].filter(Boolean).join(" "),
+    email:klant?.email||afspraak.email||"",
+    telefoon:klant?.telefoon||afspraak.telefoon||"",
+  };
+  const kmTekstLijst=lijst?.km?(lijst.km_eenheid==="mijl"?`${lijst.km} mijl`:String(lijst.km).replace(/\D/g,"")):"";
+  const motorGegevens={
+    omschrijving:motor?[motor.merk,motor.model].filter(Boolean).join(" "):"",
+    kenteken:motor?.kenteken||"", km:kmTekstLijst, vin:motor?.chassis_nummer||"",
+  };
+  const opties=[...new Set(prijslijst.map(x=>x.omschrijving))];
+  const zetRegel=(i,w)=>setRegels(p=>p.map((r,j)=>j===i?{...r,...w}:r));
+  const kiesOmschrijving=(i,tekst)=>setRegels(p=>p.map((r,j)=>{
+    if(j!==i) return r;
+    const hit=prijslijst.find(x=>x.omschrijving.toLowerCase()===tekst.trim().toLowerCase());
+    return {...r,omschrijving:tekst,...(hit&&hit.verkoop!=null&&(r.prijs===""||r.prijs==null)?{prijs:metKomma(hit.verkoop)}:{})};
+  }));
+  const schoon=regels.filter(r=>String(r.omschrijving||"").trim()).map(r=>({aantal:naarPrijs(r.aantal),omschrijving:String(r.omschrijving).trim(),prijs:naarPrijs(r.prijs)}));
+  const totaal=totaalExBtw(schoon);
+  const zonderPrijs=schoon.filter(r=>r.aantal!=null&&r.prijs==null).length;
+  const nr=String(nummer).trim();
+  const alGebruikt=/^\d+$/.test(nr)&&laatste!=null&&Number(nr)<=Number(laatste)&&Number(nr)!==Number(lijst?.factuur?.nummer);
+
+  const download=async()=>{
+    if(!/^\d+$/.test(nr)){ setStatus("Vul een factuurnummer in (alleen cijfers)."); return; }
+    if(!schoon.length){ setStatus("Voeg minstens één regel toe."); return; }
+    if(schoon.length>MAX_REGELS){ setStatus(`Er passen maximaal ${MAX_REGELS} regels op de factuur.`); return; }
+    setStatus("bezig");
+    try{
+      const res=await fetch("/factuur-sjabloon.xlsx",{cache:"no-store"});
+      if(!res.ok) throw new Error("factuursjabloon niet gevonden");
+      const bytes=await maakFactuur(await res.arrayBuffer(),{nummer:Number(nr),datum,betaalwijze,klant:klantGegevens,motor:motorGegevens,regels:schoon});
+      downloadBestand(bytes,bestandsnaam(nr,klantGegevens.naam));
+    }catch(e){ setStatus("Factuur maken mislukt: "+(e.message||"onbekende fout")); return; }
+    // Nummer bijhouden en bij de afspraak bewaren (de factuur zelf staat op de computer)
+    const problemen=[];
+    if(laatste==null||Number(nr)>Number(laatste)){
+      const {error}=await bewaarLaatsteFactuurnummer(Number(nr));
+      if(error) problemen.push("het factuurnummer is niet bijgewerkt"); else setLaatste(Number(nr));
+    }
+    const nieuw={...lijst,factuur:{nummer:Number(nr),datum}};
+    const {error:e2}=await bewaarOnderhoudslijst(afspraak.id,nieuw);
+    if(e2) problemen.push("het nummer staat niet bij de afspraak"); else setLijst(nieuw);
+    setStatus(problemen.length?`Factuur gedownload, maar ${problemen.join(" en ")}.`:"klaar");
+  };
+  const sluit=()=>onClose(lijst);
+  const klein={...s.input,padding:"7px 8px",fontSize:13};
+
+  return(
+    <Modal title="FACTUUR MAKEN" onClose={sluit}>
+      {laadFout?(
+        <div style={{padding:"18px 0",textAlign:"center"}}>
+          <div style={{fontSize:13,color:T.red,marginBottom:12}}>⚠ {laadFout}</div>
+          <button style={s.btn} onClick={()=>setHerlaad(x=>x+1)}>Opnieuw proberen</button>
+        </div>
+      ):laden?(
+        <div style={{fontSize:13,color:T.muted,padding:"18px 0",textAlign:"center"}}>Laden…</div>
+      ):(
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10,padding:12,background:T.surf2,borderRadius:4,marginBottom:14,fontSize:12,lineHeight:1.6}}>
+            <div>
+              <div style={{...s.label,marginBottom:2}}>Voor</div>
+              <div style={{color:T.text,fontWeight:600}}>{klantGegevens.naam||"—"}</div>
+              {[klantGegevens.adres,klantGegevens.plaats,klantGegevens.email,klantGegevens.telefoon].filter(Boolean).map(x=><div key={x} style={{color:T.muted}}>{x}</div>)}
+            </div>
+            <div>
+              <div style={{...s.label,marginBottom:2}}>Motor</div>
+              <div style={{color:T.text,fontWeight:600}}>{motorGegevens.omschrijving||"—"}</div>
+              {motorGegevens.kenteken&&<div style={{color:T.muted}}>Kenteken {motorGegevens.kenteken}</div>}
+              {motorGegevens.km&&<div style={{color:T.muted}}>Km-stand {motorGegevens.km}</div>}
+              {motorGegevens.vin&&<div style={{color:T.muted}}>VIN {motorGegevens.vin}</div>}
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+            <Field label="Factuurnummer">
+              <input style={s.input} inputMode="numeric" value={nummer} onChange={e=>setNummer(e.target.value)} aria-label="Factuurnummer"/>
+            </Field>
+            <Field label="Factuurdatum"><input style={s.input} type="date" value={datum} onChange={e=>setDatum(e.target.value)} aria-label="Factuurdatum"/></Field>
+            <Field label="Betaalwijze">
+              <select style={s.input} value={betaalwijze} onChange={e=>setBetaalwijze(e.target.value)} aria-label="Betaalwijze">
+                {BETAALWIJZEN.map(b=><option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+          </div>
+          {alGebruikt&&<div style={{fontSize:12,color:T.yellow,marginTop:-6,marginBottom:10}}>Let op: nummer {nr} is al eerder gebruikt (laatste was {laatste}).</div>}
+          {lijst?.factuur?.nummer&&<div style={{fontSize:12,color:T.muted,marginTop:-6,marginBottom:10}}>Voor deze afspraak is al factuur {lijst.factuur.nummer} gemaakt ({lijst.factuur.datum}). Opnieuw downloaden gebruikt hetzelfde nummer.</div>}
+
+          <div style={{...s.sectionLabel,marginTop:6}}>Regels</div>
+          <div style={{fontSize:11,color:T.muted,marginTop:-8,marginBottom:8,lineHeight:1.5}}>
+            Prijzen ex btw, uit de prijslijst (Instellingen). Lege prijs: vul je in Excel in. Zonder aantal en prijs wordt het een tekstregel.
+          </div>
+          <datalist id="prijslijst-opties">{opties.map(o=><option key={o} value={o}/>)}</datalist>
+          {regels.map((r,i)=>{
+            const tot=regelTotaal({aantal:naarPrijs(r.aantal),prijs:naarPrijs(r.prijs)});
+            return(
+              <div key={i} style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
+                <input style={{...klein,width:58,textAlign:"center"}} inputMode="decimal" value={r.aantal} onChange={e=>zetRegel(i,{aantal:e.target.value})} aria-label={`Aantal regel ${i+1}`} placeholder="Aantal"/>
+                <input style={{...klein,flex:"1 1 200px",minWidth:0}} list="prijslijst-opties" value={r.omschrijving} onChange={e=>kiesOmschrijving(i,e.target.value)} aria-label={`Omschrijving regel ${i+1}`} placeholder="Omschrijving"/>
+                <input style={{...klein,width:96,textAlign:"right"}} inputMode="decimal" value={r.prijs} onChange={e=>zetRegel(i,{prijs:e.target.value})} aria-label={`Prijs regel ${i+1}`} placeholder="€ ex btw"/>
+                <span style={{width:84,textAlign:"right",fontSize:12,color:T.muted}}>{tot!=null?euroCent(tot):""}</span>
+                <button type="button" onClick={()=>setRegels(p=>p.filter((_,j)=>j!==i))} title="Regel verwijderen" aria-label={`Regel ${i+1} verwijderen`}
+                  style={{background:"none",border:"none",color:T.muted,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
+              </div>
+            );
+          })}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:10}}>
+            <button type="button" style={{...s.btnGhost,fontSize:12,padding:"6px 12px"}} disabled={regels.length>=MAX_REGELS}
+              onClick={()=>setRegels(p=>[...p,{aantal:1,omschrijving:"",prijs:""}])}>+ Regel</button>
+            <div style={{fontSize:13,textAlign:"right"}}>
+              Totaal ex btw: <strong>{euroCent(totaal)}</strong>
+              {zonderPrijs>0&&<div style={{fontSize:11,color:T.muted}}>{zonderPrijs} regel{zonderPrijs>1?"s":""} zonder prijs</div>}
+            </div>
+          </div>
+        </>
+      )}
+      <div style={{display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+        <div role="status" style={{fontSize:12,flex:"1 1 200px",color:status==="klaar"?T.green:status==="bezig"?T.muted:T.red}}>
+          {status==="klaar"?`✓ Factuur ${nr} gedownload. Open hem in Excel en print op briefpapier.`:status==="bezig"?"Factuur maken…":status}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button style={s.btnGhost} onClick={sluit}>Sluiten</button>
+          <button style={s.btn} onClick={download} disabled={laden||!!laadFout||status==="bezig"}>⬇ {status==="klaar"?"Opnieuw downloaden":"Factuur downloaden"}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Instellingen → Facturen en prijslijst
+function FactuurInstellingen(){
+  const [nummer,setNummer]=useState("");
+  const [opgeslagen,setOpgeslagen]=useState(null);
+  const [nrStatus,setNrStatus]=useState(null);
+  const [aantal,setAantal]=useState(null);
+  const [plStatus,setPlStatus]=useState(null);
+  const [voorstel,setVoorstel]=useState(null); // { regels, overgeslagen, metPrijs, bestand }
+  useEffect(()=>{
+    let weg=false;
+    Promise.all([laadBeheer(),laadPrijslijst()]).then(([b,p])=>{
+      if(weg) return;
+      if(!b.error){ const n=b.data?.laatste_factuurnummer??null; setOpgeslagen(n); setNummer(n==null?"":String(n)); }
+      setAantal(p.error?null:(p.data||[]).length);
+    }).catch(()=>{});
+    return ()=>{weg=true;};
+  },[]);
+  const slaNummerOp=async()=>{
+    const n=nummer.trim();
+    if(!/^\d+$/.test(n)){ setNrStatus("Alleen cijfers, bijvoorbeeld 2026268."); return; }
+    setNrStatus("bezig");
+    const {error}=await bewaarLaatsteFactuurnummer(Number(n));
+    if(error){ setNrStatus("Opslaan mislukt: "+error.message); return; }
+    setOpgeslagen(Number(n)); setNrStatus("ok"); setTimeout(()=>setNrStatus(st=>st==="ok"?null:st),2000);
+  };
+  const downloadPrijslijst=async()=>{
+    setPlStatus("bezig");
+    const p=await laadPrijslijst();
+    if(p.error){ setPlStatus("Prijslijst laden mislukt: "+p.error.message); return; }
+    const {utils,writeFile}=await import("xlsx");
+    const ws=utils.aoa_to_sheet(prijslijstRijen((p.data||[]).length?p.data:VOORBEELD_PRIJSLIJST));
+    ws["!cols"]=[{wch:12},{wch:52},{wch:24},{wch:13},{wch:13},{wch:8},{wch:18},{wch:18}];
+    const wb=utils.book_new(); utils.book_append_sheet(wb,ws,"Prijslijst");
+    writeFile(wb,"Prijslijst De Jonge Motoren.xlsx");
+    setPlStatus(null);
+  };
+  const leesBestand=async(e)=>{
+    const f=e.target.files?.[0]; e.target.value="";
+    if(!f) return;
+    setPlStatus("bezig"); setVoorstel(null);
+    try{
+      const {read,utils}=await import("xlsx");
+      const wb=read(await f.arrayBuffer());
+      const rijen=utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:""});
+      const uit=leesPrijslijst(rijen);
+      if(uit.fout){ setPlStatus(uit.fout); return; }
+      if(!uit.regels.length){ setPlStatus("Geen artikelen gevonden in dit bestand."); return; }
+      setVoorstel({...uit,bestand:f.name,metPrijs:uit.regels.filter(r=>r.verkoop!=null).length});
+      setPlStatus(null);
+    }catch(err){ setPlStatus("Bestand lezen mislukt: "+(err.message||"onbekend bestand")); }
+  };
+  const vervang=async()=>{
+    setPlStatus("bezig");
+    const sb=(await import("../lib/supabase.js")).supabase;
+    const {data,error}=await sb.rpc("vervang_prijslijst",{regels:voorstel.regels});
+    if(error){ setPlStatus("Opslaan mislukt: "+error.message); return; }
+    setVoorstel(null); setAantal(data??null); setPlStatus(`✓ ${data} artikelen opgeslagen`);
+  };
+  const volgend=opgeslagen!=null?Number(opgeslagen)+1:null;
+  return(
+    <div style={{...s.card,marginTop:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Facturen en prijslijst</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
+        Een factuur maak je bij een afspraak (openen → Factuur maken). Je krijgt een Excel-bestand in het factuursjabloon, om te bewaren op de computer en te printen op briefpapier.
+      </div>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Laatst gebruikte factuurnummer</div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <input style={{...s.input,width:160}} inputMode="numeric" value={nummer} onChange={e=>setNummer(e.target.value)} aria-label="Laatst gebruikte factuurnummer"/>
+        <button style={s.btn} onClick={slaNummerOp} disabled={nrStatus==="bezig"}>Opslaan</button>
+      </div>
+      <div style={{fontSize:12,color:T.muted,marginTop:6}}>{volgend!=null?`De volgende factuur krijgt nummer ${volgend}. Per factuur kun je het nummer ook aanpassen.`:"Nog geen nummer ingesteld."}</div>
+      <OpslaanStatus status={nrStatus}/>
+
+      <div style={{borderTop:`1px solid ${T.border}`,margin:"18px 0"}}/>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Prijslijst <span style={{fontWeight:400,color:T.muted}}>(alle prijzen ex btw)</span></div>
+      <div style={{fontSize:12,color:T.muted,lineHeight:1.7,marginBottom:12}}>
+        {aantal!=null&&<div style={{color:T.text,marginBottom:4}}>{aantal} artikel{aantal===1?"":"en"} in de app.</div>}
+        1. Download de prijslijst. 2. Vul hem aan in Excel: plak onder de kopregel bijvoorbeeld de regels uit je Larsson-bestelling (JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs…) of typ eigen regels, zoals "Kleine beurt" met jouw prijs. 3. Upload het bestand: het vervangt de prijslijst in de app.
+        Op een factuur zoekt de app de prijs op artikelnummer (bijvoorbeeld HF303 als type bij het oliefilter) of op precies dezelfde omschrijving.
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button style={s.btnGhost} onClick={downloadPrijslijst} disabled={plStatus==="bezig"}>⬇ Prijslijst downloaden</button>
+        <label style={{...s.btn,display:"inline-flex",alignItems:"center",cursor:"pointer"}}>
+          ⬆ Prijslijst uploaden
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={leesBestand} style={{display:"none"}} aria-label="Prijslijst uploaden"/>
+        </label>
+      </div>
+      {voorstel&&(
+        <div style={{marginTop:12,padding:12,background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:13,lineHeight:1.6}}>
+          <div><strong>{voorstel.bestand}</strong>: {voorstel.regels.length} artikelen gevonden, waarvan {voorstel.metPrijs} met verkoopprijs{voorstel.overgeslagen?` (${voorstel.overgeslagen} regels zonder omschrijving overgeslagen)`:""}.</div>
+          <div style={{color:T.muted,fontSize:12}}>Dit vervangt de huidige prijslijst{aantal!=null?` (${aantal} artikelen)`:""}.</div>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button style={s.btn} onClick={vervang} disabled={plStatus==="bezig"}>Prijslijst vervangen</button>
+            <button style={s.btnGhost} onClick={()=>setVoorstel(null)}>Annuleer</button>
+          </div>
+        </div>
+      )}
+      {plStatus&&<div style={{fontSize:12,marginTop:8,color:plStatus==="bezig"?T.muted:plStatus.startsWith("✓")?T.green:T.red}}>{plStatus==="bezig"?"Bezig…":plStatus}</div>}
+    </div>
+  );
+}
+
 // Knop in de afspraakdetails, met wat er al is ingevuld
-function OnderhoudslijstKnop({afspraak, motor, klantNaam}){
+function OnderhoudslijstKnop({afspraak, motor, klant, klantNaam}){
   const sjabloon=useContext(OnderhoudSjabloonContext);
   const [lijst,setLijst]=useState(undefined); // undefined = laden
   const [open,setOpen]=useState(false);
+  const [factuurOpen,setFactuurOpen]=useState(false);
   useEffect(()=>{
     let weg=false;
     laadOnderhoudslijst(afspraak.id).then(({data})=>{ if(!weg) setLijst(leesReservekopie(afspraak.id)?.lijst||data?.lijst||null); }).catch(()=>{ if(!weg) setLijst(null); });
@@ -3480,7 +3778,12 @@ function OnderhoudslijstKnop({afspraak, motor, klantNaam}){
         </span>
         <span style={{color:T.accent,fontWeight:700,fontSize:16}} aria-hidden>→</span>
       </button>
+      <button type="button" onClick={()=>setFactuurOpen(true)}
+        style={{...s.btnGhost,width:"100%",marginTop:-6,marginBottom:14,display:"flex",justifyContent:"center",alignItems:"center",gap:8}}>
+        <span aria-hidden>🧾</span> Factuur maken (Excel){lijst?.factuur?.nummer?<span style={{color:T.muted,fontSize:12}}> · nr {lijst.factuur.nummer}</span>:null}
+      </button>
       {open&&<OnderhoudslijstModal afspraak={afspraak} motor={motor} klantNaam={klantNaam} onClose={l=>{setOpen(false);if(l) setLijst(l);}}/>}
+      {factuurOpen&&<FactuurModal afspraak={afspraak} motor={motor} klant={klant} onClose={l=>{setFactuurOpen(false);if(l) setLijst(l);}}/>}
     </>
   );
 }
@@ -3531,7 +3834,8 @@ function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, afspraken=[]
         </div>
       )}
       {!isProefrit&&(!isIntern||motorInfo)&&(
-        <OnderhoudslijstKnop afspraak={afspraak} motor={motorInfo} klantNaam={displayNaam}/>
+        <OnderhoudslijstKnop afspraak={afspraak} motor={motorInfo} klantNaam={displayNaam}
+          klant={afspraak.klant_id?(klanten||[]).find(k=>k.id===afspraak.klant_id):null}/>
       )}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
         <div><div style={s.label}>Datum</div><div style={{fontSize:13}}>{afspraak.datum||"—"}</div></div>
@@ -4772,6 +5076,9 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
         <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Groot onderhoud <span style={{fontWeight:400,color:T.muted}}>(uitgevoerd + type)</span></div>
         <LijstBeheer lijst={onderhoudSjabloon.groot} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,groot:l})} placeholder="Nieuw punt groot onderhoud"/>
       </div>
+
+      {/* Facturen en prijslijst */}
+      <FactuurInstellingen/>
 
       {/* Kleurcategorieën */}
       <div style={{...s.card,marginTop:16}}>
