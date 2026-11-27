@@ -4,6 +4,7 @@ import { laadMetHerstel } from './lib/laden.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import WachtwoordInstellen from './components/WachtwoordInstellen.jsx'
 import UpdateMelding from './components/UpdateMelding.jsx'
+import VerkeerdAdres from './components/VerkeerdAdres.jsx'
 
 // Apart geladen: klanten downloaden de beheercode niet (kleiner, sneller, en
 // de admin-functies staan niet in hun browser). Wie admin is, bepaalt de
@@ -83,8 +84,8 @@ const koppelKlant = (user) =>
   }, null)
 
 export default function App() {
-  // UpdateMelding staat buiten AppInner: zichtbaar op elk scherm (ook inloggen en laden)
-  return <FoutVangnet><AppInner/><UpdateMelding/></FoutVangnet>
+  // Meldingen staan buiten AppInner: zichtbaar op elk scherm (ook inloggen en laden)
+  return <FoutVangnet><AppInner/><UpdateMelding/><VerkeerdAdres/></FoutVangnet>
 }
 
 function AppInner() {
