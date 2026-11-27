@@ -37,7 +37,7 @@ flowchart LR
   APP <--> DB
   APP <-- live --> RT
   APP --> EF
-  WEB -->|lezen voorraad, producten, instellingen<br/>RPC maak_afspraak / maak_inkoop_lead| DB
+  WEB -->|lezen voorraad, producten, instellingen<br/>RPC maak_afspraak / maak_inkoop_lead /<br/>vraag_winterstalling_aan| DB
   DB -->|triggers via pg_net| EF
   EF -->|web push| A
   GH[GitHub Actions<br/>inkoop-radar, prijscheck,<br/>beveiligingstest] --> DB
@@ -111,6 +111,7 @@ djm-app/
 │     ├─ appAdres.js          # vast adres van de app, herkent deploy-adressen
 │     ├─ onderhoudslijst.js   # onderhoudslijst: sjabloon, opbouwen, voortgang, samenvatting
 │     ├─ factuur.js           # factuur: regels, prijzen, prijslijst lezen, Excel vullen
+│     ├─ winterstalling.js    # winterstalling: seizoen, statussen, zoeken, doorzetten, Excel
 │     └─ laden.js             # lazy laden met één keer herladen na een update
 ├─ supabase/
 │  ├─ functions/              # edge functions (Deno): zie §9
@@ -168,6 +169,7 @@ al open staat). Geldige pagina's staan in `ADMIN_PAGINAS`.
 | `klanten` | `KlantenPage` → `KlantDetail` | Klanten goedkeuren/afwijzen/archiveren, motoren, km, onderhoud, afspraak inplannen, uitnodigen | klanten, motoren, km_historie, service_beurten, afspraken |
 | `voorraad` | `VoorraadPage` | Voorraadmotoren (foto's, km/mijl, interne opmerking, inkoopprijs, chassis), verkopen aan klant, terugkopen, proefrit, prijscheck, producten/onderdelen | voorraad (+ voorraad_intern/inkoop/chassis/prijscheck/service), producten |
 | `agenda` | `AgendaPage` | Dag/week-agenda, afspraken plannen/wijzigen/afwerken/herhalen, klussen in fases, proefritten | afspraken (+ afspraken_intern), klussen, service_beurten |
+| `stalling` | `WinterstallingPage` → `StallingModal` | Winterstallingslijst per seizoen: aanvragen verwerken, reserveringen, binnen/opgehaald, betaald, doorzetten naar volgend jaar, Excel, aantal plaatsen | winterstalling, klanten, motoren, beheer_instellingen |
 | `inkoop` | `InkoopRadarPage` | Leads van 2dehands met inkoopadvies (Motoroccasion), populaire modellen | inkoop_leads, inkoop_radar_status, inkoop_populair |
 | `website` | `WebsiteBeheer` (via Instellingen → "Website aanpassen") | Teksten, foto's, FAQ, blog, Google-teksten en eigen dienst-/infopagina's van de website, zie §5b | website_blokken, website_faq, blog_posts, website_paginas (+ historie) |
 | `instellingen` | `InstellingenPage` | Knop "Website aanpassen", pushmeldingen, bericht aan klanten, openingstijden, afspraken per dag, gesloten periodes, tarieven, afspraaksoorten, medewerkers, kleurcategorieën, inkoop-radar, import/export (xlsx) | instellingen, push_abonnementen |
@@ -274,6 +276,31 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
   volgorde als de eerste kolommen van een Larsson-bestelling), aanvullen, uploaden. `leesPrijslijst()` zoekt de kopregel en slaat "voertuig:"- en totaalregels over;
   uploaden vervangt de hele lijst in één transactie (`vervang_prijslijst`).
 
+**Winterstalling** (tab Stalling; `WinterstallingPage`, logica in `lib/winterstalling.js`):
+- Eén regel per motor per seizoen (tabel `winterstalling`). Seizoen = het jaar waarin de winter
+  begint (2026 = 2026/2027); januari t/m maart hoort bij de lopende winter (`huidigSeizoen()`).
+- Status: `aangevraagd` (website/klantportaal) → `gereserveerd` → `binnen` → `opgehaald`. Bij
+  Binnen/Opgehaald wordt de datum van vandaag ingevuld (aan te passen). Snelknoppen "✓ Binnen"
+  en "Opgehaald" in de lijst.
+- Klant en motor zijn gekoppeld; naam, contact en motorgegevens staan er ook los in (voor
+  aanvragen van niet-klanten en als een klant later verdwijnt). `bewaarStalling()` maakt zo
+  nodig eerst de klant (status goedgekeurd, e-mail optioneel) en/of de motor aan.
+- Aanvragen staan bovenaan ("Verwerken"): een bestaande klant met hetzelfde telefoonnummer of
+  e-mailadres wordt voorgesteld, de motor met hetzelfde kenteken (of merk en type) alvast
+  gekozen, en het eerstvolgende nummer ingevuld. "Reservering maken" maakt er een reservering
+  van; "Aanvraag afwijzen" verwijdert hem.
+- Doorzetten (`doorzetRegels()`): één reservering of "Alles doorzetten" naar het volgende
+  seizoen: zelfde klant, motor, pakket en (als vrij) nummer; status gereserveerd, niet betaald,
+  zonder werkzaamheden en opmerking. Wat er al staat (zelfde motor of al doorgezet) wordt
+  overgeslagen; de database staat een motor maar één keer per seizoen toe.
+- "Werkplaats-afspraak" opent `AfspraakModal` voor die klant en motor (werkzaamheden als
+  opmerking). Excel-export in de opzet van de lijst van de zaak (`excelRijen()`).
+- Aantal plaatsen: `beheer_instellingen.winterstalling_plaatsen` ("vol" als het er meer zijn).
+- Bij de klantmotor (Klanten) staat een label "❄ 2026 · Binnen" (binnen gaat voor, dan het
+  lopende seizoen, dan het laatste).
+- De lijst van 2026 is op 27 november 2026 eenmalig geïmporteerd (bron `import`): 37 klanten,
+  39 motoren, 41 reserveringen, allemaal status Binnen.
+
 **Foutafhandeling:** opslaan in de beheer-app controleert de `error` van Supabase en toont een
 melding (klant toevoegen, uitnodigen, voorraad toevoegen/wijzigen, verkoop, afwerken,
 instellingen, gesloten dagen). Een mislukte voorraadwijziging gooit geen foto's weg; net
@@ -298,6 +325,7 @@ flowchart TB
     VR[Voorraad]
     AG[Agenda]
     INK[Inkoop]
+    ST[Stalling]
     INST[Instellingen]
   end
   subgraph Portaal[Klantportaal]
@@ -331,6 +359,10 @@ flowchart TB
   PI -- "motor toevoegen (push)" --> KL
   WEB -- "maak_afspraak" --> AG
   WEB -- "maak_inkoop_lead" --> INK
+  WEB -- "vraag_winterstalling_aan" --> ST
+  PC -- "winterstalling (aanvraag)" --> ST
+  ST -- "klant + motor aanmaken, label bij motor" --> KL
+  ST -- "werkplaats-afspraak" --> AG
 ```
 
 | Van | Naar | Via | Hoe |
@@ -343,6 +375,9 @@ flowchart TB
 | Agenda (afwerken) | Klanten / portaal Motor | `service_beurten`, `km_historie`, `motoren` | servicebeurt + km + banden bij de klantmotor |
 | Voorraad (verkopen) | Klanten / portaal Motor | `motoren` (`source_voorraad_id`), `service_beurten`, `motor_verkoop_extras` | klant krijgt de motor met servicehistorie; gekozen extra's staan bij de klantmotor (alleen beheerder) |
 | Portaal Service/Contact/Voorraad | Agenda + Dashboard | `afspraken` (`status = aangevraagd`) | realtime + pushmelding |
+| Website / portaal Contact | Stalling | `winterstalling` (`status = aangevraagd`) | realtime + pushmelding; verwerken maakt klant en motor aan |
+| Stalling | Klanten | `klanten`, `motoren`, `winterstalling.motor_id` | label "❄ seizoen · status" bij de klantmotor |
+| Stalling | Agenda | `AfspraakModal` | knop "Werkplaats-afspraak" bij een reservering |
 | Instellingen | Agenda, portaal, website | `instellingen` (één rij) | openingstijden, gesloten dagen, max per dag, soorten, tarieven, opmerking |
 
 ## 5b. Website aanpassen (`WebsiteBeheer.jsx`)
@@ -391,7 +426,7 @@ Navigatie: state `tab` (onderbalk; instellingen via het tandwiel).
 | `service` | `ServiceTab` → `Afspraak` | Afspraak aanvragen (dagkeuze met volle dagen), eigen onderhoud invoeren, eigen afspraken zien | afspraken, service_beurten, rpc `get_bezette_dagen` |
 | `km` | `KmStand` | Km-stand doorgeven | km_historie |
 | `voorraad` | `VoorraadTab` | Occasions en onderdelen bekijken, proefrit aanvragen | rpc `voorraad_overzicht` (te koop + 30 dagen verkocht), producten, afspraken |
-| `contact` | `Contact` | Diensten aanvragen: schade, consignatie, aankoopkeuring, zoekopdracht, winterstalling, seizoensklaarmaak (met foto's) | afspraken (`dag_gekozen=false` zonder datum) |
+| `contact` | `Contact` | Diensten aanvragen: schade, consignatie, aankoopkeuring, zoekopdracht, seizoensklaarmaak (met foto's); winterstalling gaat naar de stallingslijst (pakket afgeleid uit de opties, wensen en brengdatum als werkzaamheden) | afspraken (`dag_gekozen=false` zonder datum); winterstalling (alleen toevoegen, status `aangevraagd`) |
 | `instellingen` | `Instellingen` | App installeren, gegevens, wachtwoord, motoren toevoegen/verwijderen, thema, gegevens downloaden, account verwijderen | klanten, motoren, rpc `verwijder_eigen_account` |
 
 **Toegang per status** (`klanten.status`): alleen `goedgekeurd` komt in het portaal.
@@ -448,7 +483,8 @@ geblokkeerd is, zoals in een privévenster).
 - **Push (alleen beheerder):** `PushInstellingen.jsx` → `lib/push.js` meldt het apparaat aan
   (`push_abonnementen`; lukt het opslaan niet, dan wordt de browser-aanmelding teruggedraaid). De database stuurt bij gebeurtenissen via `pg_net` een verzoek naar de
   edge function `push-melding`, die de melding opbouwt uit de database en verstuurt.
-  Gebeurtenissen: nieuwe afspraak/aanvraag (status `aangevraagd`), inkoop-aanvraag, inkoop-radar
+  Gebeurtenissen: nieuwe afspraak/aanvraag (status `aangevraagd`), stallingsaanvraag (website of
+  klantportaal, opent `/?pagina=stalling`), inkoop-aanvraag, inkoop-radar
   (één per run), nieuwe klant (na e-mailbevestiging), klant voegt motor/onderhoud toe, klant
   verwijdert account. Eigen acties van de beheerder geven geen melding. Op iPhone alleen in de
   geïnstalleerde app (iOS 16.4+).
@@ -460,7 +496,7 @@ geblokkeerd is, zoals in een privévenster).
 | Tabel | Inhoud | Wie mag wat (RLS) |
 |---|---|---|
 | `admins` | beheerders (user-id) | eigen rij lezen |
-| `klanten` | klantgegevens, `user_id` (koppeling account), `status` | klant: eigen rij lezen/wijzigen; admin: alles |
+| `klanten` | klantgegevens, `user_id` (koppeling account), `status`; `email` optioneel (NULL; uniek als ingevuld) | klant: eigen rij lezen/wijzigen; admin: alles |
 | `motoren` | motoren van klanten (`klant_verwijderd_op` = verborgen voor klant; `source_voorraad_id` = gekocht uit voorraad; `onderdelen_link` alleen http(s), constraint) | klant: eigen lezen/toevoegen/wijzigen, verwijderen zonder garage-historie; admin: alles |
 | `km_historie` | km-standen per motor | klant: eigen; admin: alles |
 | `service_beurten` | onderhoud (`klant_invoer` = door klant ingevoerd) | klant: lezen eigen, eigen invoer toevoegen/wijzigen; admin: alles |
@@ -470,7 +506,8 @@ geblokkeerd is, zoals in een privévenster).
 | `voorraad_inkoop` / `voorraad_chassis` / `voorraad_intern` / `voorraad_prijscheck` / `voorraad_service` | inkoopprijs, chassisnr., interne opmerking, Motoroccasion-check, onderhoud vóór verkoop | alleen admin |
 | `motor_verkoop_extras` | extra's bij aankoop per klantmotor (`extras` text[], `overig`); verdwijnt met de motor | alleen admin |
 | `onderhoudslijsten` | ingevulde onderhoudslijst per afspraak (`afspraak_id`, `lijst` jsonb, `bijgewerkt_op`); verdwijnt met de afspraak | alleen admin |
-| `beheer_instellingen` | één rij (`id=1`) met instellingen die alleen de beheerder mag zien: `laatste_factuurnummer` | alleen admin |
+| `beheer_instellingen` | één rij (`id=1`) met instellingen die alleen de beheerder mag zien: `laatste_factuurnummer`, `winterstalling_plaatsen` | alleen admin |
+| `winterstalling` | stallingslijst: één regel per motor per seizoen (`seizoen`, `nummer`, `status`, `klant_id`, `motor_id`, naam/contact/motor los, `pakket`, `werkzaamheden`, `opmerking` intern, `betaald`, `betaalwijze`, `binnen_op`, `opgehaald_op`, `bron`, `doorgezet_van`); uniek (seizoen, motor) | admin: alles; klant: alleen een aanvraag voor zichzelf/eigen motor toevoegen (status `aangevraagd`, geen interne velden), niet lezen; website: alleen via `vraag_winterstalling_aan` |
 | `prijslijst` | artikelen voor facturen: `omschrijving`, `artikelnummer`, `jm_nummer`, `inkoop`, `verkoop` (ex btw), `volgorde` | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
@@ -492,6 +529,7 @@ geblokkeerd is, zoals in een privévenster).
 | `is_admin()` | iedereen (nodig voor RLS) | is de aanroeper beheerder? |
 | `maak_afspraak(...)` | website (anoniem) | afspraak/proefrit aanvragen met controles (invoer, 3 per telefoon per 24 u, open dag, dagcapaciteit). Geen datum of vandaag = aanvraag zonder dag. Weigering = fout (RAISE). |
 | `maak_inkoop_lead(...)` | website (anoniem) | "wij kopen je motor"-aanvraag → `inkoop_aanvragen` |
+| `vraag_winterstalling_aan(...)` | website (anoniem) | winterstalling aanvragen → `winterstalling` (status `aangevraagd`, bron `website`, seizoen volgens de datum). Controles: naam, telefoon (≥ 9 cijfers), merk, e-mail als ingevuld; max 3 per telefoon per 24 u en 30 per uur. Geeft `{success, fout}` of `{success, seizoen}` terug. |
 | `get_drukke_datums(start, eind)` | website (anoniem) | aantal meetellende afspraken per dag (alleen datums + aantallen) |
 | `get_bezette_dagen()` | ingelogd (klantportaal) | volle dagen (≥ `max_afspraken_per_dag`) |
 | `voorraad_overzicht()` | ingelogd (klantportaal) | voorraad te koop + 30 dagen na verkoop, alleen veilige kolommen; kenteken alleen van motoren die nog te koop zijn |
@@ -512,7 +550,7 @@ Functies in schema `private` (niet via de API bereikbaar): `meld_push` (pushtrig
 | `afspraken_bewaak` | afspraken | klant: nieuwe aanvraag = `aangevraagd`; daarna alleen `melding_gezien` |
 | `afspraken_dagcapaciteit` | afspraken | klant/website: geen afspraak op een volle dag (advisory lock tegen gelijktijdig boeken) |
 | `afspraken_interne_opmerking_apart` | afspraken | vangnet: oude kolom `interne_opmerking` → `afspraken_intern` |
-| `push_*` (8 stuks) | afspraken, inkoop_aanvragen, inkoop_radar_status, motoren, service_beurten, klanten, auth.users | pushmelding klaarzetten (pg_net → `push-melding`) |
+| `push_*` (9 stuks) | afspraken, winterstalling, inkoop_aanvragen, inkoop_radar_status, motoren, service_beurten, klanten, auth.users | pushmelding klaarzetten (pg_net → `push-melding`) |
 
 **Dagcapaciteit:** een dag is vol bij `instellingen.max_afspraken_per_dag` (nu 1) afspraken die
 meetellen: niet geannuleerd, en niet een aanvraag zonder gekozen dag (`dag_gekozen = false`)
@@ -520,7 +558,7 @@ die nog niet is ingepland. De beheerder mag altijd inplannen.
 
 ### 8.4 Realtime
 
-Publicatie `supabase_realtime`: `afspraken`, `klanten`.
+Publicatie `supabase_realtime`: `afspraken`, `klanten`, `winterstalling` (nieuwe aanvragen).
 
 ### 8.5 Migraties en SQL-bestanden
 
@@ -531,11 +569,12 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper),
 `website_cms.sql` (website-beheer: tabellen, regels, startinhoud), `verkoop_extras.sql`
 (extra's bij verkoop), `onderhoudslijst.sql` (onderhoudslijst per afspraak), `facturen.sql`
-(factuurnummer en prijslijst), plus
+(factuurnummer en prijslijst), `winterstalling.sql` (stallingslijst, website-aanvraag, e-mail
+optioneel), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
 `dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`,
-`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`, `facturen-test.sql`.
+`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`, `facturen-test.sql`, `winterstalling-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 
@@ -576,14 +615,16 @@ heeft geen service-role key. Elke pagina wordt per verzoek opgebouwd (geen ISR/c
 | Onderdelen, sitemap (`lib/producten.ts`) | `producten` (actief, niet verkocht) | lezen |
 | Proefrit- en werkplaatsformulier (`forms/shared.tsx`) | rpc `get_drukke_datums` (vandaag + 120 dagen) | lezen in de browser |
 | Proefritformulier (`ProefritForm.tsx`) | rpc `maak_afspraak` (type `proefrit`) | schrijven |
-| Werkplaats-/winterstallingformulier (`WerkplaatsForm.tsx`) | rpc `maak_afspraak` (type `service`) | schrijven |
+| Werkplaatsformulier (`WerkplaatsForm.tsx`) | rpc `maak_afspraak` (type `service`) | schrijven |
+| Winterstallingformulier (`WinterstallingForm.tsx`, `/winterstalling`) | rpc `vraag_winterstalling_aan` (pakketnaam omgezet naar de naam op de lijst, bv. "Met kleine beurt"; reden van een weigering wordt getoond) | schrijven |
 | Inkoopformulier (`InkoopForm.tsx`, home + `/motor-verkopen`) | rpc `maak_inkoop_lead` | schrijven |
 | Foto's (`lib/cloudinary.ts`) | URL's uit `voorraad.fotos` / `producten.fotos` | alleen tonen |
 
 Wat de beheerder in de app doet, verschijnt dus direct op de website: voorraad op
 "beschikbaar" zetten, foto's, prijs, producten, openingstijden en gesloten dagen
 (Instellingen), en alles uit "Website aanpassen" (§5b). Aanvragen van de website komen in de app binnen als
-afspraak met status `aangevraagd` (agenda/dashboard, pushmelding) of als inkoop-aanvraag.
+afspraak met status `aangevraagd` (agenda/dashboard, pushmelding), als inkoop-aanvraag of als
+stallingsaanvraag (tab Stalling, pushmelding).
 
 De website linkt niet naar de app (de app wordt alleen in tekst genoemd).
 

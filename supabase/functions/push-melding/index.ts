@@ -4,7 +4,8 @@
 //
 // Aanroepen (POST, JSON):
 //   { "tabel", "id", "soort" }  → vanuit een databasetrigger (pg_net, zie supabase/push.sql)
-//                                  bij een nieuwe afspraak, inkoop-aanvraag of klantactie.
+//                                  bij een nieuwe afspraak, inkoop-aanvraag, stallingsaanvraag
+//                                  of klantactie.
 //                                  De functie leest de gegevens zelf uit de database en
 //                                  meldt elke gebeurtenis hooguit één keer (push_log), dus een
 //                                  nagemaakte aanroep kan geen valse of dubbele meldingen sturen.
@@ -93,6 +94,18 @@ async function maakMelding(db: SupabaseClient, tabel: string, id: string, soort:
       body: zin(a.naam || klant?.data?.naam, motorTekst(vrd?.data ?? motor?.data), datum(a.datum),
         a.klant_id ? "via klantportaal" : "via website"),
       url: "/?pagina=agenda", tag: `afspraak-${a.id}`,
+    };
+  }
+
+  if (tabel === "winterstalling") {
+    const { data: w } = await db.from("winterstalling")
+      .select("id,naam,merk,model,pakket,status,bron,seizoen").eq("id", id).maybeSingle();
+    if (!w || w.status !== "aangevraagd") return null; // zelf toegevoegde reserveringen niet melden
+    return {
+      title: "Nieuwe aanvraag winterstalling",
+      body: zin(w.naam, motorTekst(w), w.pakket, `${w.seizoen}/${w.seizoen + 1}`,
+        w.bron === "klantportaal" ? "via klantportaal" : "via website"),
+      url: "/?pagina=stalling", tag: `stalling-${w.id}`,
     };
   }
 

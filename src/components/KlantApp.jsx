@@ -5,6 +5,7 @@ import { naarBedrag } from "../lib/getal.js";
 import { verkleinFoto, uploadFoto as uploadNaarCloudinary } from "../lib/foto.js";
 import { kmTekst } from "../lib/kmstand.js";
 import AppInstalleren from "./AppInstalleren.jsx";
+import { huidigSeizoen } from "../lib/winterstalling.js";
 import AppVersie from "./AppVersie.jsx";
 
 const useIsMobile = () => {
@@ -713,6 +714,15 @@ function DatumKiezer({ bezetteDagen, geslotenDagen, openingstijden, value, onCha
   );
 }
 
+// Extra opties bij een winterstalling-aanmelding in het klantportaal
+const WIN_OPTIES = [
+  { id: "kleine_beurt", lbl: "Kleine onderhoudsbeurt" },
+  { id: "grote_beurt", lbl: "Grote onderhoudsbeurt" },
+  { id: "voorband", lbl: "Voorband wisselen" },
+  { id: "achterband", lbl: "Achterband wisselen" },
+  { id: "poetsen", lbl: "Poetsen & bescherming" },
+];
+
 function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, klant = {}, motoren = [], dienstenTarieven = {}, onVerzendAanvraag }) {
   const [view, setView] = useState(null);
   const [f, setF] = useState({});
@@ -744,7 +754,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
     setBezig(true); setFout(null);
     const data = { ...f };
     if (SOORTEN_MET_MOTOR.includes(soort) && !data.motor_id && motoren.length > 0) data.motor_id = motoren[0].id;
-    if (soort === "winterstalling" && winOpts.length > 0) data.extra_opties = winOpts.join(", ");
+    if (soort === "winterstalling" && winOpts.length > 0) data.extra_opties = winOpts.map(o => WIN_OPTIES.find(x => x.id === o)?.lbl || o).join(", ");
     if (fotos.length > 0) data.fotos = fotos;
     const err = onVerzendAanvraag ? await onVerzendAanvraag(soort, data) : null;
     setBezig(false);
@@ -1015,13 +1025,7 @@ function Contact({ openingstijden, geslotenDagen, bezetteDagen = [], opmerking, 
         {motorSelect}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Extra opties</div>
-          {[
-            { id: "kleine_beurt", lbl: "Kleine onderhoudsbeurt" },
-            { id: "grote_beurt", lbl: "Grote onderhoudsbeurt" },
-            { id: "voorband", lbl: "Voorband wisselen" },
-            { id: "achterband", lbl: "Achterband wisselen" },
-            { id: "poetsen", lbl: "Poetsen & bescherming" },
-          ].map(opt => (
+          {WIN_OPTIES.map(opt => (
             <label key={opt.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
               <input type="checkbox" checked={winOpts.includes(opt.id)} onChange={e => setWinOpts(prev => e.target.checked ? [...prev, opt.id] : prev.filter(o => o !== opt.id))} style={{ accentColor: T.accent, width: 16, height: 16 }}/>
               <span style={{ fontSize: 13 }}>{opt.lbl}</span>
@@ -2368,7 +2372,33 @@ export default function KlantApp({ userId }) {
     return null;
   };
 
+  // Winterstalling: aanvraag in de stallingslijst (tabel winterstalling) i.p.v. een afspraak
+  const vraagWinterstallingAan = async (data) => {
+    const { datum, motor_id, opmerking: opm, extra_opties } = data;
+    const motor = motoren.find(m => m.id === motor_id);
+    const wensen = [
+      extra_opties && `Opties: ${extra_opties}`,
+      datum && `Voorkeursdatum brengen: ${datum.split("-").reverse().join("-")}`,
+      opm,
+    ].filter(Boolean).join("\n");
+    const opties = String(extra_opties || "");
+    const pakket = /grote/i.test(opties) ? "Met grote beurt" : /kleine/i.test(opties) ? "Met kleine beurt"
+      : /poets/i.test(opties) ? "Met poetsbeurt" : "Alleen stalling";
+    const { error } = await supabase.from("winterstalling").insert({
+      seizoen: huidigSeizoen(), status: "aangevraagd", bron: "klantportaal",
+      klant_id: klant.id, motor_id: motor_id || null,
+      naam: klant.naam, telefoon: klant.telefoon || null, email: klant.email || null,
+      merk: motor?.merk || null, model: motor?.model || null, kenteken: motor?.kenteken || null,
+      pakket, werkzaamheden: wensen || null,
+    });
+    if (!error) return null;
+    if (error.code === "23505") return "Deze motor staat al op de winterstallingslijst. Neem contact met ons op als je iets wilt wijzigen.";
+    if (error.code === "42501") return "Je account moet eerst goedgekeurd zijn voordat je kunt aanmelden. Bel ons gerust.";
+    return error.message;
+  };
+
   const verzendDienstAanvraag = async (soort, data) => {
+    if (soort === "winterstalling") return vraagWinterstallingAan(data);
     const { datum, motor_id, opmerking: opm, ...extra } = data;
     const lines = [];
     if (extra.locatie) lines.push(`Locatie: ${extra.locatie}`);
