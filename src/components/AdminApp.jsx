@@ -4667,24 +4667,28 @@ function MateriaalInstellingen({sjabloon, onSave}){
   );
 }
 
-// Lijst met namen in Instellingen: toevoegen, verwijderen en verplaatsen; direct opgeslagen
-// via onSave (gooit bij een fout, dan gaat de lijst terug). Voor extra's bij verkoop en de
-// onderhoudslijst.
+// Lijst met namen in Instellingen: toevoegen, wijzigen, verwijderen en verplaatsen; direct
+// opgeslagen via onSave(nieuweLijst, info) (gooit bij een fout, dan gaat de lijst terug). Bij een
+// naamswijziging is info = { hernoemd: { van, naar } }, zodat de aanroeper ook wat ervan afhangt
+// kan bijwerken. Voor extra's bij verkoop, de onderhoudslijst en de vaste factuurregels.
 const GEEN_NAMEN=[];
 function LijstBeheer({lijst=GEEN_NAMEN, onSave, placeholder="Naam", leeg="Nog niets toegevoegd."}){
   const [items,setItems]=useState(lijst);
   const [status,setStatus]=useState(null);
+  const [bewerk,setBewerk]=useState(null); // { i, tekst }
+  const annuleer=useRef(false);
   useEffect(()=>setItems(lijst),[lijst]);
-  const bewaar=async(nieuw)=>{
+  const bewaar=async(nieuw,info)=>{
     const vorige=items;
     setItems(nieuw); setStatus("bezig");
     try{
-      await onSave(nieuw);
+      await onSave(nieuw,info);
       setStatus("ok"); setTimeout(()=>setStatus(st=>st==="ok"?null:st),2000);
     }catch(e){ setItems(vorige); setStatus("Opslaan mislukt: "+(e.message||"onbekende fout")); }
   };
+  const bestaat=(naam,behalve=-1)=>items.some((x,j)=>j!==behalve&&x.trim().toLowerCase()===naam.trim().toLowerCase());
   const voegToe=(naam)=>{
-    if(items.some(x=>x.trim().toLowerCase()===naam.trim().toLowerCase())){ setStatus(`"${naam}" staat er al.`); return; }
+    if(bestaat(naam)){ setStatus(`"${naam}" staat er al.`); return; }
     bewaar([...items,naam]);
   };
   const verplaats=(i,stap)=>{
@@ -4692,13 +4696,35 @@ function LijstBeheer({lijst=GEEN_NAMEN, onSave, placeholder="Naam", leeg="Nog ni
     const nieuw=[...items]; [nieuw[i],nieuw[j]]=[nieuw[j],nieuw[i]];
     bewaar(nieuw);
   };
+  const begin=(i)=>{ if(status!=="bezig"){ annuleer.current=false; setBewerk({i,tekst:items[i]}); } };
+  // Opslaan gebeurt bij het verlaten van het veld (Enter of wegtikken); Escape annuleert
+  const klaar=()=>{
+    const b=bewerk; setBewerk(null);
+    if(!b||annuleer.current) return;
+    const van=items[b.i], naar=b.tekst.trim();
+    if(!naar||naar===van) return;
+    if(bestaat(naar,b.i)){ setStatus(`"${naar}" staat er al.`); return; }
+    bewaar(items.map((x,j)=>j===b.i?naar:x),{hernoemd:{van,naar}});
+  };
   const pijl=(uit)=>({background:"none",border:"none",cursor:uit?"default":"pointer",color:T.muted,opacity:uit?0.3:1,fontSize:13,padding:"2px 6px"});
   return(
     <>
       <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
         {items.map((naam,i)=>(
-          <div key={naam} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:13}}>
-            <span style={{flex:1,minWidth:0}}>{naam}</span>
+          <div key={naam} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:T.surf2,border:`1px solid ${bewerk?.i===i?T.accent:T.border}`,borderRadius:6,fontSize:13}}>
+            {bewerk?.i===i?(
+              <input autoFocus value={bewerk.tekst} aria-label={`Nieuwe naam voor ${naam}`}
+                onChange={e=>setBewerk({i,tekst:e.target.value})}
+                onKeyDown={e=>{ if(e.key==="Enter") e.currentTarget.blur(); if(e.key==="Escape"){ annuleer.current=true; e.currentTarget.blur(); } }}
+                onBlur={klaar}
+                style={{...s.input,flex:1,minWidth:0,padding:"4px 8px",fontSize:13}}/>
+            ):(
+              <span onClick={()=>begin(i)} title="Tik om de naam aan te passen" style={{flex:1,minWidth:0,cursor:"text"}}>{naam}</span>
+            )}
+            {bewerk?.i!==i&&(
+              <button onClick={()=>begin(i)} disabled={status==="bezig"} title="Naam wijzigen" aria-label={`${naam} wijzigen`}
+                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:13,padding:"2px 6px"}}>✎</button>
+            )}
             <button onClick={()=>verplaats(i,-1)} disabled={i===0||status==="bezig"} title="Omhoog" aria-label={`${naam} omhoog`} style={pijl(i===0)}>▲</button>
             <button onClick={()=>verplaats(i,1)} disabled={i===items.length-1||status==="bezig"} title="Omlaag" aria-label={`${naam} omlaag`} style={pijl(i===items.length-1)}>▼</button>
             <button onClick={()=>bewaar(items.filter((_,j)=>j!==i))} disabled={status==="bezig"} title="Verwijderen" aria-label={`${naam} verwijderen`}
@@ -4712,6 +4738,18 @@ function LijstBeheer({lijst=GEEN_NAMEN, onSave, placeholder="Naam", leeg="Nog ni
     </>
   );
 }
+
+// Na het hernoemen van een controlepunt: de materiaal-instelling gaat mee naar de nieuwe naam
+// (de tekst op de factuur blijft gelijk, zodat de prijs in de prijslijst blijft kloppen). De oude
+// naam blijft ook staan, zodat al ingevulde lijsten met die naam het materiaal nog op de factuur
+// zetten; in Instellingen zie je alleen de punten die nu in de lijst staan.
+const hernoemSleutel=(obj,info)=>{
+  const h=info?.hernoemd;
+  if(!h||!obj||!(h.van in obj)) return obj;
+  const uit={};
+  for(const [k,v] of Object.entries(obj)){ if(k===h.van) uit[h.naar]=v; uit[k]=v; }
+  return uit;
+};
 
 function NieuweCategorieRij({onAdd}){
   const [naam,setNaam]=useState("");
@@ -5118,7 +5156,7 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
       <div style={{...s.card,marginTop:16}}>
         <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Extra's bij verkoop</div>
         <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
-          Opties die je bij het verkopen van een motor kunt aanbieden (Voorraad → Verkopen). Per voorraadmotor vink je uit wat hij al heeft. "Overige extra's" staat er altijd bij als vrij veld. Toevoegen, verwijderen en verplaatsen wordt direct opgeslagen.
+          Opties die je bij het verkopen van een motor kunt aanbieden (Voorraad → Verkopen). Per voorraadmotor vink je uit wat hij al heeft. "Overige extra's" staat er altijd bij als vrij veld. Toevoegen, wijzigen (✎ of tik op de naam), verwijderen en verplaatsen wordt direct opgeslagen.
         </div>
         <LijstBeheer lijst={verkoopExtras} onSave={onSaveVerkoopExtras} placeholder="Nieuwe extra (bijv. Topkoffer)" leeg="Nog geen extra's. Voeg er hieronder een toe."/>
       </div>
@@ -5127,10 +5165,10 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
       <div style={{...s.card,marginTop:16}}>
         <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Onderhoudslijst</div>
         <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
-          De lijst die je bij een afspraak afvinkt (afspraak openen → Onderhoudslijst). Al ingevulde punten blijven altijd bewaard, ook als je hier iets weghaalt. Toevoegen, verwijderen en verplaatsen wordt direct opgeslagen.
+          De lijst die je bij een afspraak afvinkt (afspraak openen → Onderhoudslijst). Toevoegen, wijzigen (✎ of tik op de naam), verwijderen en verplaatsen wordt direct opgeslagen. Al ingevulde lijsten houden hun punten zoals ze waren, ook als je hier iets wijzigt of weghaalt.
         </div>
         <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Controlepunten <span style={{fontWeight:400,color:T.muted}}>(oké / advies / vervangen / n.v.t.)</span></div>
-        <LijstBeheer lijst={onderhoudSjabloon.controle} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,controle:l})} placeholder="Nieuw controlepunt"/>
+        <LijstBeheer lijst={onderhoudSjabloon.controle} onSave={(l,info)=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,controle:l,materiaal:hernoemSleutel(onderhoudSjabloon.materiaal,info)})} placeholder="Nieuw controlepunt"/>
         <div style={{borderTop:`1px solid ${T.border}`,margin:"16px 0"}}/>
         <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Groot onderhoud <span style={{fontWeight:400,color:T.muted}}>(uitgevoerd + type)</span></div>
         <LijstBeheer lijst={onderhoudSjabloon.groot} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,groot:l})} placeholder="Nieuw punt groot onderhoud"/>
@@ -6676,11 +6714,24 @@ export default function AdminApp(){
     setMedewerkers(namen);
   };
 
-  const slaVerkoopExtrasOp = async (namen) => {
+  const slaVerkoopExtrasOp = async (namen, info) => {
     const sb = (await import("../lib/supabase.js")).supabase;
     const { error } = await sb.from("instellingen").update({ verkoop_extras: namen }).eq("id", 1);
     if (error) throw new Error(error.message);
     setVerkoopExtras(namen);
+    // Extra hernoemd: bij voorraadmotoren waar hij was uitgevinkt ("heeft hij al") de nieuwe naam
+    // zetten, anders wordt hij daar opeens weer aangeboden
+    const h = info?.hernoemd;
+    if (!h) return;
+    const vervang = (lijst) => [...new Set((lijst||[]).map(x => x === h.van ? h.naar : x))];
+    const raak = showroom.filter(m => (m.extras_niet_aanbieden||[]).includes(h.van));
+    const mislukt = [];
+    for (const m of raak) {
+      const { error: e } = await sb.from("voorraad").update({ extras_niet_aanbieden: vervang(m.extras_niet_aanbieden) }).eq("id", m.id);
+      if (e) mislukt.push(`${m.merk} ${m.model}`.trim());
+    }
+    setShowroom(p => p.map(m => (m.extras_niet_aanbieden||[]).includes(h.van) && !mislukt.includes(`${m.merk} ${m.model}`.trim()) ? { ...m, extras_niet_aanbieden: vervang(m.extras_niet_aanbieden) } : m));
+    if (mislukt.length) alert(`De naam is gewijzigd, maar bij ${mislukt.join(", ")} kon "${h.naar}" niet als "heeft hij al" worden bijgewerkt. Controleer die motor(en) via Wijzigen.`);
   };
 
   const slaOnderhoudSjabloonOp = async (sjabloon) => {
