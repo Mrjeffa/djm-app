@@ -107,6 +107,8 @@ djm-app/
 │     ├─ autoscout.js         # gegevens klaarzetten voor AutoScout24
 │     ├─ website.js           # website-beheer: paden, controles, codes, slug, markdown-hulp
 │     ├─ versie.js            # nieuwe versie online? (melding "Nieuwe versie beschikbaar")
+│     ├─ appAdres.js          # vast adres van de app, herkent deploy-adressen
+│     ├─ onderhoudslijst.js   # onderhoudslijst: sjabloon, opbouwen, voortgang, samenvatting
 │     └─ laden.js             # lazy laden met één keer herladen na een update
 ├─ supabase/
 │  ├─ functions/              # edge functions (Deno): zie §9
@@ -221,6 +223,19 @@ nieuwe klant). Kanalen worden bij sluiten met `removeChannel` opgeruimd.
 - *Terugkopen* (`terugkopenMotor`): zoekt de klantmotor via `source_voorraad_id` (niet op
   kenteken), kopieert de service uit de klanttijd terug naar `voorraad_service`, zet de
   voorraad weer op beschikbaar en verwijdert de klantmotor.
+
+**Onderhoudslijst** (afspraak openen → Onderhoudslijst; niet bij proefritten en interne
+afspraken zonder motor): naar het papieren formulier van de werkplaats. Werkzaamheden uit de
+afspraak (soort) + zelf toegevoegde, controlepunten met oké / advies / vervangen / n.v.t. (plus
+toelichting), groot onderhoud (uitgevoerd + type), km-stand en opmerkingen. Elke wijziging wordt
+na 0,7 s opgeslagen in `onderhoudslijsten` (en direct bij sluiten, wegklikken of weer online);
+zolang dat niet lukt staat een reservekopie in `localStorage` die bij openen voorgaat als hij
+nieuwer is. Kan de lijst niet geladen worden, dan is hij niet te bewerken (anders zou een lege
+lijst de echte overschrijven). Het sjabloon staat in `instellingen.onderhoudslijst` (Instellingen →
+Onderhoudslijst) en komt via `OnderhoudSjabloonContext`. Ingevulde punten worden met hun naam
+bewaard: een aangepast sjabloon voegt punten toe of laat lege punten weg, maar ingevulde blijven.
+Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst ingevuld
+(`samenvatting()` in `lib/onderhoudslijst.js`). Basis voor de werkbon/factuur (zonder prijzen).
 
 **Foutafhandeling:** opslaan in de beheer-app controleert de `error` van Supabase en toont een
 melding (klant toevoegen, uitnodigen, voorraad toevoegen/wijzigen, verkoop, afwerken,
@@ -417,10 +432,11 @@ geblokkeerd is, zoals in een privévenster).
 | `voorraad` | voorraadmotoren (`km` altijd km, `km_eenheid` km/mijl, foto's, status, `verkocht_op`, `verkocht_aan` = klant-id koper, `extras_niet_aanbieden` = extra's die de motor al heeft) | bezoeker (anon): te koop + 30 dagen na verkoop, **alleen de websitekolommen** (kolomrechten: geen `kenteken`, `verkocht_aan`, onderdelen-link, banden, extra's); klant: niet rechtstreeks, via `voorraad_overzicht()`; admin: alles |
 | `voorraad_inkoop` / `voorraad_chassis` / `voorraad_intern` / `voorraad_prijscheck` / `voorraad_service` | inkoopprijs, chassisnr., interne opmerking, Motoroccasion-check, onderhoud vóór verkoop | alleen admin |
 | `motor_verkoop_extras` | extra's bij aankoop per klantmotor (`extras` text[], `overig`); verdwijnt met de motor | alleen admin |
+| `onderhoudslijsten` | ingevulde onderhoudslijst per afspraak (`afspraak_id`, `lijst` jsonb, `bijgewerkt_op`); verdwijnt met de afspraak | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
 | `taken` | takenlijst beheerder | alleen admin (eigen) |
-| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `verkoop_extras` (lijst extra's bij verkoop), `max_afspraken_per_dag`, `inkoop_bewaar_dagen` (`website_content`: oud, niet meer gebruikt) | iedereen lezen; admin wijzigen |
+| `instellingen` | één rij (`id=1`): openingstijden, gesloten dagen, tarieven, soorten, medewerkers, kleurcategorieën, `verkoop_extras` (lijst extra's bij verkoop), `onderhoudslijst` (sjabloon), `max_afspraken_per_dag`, `inkoop_bewaar_dagen` (`website_content`: oud, niet meer gebruikt) | iedereen lezen; admin wijzigen |
 | `inkoop_leads` / `inkoop_radar_status` / `inkoop_populair` / `inkoop_aanvragen` | inkoop-radar en inkoopaanvragen van de website | alleen admin (+ service role) |
 | `push_abonnementen` | pushapparaten van admins | admin: eigen |
 | `push_log` / `push_sleutels` | verstuurde meldingen, VAPID-sleutels | alleen server (service role) |
@@ -474,11 +490,11 @@ Wijzigingen worden als migratie toegepast (Supabase → migraties) en per onderw
 `links_en_registratie.sql` (onderdelen-links alleen http(s), registratiegegevens),
 `verkochte_voorraad.sql` (verkochte motoren 30 dagen zichtbaar zonder kenteken/koper),
 `website_cms.sql` (website-beheer: tabellen, regels, startinhoud), `verkoop_extras.sql`
-(extra's bij verkoop), plus
+(extra's bij verkoop), `onderhoudslijst.sql` (onderhoudslijst per afspraak), plus
 `supabase/functions/voorraad-prijscheck/schema.sql` en `inkoop-radar/schema.sql`. Ze zijn
 herhaalbaar. Tests (draaien in de SQL Editor, draaien alles terug): `rls-test.sql`,
 `dagcapaciteit-test.sql`, `website-test.sql`, `verkochte-voorraad-test.sql`, `website-cms-test.sql`,
-`verkoop-extras-test.sql`.
+`verkoop-extras-test.sql`, `onderhoudslijst-test.sql`.
 
 ## 9. Edge functions (`supabase/functions/`)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, createContext, useContext } from "react";
 import { openOnderdelen, larssonZoekFallback, preloadLarsson, veiligeUrl } from "../lib/larsson.js";
 import { openAutoScout } from "../lib/autoscout.js";
 // Zelfde beoordeling als de wekelijkse prijscheck-mail (gedeeld met de edge function)
@@ -8,6 +8,7 @@ import { verkleinFotos, uploadFoto } from "../lib/foto.js";
 import { naarKm, vanKm, kmTekst } from "../lib/kmstand.js";
 import PushInstellingen from "./PushInstellingen.jsx";
 import AppVersie from "./AppVersie.jsx";
+import { STANDAARD_SJABLOON, STATUSSEN, geldigSjabloon, bouwLijst, voortgangTekst, samenvatting, isIngevuld, leesReservekopie, schrijfReservekopie, wisReservekopie } from "../lib/onderhoudslijst.js";
 import { laadMetHerstel } from "../lib/laden.js";
 // Website-beheer apart geladen: alleen nodig als de beheerder het opent
 const WebsiteBeheer = laadMetHerstel(() => import("./WebsiteBeheer.jsx"));
@@ -3099,6 +3100,7 @@ function VoorraadPage({showroom,onAddMotor,onEditMotor,klanten,onVerkoop,onDelet
 }
 
 function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
+  const sjabloon = useContext(OnderhoudSjabloonContext);
   const klant = (klanten||[]).find(k=>k.id===afspraak.klant_id);
   const klantMotoren = klant?.motoren || [];
   const voorraadMotor = afspraak.voorraad_motor_id ? (voorraad||[]).find(m=>m.id===afspraak.voorraad_motor_id) : null;
@@ -3115,6 +3117,31 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
     interne_opmerking: afspraak.interne_opmerking||"",
   });
   const set=k=>e=>setF(p=>({...p,[k]:e.target.value}));
+
+  // Is de onderhoudslijst ingevuld? Dan de uitgevoerde werkzaamheden en km-stand daaruit
+  // aanvullen (alleen zolang je die velden zelf nog niet hebt aangepast).
+  const [uitLijst,setUitLijst]=useState(false);
+  const beginOmschrijving=useRef(f.omschrijving);
+  useEffect(()=>{
+    let weg=false;
+    laadOnderhoudslijst(afspraak.id).then(({data})=>{
+      if(weg) return;
+      const bron=leesReservekopie(afspraak.id)?.lijst||data?.lijst;
+      if(!bron) return;
+      const l=bouwLijst(bron,sjabloon,afspraak);
+      if(!isIngevuld(l)) return;
+      const tekst=samenvatting(l);
+      const km=l.km_eenheid==="km"?String(l.km||"").replace(/\D/g,""):"";
+      setF(p=>({...p,
+        // de lijst zegt wat er écht is gedaan; de gevraagde soort (bv. "Voorband vervangen") niet herhalen
+        omschrijving:p.omschrijving===beginOmschrijving.current&&tekst?tekst:p.omschrijving,
+        km:p.km||km,
+      }));
+      setUitLijst(true);
+    }).catch(()=>{});
+    return ()=>{weg=true;};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[afspraak.id]);
 
   // Geen motor = intern zonder gekoppelde motor → alleen opmerkingen
   const noMotorMode = !voorraadMotor && klantMotoren.length===0 && !afspraak.motor_id;
@@ -3177,7 +3204,8 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
           </Grid2>
 
           <Field label="Uitgevoerde werkzaamheden *">
-            <textarea style={{...s.input,height:100,resize:"none"}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving van de uitgevoerde werkzaamheden..."/>
+            <textarea style={{...s.input,height:uitLijst?150:100,resize:"vertical"}} value={f.omschrijving} onChange={set("omschrijving")} placeholder="Beschrijving van de uitgevoerde werkzaamheden..."/>
+            {uitLijst&&<div style={{fontSize:11,color:T.muted,marginTop:4}}>📋 Aangevuld vanuit de onderhoudslijst. De klant ziet deze tekst in de onderhoudshistorie.</div>}
           </Field>
 
           {/* Banden sectie: alleen tonen als soort band-werkzaamheden bevat */}
@@ -3228,6 +3256,235 @@ function AfwerkModal({afspraak, klanten, voorraad=[], onSave, onClose}){
   );
 }
 
+// ── Onderhoudslijst ──────────────────────────────────────────────────────────
+// Bij een afspraak: punten afvinken (oké / advies / vervangen / n.v.t.), groot onderhoud,
+// werkzaamheden, km-stand en opmerkingen. Wordt direct opgeslagen (tabel onderhoudslijsten),
+// met een reservekopie op het apparaat zolang opslaan niet lukt. Logica: lib/onderhoudslijst.js.
+// Het sjabloon (Instellingen) komt via context, zodat niet elk scherm het hoeft door te geven.
+const OnderhoudSjabloonContext = createContext(STANDAARD_SJABLOON);
+const STATUS_KLEUR = {oke:"#16A34A", advies:"#D97706", vervangen:"#2563EB", nvt:"#767676"};
+
+const laadOnderhoudslijst = async (afspraakId) => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return sb.from("onderhoudslijsten").select("lijst,bijgewerkt_op").eq("afspraak_id",afspraakId).maybeSingle();
+};
+const bewaarOnderhoudslijst = async (afspraakId, lijst) => {
+  const sb = (await import("../lib/supabase.js")).supabase;
+  return sb.from("onderhoudslijsten").upsert({afspraak_id:afspraakId, lijst, bijgewerkt_op:new Date().toISOString()});
+};
+
+function OnderhoudslijstModal({afspraak, motor, klantNaam, onClose}){
+  const sjabloon=useContext(OnderhoudSjabloonContext);
+  const [lijst,setLijst]=useState(null);
+  const [status,setStatus]=useState("laden"); // laden | laadfout | ok | wijziging | bezig | fout
+  const [herlaad,setHerlaad]=useState(0);
+  const timer=useRef(null);
+  const teBewaren=useRef(null); // laatste versie die nog niet in de database staat
+  const versie=useRef(0);
+  const bezig=useRef(false);
+
+  const bewaar=async()=>{
+    clearTimeout(timer.current); timer.current=null;
+    const l=teBewaren.current; if(!l) return;
+    const v=versie.current;
+    bezig.current=true; setStatus("bezig");
+    let error=null;
+    try{ ({error}=await bewaarOnderhoudslijst(afspraak.id,l)); }catch(e){ error=e; }
+    bezig.current=false;
+    if(error){ setStatus("fout"); return; }
+    if(versie.current===v){ teBewaren.current=null; wisReservekopie(afspraak.id); setStatus("ok"); }
+    else bewaarRef.current(); // intussen weer gewijzigd: die versie ook opslaan
+  };
+  const bewaarRef=useRef(bewaar); bewaarRef.current=bewaar;
+
+  useEffect(()=>{
+    let weg=false;
+    setStatus("laden");
+    (async()=>{
+      const kopie=leesReservekopie(afspraak.id);
+      const {data,error}=await laadOnderhoudslijst(afspraak.id);
+      if(weg) return;
+      // Niet kunnen laden: niets tonen om te wijzigen, anders overschrijft een lege lijst later de echte
+      if(error){ setStatus("laadfout"); return; }
+      // Niet opgeslagen wijzigingen op dit apparaat gaan voor als ze nieuwer zijn
+      const kopieNieuwer=!!kopie&&(!data||new Date(kopie.bewaard)>new Date(data.bijgewerkt_op));
+      const l=bouwLijst(kopieNieuwer?kopie.lijst:data?.lijst,sjabloon,afspraak);
+      setLijst(l);
+      if(kopieNieuwer){ teBewaren.current=l; versie.current++; bewaarRef.current(); }
+      else { if(kopie) wisReservekopie(afspraak.id); setStatus("ok"); }
+    })();
+    return ()=>{weg=true;};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[afspraak.id,herlaad]);
+
+  // Bij wegklikken naar een andere app, weer online komen en sluiten: meteen opslaan
+  useEffect(()=>{
+    const opZicht=()=>{ if(document.visibilityState==="hidden"&&teBewaren.current) bewaarRef.current(); };
+    const opOnline=()=>{ if(teBewaren.current) bewaarRef.current(); };
+    document.addEventListener("visibilitychange",opZicht);
+    window.addEventListener("online",opOnline);
+    return ()=>{
+      document.removeEventListener("visibilitychange",opZicht);
+      window.removeEventListener("online",opOnline);
+      if(teBewaren.current&&!bezig.current) bewaarRef.current();
+    };
+  },[]);
+
+  const wijzig=(fn)=>{
+    if(!lijst) return;
+    const n=fn(lijst);
+    setLijst(n);
+    teBewaren.current=n; versie.current++;
+    schrijfReservekopie(afspraak.id,n);
+    clearTimeout(timer.current); timer.current=setTimeout(()=>bewaarRef.current(),700);
+    setStatus("wijziging");
+  };
+  const zetPunt=(veld,i,waarden)=>wijzig(l=>({...l,[veld]:l[veld].map((x,j)=>j===i?{...x,...waarden}:x)}));
+  const sluit=()=>{ const laatste=teBewaren.current||lijst; if(teBewaren.current&&!bezig.current) bewaar(); onClose(laatste); };
+
+  const statusTekst={laden:"Laden…",laadfout:"",ok:"✓ Opgeslagen",wijziging:"Opslaan…",bezig:"Opslaan…",
+    fout:"⚠ Niet opgeslagen (geen verbinding?). Staat op dit apparaat en wordt opnieuw geprobeerd."}[status];
+  const open=lijst?lijst.controle.filter(x=>!x.status).length:0;
+  const kmEenheid=lijst?.km_eenheid==="mijl"?"mijl":"km";
+  const vinkStijl={accentColor:T.accent,width:17,height:17,flexShrink:0,cursor:"pointer"};
+
+  return(
+    <Modal title="ONDERHOUDSLIJST" onClose={sluit}>
+      <div style={{padding:12,background:T.surf2,borderRadius:4,marginBottom:14}}>
+        <div style={{fontSize:14,fontWeight:600}}>
+          {motor?[motor.merk,motor.model].filter(Boolean).join(" "):"Motor niet gekoppeld"}
+          {motor?.kenteken&&<span style={{...s.badge(T.accent),marginLeft:8,fontSize:10}}>{motor.kenteken}</span>}
+        </div>
+        <div style={{fontSize:12,color:T.muted,marginTop:3}}>{[klantNaam,afspraak.datum,afspraak.soort].filter(Boolean).join(" · ")}</div>
+      </div>
+
+      {status==="laadfout"?(
+        <div style={{padding:"18px 0",textAlign:"center"}}>
+          <div style={{fontSize:13,color:T.red,marginBottom:12}}>⚠ De lijst kon niet worden geladen. Controleer de verbinding.</div>
+          <button style={s.btn} onClick={()=>setHerlaad(x=>x+1)}>Opnieuw proberen</button>
+        </div>
+      ):!lijst?(
+        <div style={{fontSize:13,color:T.muted,padding:"18px 0",textAlign:"center"}}>Laden…</div>
+      ):(
+        <>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end",marginBottom:16}}>
+            {[["klein_onderhoud","Klein onderhoud"],["groot_onderhoud","Groot onderhoud"]].map(([k,label])=>(
+              <label key={k} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",border:`1px solid ${lijst[k]?T.accent:T.border}`,background:lijst[k]?`${T.accent}15`:"transparent",borderRadius:6,cursor:"pointer",userSelect:"none",fontSize:13,fontWeight:600}}>
+                <input type="checkbox" checked={!!lijst[k]} onChange={e=>wijzig(l=>({...l,[k]:e.target.checked}))} style={vinkStijl}/>{label}
+              </label>
+            ))}
+            <div style={{flex:"1 1 160px"}}>
+              <label style={s.label} htmlFor="ol-km">Km-stand</label>
+              <div style={{display:"flex",gap:6}}>
+                <input id="ol-km" style={{...s.input,flex:1}} inputMode="numeric" value={lijst.km} onChange={e=>wijzig(l=>({...l,km:e.target.value}))} placeholder="Bijv. 23500"/>
+                <button type="button" onClick={()=>wijzig(l=>({...l,km_eenheid:kmEenheid==="km"?"mijl":"km"}))} title="Km of mijl"
+                  style={{...s.btnGhost,padding:"0 12px",flexShrink:0}}>{kmEenheid}</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={s.sectionLabel}>Werkzaamheden</div>
+          {lijst.werkzaamheden.length===0&&<div style={{fontSize:12,color:T.muted,marginBottom:6}}>Geen werkzaamheden uit de afspraak. Voeg ze hieronder toe.</div>}
+          {lijst.werkzaamheden.map((x,i)=>(
+            <div key={x.naam+i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
+              <label style={{display:"flex",alignItems:"center",gap:10,flex:1,cursor:"pointer",userSelect:"none",fontSize:13}}>
+                <input type="checkbox" checked={!!x.gedaan} onChange={e=>zetPunt("werkzaamheden",i,{gedaan:e.target.checked})} style={vinkStijl}/>
+                <span>{x.naam}</span>
+              </label>
+              {x.extra&&<button type="button" onClick={()=>wijzig(l=>({...l,werkzaamheden:l.werkzaamheden.filter((_,j)=>j!==i)}))} title="Verwijderen" aria-label={`${x.naam} verwijderen`}
+                style={{background:"none",border:"none",color:T.muted,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>}
+            </div>
+          ))}
+          <NieuweNaamRij placeholder="Werkzaamheid toevoegen (bijv. achterband vervangen)" onAdd={naam=>wijzig(l=>({...l,werkzaamheden:[...l.werkzaamheden,{naam,gedaan:true,extra:true}]}))}/>
+
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:20}}>
+            <div style={{...s.sectionLabel,marginBottom:0}}>Controlepunten</div>
+            {open>0&&(
+              <button type="button" onClick={()=>wijzig(l=>({...l,controle:l.controle.map(x=>x.status?x:{...x,status:"oke"})}))}
+                style={{...s.btnGhost,fontSize:12,padding:"6px 10px"}}>Overige {open} op Oké</button>
+            )}
+          </div>
+          <div style={{fontSize:11,color:T.muted,margin:"6px 0 4px"}}>N.v.t. = niet aanwezig op deze motor. Tik nog een keer om te wissen.</div>
+          {lijst.controle.map((x,i)=>(
+            <div key={x.naam} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <div style={{flex:"1 1 170px",fontSize:13,minWidth:0}}>{x.naam}</div>
+                <div role="group" aria-label={x.naam} style={{display:"flex",gap:4,flex:"0 0 auto"}}>
+                  {STATUSSEN.map(st=>{
+                    const aan=x.status===st.id;
+                    return(
+                      <button key={st.id} type="button" title={st.titel} aria-pressed={aan} onClick={()=>zetPunt("controle",i,{status:aan?null:st.id})}
+                        style={{padding:"7px 0",width:66,fontSize:12,borderRadius:4,border:`1px solid ${aan?STATUS_KLEUR[st.id]:T.border}`,background:aan?STATUS_KLEUR[st.id]:"transparent",color:aan?"#fff":T.muted,fontWeight:aan?700:500,cursor:"pointer",fontFamily:"Barlow, sans-serif"}}>
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {(x.status==="advies"||x.status==="vervangen"||x.notitie)&&(
+                <input style={{...s.input,marginTop:6,padding:"6px 8px",fontSize:12}} value={x.notitie||""} aria-label={`Toelichting ${x.naam}`}
+                  onChange={e=>zetPunt("controle",i,{notitie:e.target.value})}
+                  placeholder={x.status==="advies"?"Toelichting voor de klant (bijv. nog 3 mm, binnenkort vervangen)":"Toelichting (bijv. merk/type)"}/>
+              )}
+            </div>
+          ))}
+
+          <div style={{...s.sectionLabel,marginTop:20}}>Groot onderhoud</div>
+          {lijst.groot.map((x,i)=>(
+            <div key={x.naam} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+              <label style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 160px",cursor:"pointer",userSelect:"none",fontSize:13}}>
+                <input type="checkbox" checked={!!x.gedaan} onChange={e=>zetPunt("groot",i,{gedaan:e.target.checked})} style={vinkStijl}/>
+                <span>{x.naam}</span>
+              </label>
+              <input style={{...s.input,flex:"1 1 150px",padding:"6px 8px",fontSize:12}} value={x.type||""} aria-label={`Type ${x.naam}`}
+                onChange={e=>zetPunt("groot",i,{type:e.target.value})} placeholder="Type (bijv. NGK CR9EK)"/>
+            </div>
+          ))}
+
+          <div style={{...s.sectionLabel,marginTop:20}}>Opmerkingen</div>
+          <textarea style={{...s.input,height:80,resize:"vertical",fontFamily:"Barlow, sans-serif"}} value={lijst.opmerking} onChange={e=>wijzig(l=>({...l,opmerking:e.target.value}))}
+            placeholder="Bevindingen, onderdelen besteld, afspraken met de klant…"/>
+        </>
+      )}
+
+      <div style={{display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+        <div role="status" style={{fontSize:12,color:status==="fout"?T.red:status==="ok"?T.green:T.muted,flex:"1 1 200px"}}>
+          {statusTekst}
+          {status==="fout"&&<button type="button" onClick={bewaar} style={{...s.btnGhost,fontSize:12,padding:"4px 10px",marginLeft:8}}>Opnieuw</button>}
+        </div>
+        <button style={s.btn} onClick={sluit}>Klaar</button>
+      </div>
+    </Modal>
+  );
+}
+
+// Knop in de afspraakdetails, met wat er al is ingevuld
+function OnderhoudslijstKnop({afspraak, motor, klantNaam}){
+  const sjabloon=useContext(OnderhoudSjabloonContext);
+  const [lijst,setLijst]=useState(undefined); // undefined = laden
+  const [open,setOpen]=useState(false);
+  useEffect(()=>{
+    let weg=false;
+    laadOnderhoudslijst(afspraak.id).then(({data})=>{ if(!weg) setLijst(leesReservekopie(afspraak.id)?.lijst||data?.lijst||null); }).catch(()=>{ if(!weg) setLijst(null); });
+    return ()=>{weg=true;};
+  },[afspraak.id]);
+  const tekst=lijst===undefined?"Laden…":voortgangTekst(lijst?bouwLijst(lijst,sjabloon,afspraak):null);
+  return(
+    <>
+      <button type="button" onClick={()=>setOpen(true)}
+        style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:14,background:`${T.accent}10`,border:`1px solid ${T.accent}55`,borderRadius:6,cursor:"pointer",textAlign:"left",fontFamily:"Barlow, sans-serif",color:T.text}}>
+        <span style={{fontSize:22}} aria-hidden>📋</span>
+        <span style={{flex:1,minWidth:0}}>
+          <span style={{display:"block",fontWeight:700,fontSize:14}}>Onderhoudslijst</span>
+          <span style={{display:"block",fontSize:12,color:T.muted,marginTop:2}}>{tekst}</span>
+        </span>
+        <span style={{color:T.accent,fontWeight:700,fontSize:16}} aria-hidden>→</span>
+      </button>
+      {open&&<OnderhoudslijstModal afspraak={afspraak} motor={motor} klantNaam={klantNaam} onClose={l=>{setOpen(false);if(l) setLijst(l);}}/>}
+    </>
+  );
+}
+
 function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, afspraken=[], afspraakCategorieen=[], onClose, onEdit, onDelete, onDeleteReeks, onAfwerken, onSessieToevoegen=()=>{}, onRondKlusAf=()=>{}, onHeropenKlus=()=>{}, onDeleteKlus=()=>{}, onVoegFaseToe=()=>{}, onHernoemFase=()=>{}, onVerwijderFase=()=>{}, onRondFaseAf=()=>{}, onHeropenFase=()=>{}}){
   const isProefrit=afspraak.type==="proefrit";
   const isIntern=afspraak.type==="intern";
@@ -3272,6 +3529,9 @@ function AfspraakDetailModal({afspraak, klanten, voorraad, klussen, afspraken=[]
           <span style={{color:T.text}}>{[motorInfo.merk,motorInfo.model].filter(Boolean).join(" ")}</span>
           {motorInfo.kenteken&&<span style={{fontFamily:"Barlow Condensed, sans-serif",letterSpacing:1}}>— {motorInfo.kenteken}</span>}
         </div>
+      )}
+      {!isProefrit&&(!isIntern||motorInfo)&&(
+        <OnderhoudslijstKnop afspraak={afspraak} motor={motorInfo} klantNaam={displayNaam}/>
       )}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
         <div><div style={s.label}>Datum</div><div style={{fontSize:13}}>{afspraak.datum||"—"}</div></div>
@@ -4044,6 +4304,52 @@ function NieuweNaamRij({onAdd,placeholder="Naam"}){
     </div>
   );
 }
+// Lijst met namen in Instellingen: toevoegen, verwijderen en verplaatsen; direct opgeslagen
+// via onSave (gooit bij een fout, dan gaat de lijst terug). Voor extra's bij verkoop en de
+// onderhoudslijst.
+const GEEN_NAMEN=[];
+function LijstBeheer({lijst=GEEN_NAMEN, onSave, placeholder="Naam", leeg="Nog niets toegevoegd."}){
+  const [items,setItems]=useState(lijst);
+  const [status,setStatus]=useState(null);
+  useEffect(()=>setItems(lijst),[lijst]);
+  const bewaar=async(nieuw)=>{
+    const vorige=items;
+    setItems(nieuw); setStatus("bezig");
+    try{
+      await onSave(nieuw);
+      setStatus("ok"); setTimeout(()=>setStatus(st=>st==="ok"?null:st),2000);
+    }catch(e){ setItems(vorige); setStatus("Opslaan mislukt: "+(e.message||"onbekende fout")); }
+  };
+  const voegToe=(naam)=>{
+    if(items.some(x=>x.trim().toLowerCase()===naam.trim().toLowerCase())){ setStatus(`"${naam}" staat er al.`); return; }
+    bewaar([...items,naam]);
+  };
+  const verplaats=(i,stap)=>{
+    const j=i+stap; if(j<0||j>=items.length) return;
+    const nieuw=[...items]; [nieuw[i],nieuw[j]]=[nieuw[j],nieuw[i]];
+    bewaar(nieuw);
+  };
+  const pijl=(uit)=>({background:"none",border:"none",cursor:uit?"default":"pointer",color:T.muted,opacity:uit?0.3:1,fontSize:13,padding:"2px 6px"});
+  return(
+    <>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
+        {items.map((naam,i)=>(
+          <div key={naam} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:13}}>
+            <span style={{flex:1,minWidth:0}}>{naam}</span>
+            <button onClick={()=>verplaats(i,-1)} disabled={i===0||status==="bezig"} title="Omhoog" aria-label={`${naam} omhoog`} style={pijl(i===0)}>▲</button>
+            <button onClick={()=>verplaats(i,1)} disabled={i===items.length-1||status==="bezig"} title="Omlaag" aria-label={`${naam} omlaag`} style={pijl(i===items.length-1)}>▼</button>
+            <button onClick={()=>bewaar(items.filter((_,j)=>j!==i))} disabled={status==="bezig"} title="Verwijderen" aria-label={`${naam} verwijderen`}
+              style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
+          </div>
+        ))}
+        {items.length===0&&<div style={{fontSize:12,color:T.muted}}>{leeg}</div>}
+      </div>
+      <NieuweNaamRij placeholder={placeholder} onAdd={voegToe}/>
+      <OpslaanStatus status={status}/>
+    </>
+  );
+}
+
 function NieuweCategorieRij({onAdd}){
   const [naam,setNaam]=useState("");
   const [kleur,setKleur]=useState("#3b82f6");
@@ -4057,7 +4363,7 @@ function NieuweCategorieRij({onAdd}){
   );
 }
 
-function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,verkoopExtras=[],onSaveVerkoopExtras=async()=>{},klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
+function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijden,onToggleGesloten,onVoegGeslotenToe,opmerking="",onSaveOpmerking,dienstenTarieven={},onSaveDiensten,afspraakSoorten=[],onSaveAfspraakSoorten,medewerkers=[],onSaveMedewerkers,afspraakCategorieen=[],onSaveAfspraakCategorieen,verkoopExtras=[],onSaveVerkoopExtras=async()=>{},onderhoudSjabloon=STANDAARD_SJABLOON,onSaveOnderhoudSjabloon=async()=>{},klanten=[],voorraad=[],onImportKlanten=async()=>{},onImportVooraad=async()=>{},inkoopBewaarDagen=5,onSaveInkoopDagen=async()=>{},maxPerDag=1,onSaveMaxPerDag=async()=>{},inkoopPopulair=[],onAddPopulair=async()=>{},onDeletePopulair=async()=>{}}){
   const [tijden,setTijden]=useState(openingstijden||DEFAULT_TIJDEN);
   const [opgeslagen,setOpgeslagen]=useState(false);
   const [opmTekst,setOpmTekst]=useState(opmerking);
@@ -4077,9 +4383,6 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
   const [categorieen,setCategorieen]=useState(afspraakCategorieen);
   const [categorieenStatus,setCategorieenStatus]=useState(null);
   useEffect(()=>setCategorieen(afspraakCategorieen),[afspraakCategorieen]);
-  const [extrasLijst,setExtrasLijst]=useState(verkoopExtras);
-  const [extrasStatus,setExtrasStatus]=useState(null);
-  useEffect(()=>setExtrasLijst(verkoopExtras),[verkoopExtras]);
   // Medewerkers en kleurcategorieën worden direct opgeslagen bij toevoegen/verwijderen
   // (voorheen pas met een losse knop "Opslaan", die makkelijk werd overgeslagen).
   const bewaarLijst=async(nieuw,vorige,zet,zetStatus,opslaan)=>{
@@ -4100,16 +4403,6 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
     bewaarLijst([...categorieen,{naam,kleur}],categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
   };
   const verwijderCategorie=(i)=>bewaarLijst(categorieen.filter((_,j)=>j!==i),categorieen,setCategorieen,setCategorieenStatus,onSaveAfspraakCategorieen);
-  const voegExtraToe=(naam)=>{
-    if(bestaatAl(extrasLijst,naam)){ setExtrasStatus(`"${naam}" staat er al.`); return; }
-    bewaarLijst([...extrasLijst,naam],extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
-  };
-  const verwijderExtra=(i)=>bewaarLijst(extrasLijst.filter((_,j)=>j!==i),extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
-  const verplaatsExtra=(i,stap)=>{
-    const j=i+stap; if(j<0||j>=extrasLijst.length) return;
-    const nieuw=[...extrasLijst]; [nieuw[i],nieuw[j]]=[nieuw[j],nieuw[i]];
-    bewaarLijst(nieuw,extrasLijst,setExtrasLijst,setExtrasStatus,onSaveVerkoopExtras);
-  };
   const setT=(key,val)=>setTarieven(p=>({...p,[key]:val}));
   const slaaTarievenOp=async()=>{ await onSaveDiensten(tarieven); setTarievenOk(true); setTimeout(()=>setTarievenOk(false),2000); };
   const [importStatus,setImportStatus]=useState(null);
@@ -4464,22 +4757,20 @@ function InstellingenPage({onOpenWebsite,openingstijden,geslotenDagen,onSaveTijd
         <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
           Opties die je bij het verkopen van een motor kunt aanbieden (Voorraad → Verkopen). Per voorraadmotor vink je uit wat hij al heeft. "Overige extra's" staat er altijd bij als vrij veld. Toevoegen, verwijderen en verplaatsen wordt direct opgeslagen.
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
-          {extrasLijst.map((naam,i)=>(
-            <div key={naam} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:T.surf2,border:`1px solid ${T.border}`,borderRadius:6,fontSize:13}}>
-              <span style={{flex:1,minWidth:0}}>{naam}</span>
-              <button onClick={()=>verplaatsExtra(i,-1)} disabled={i===0||extrasStatus==="bezig"} title="Omhoog" aria-label={`${naam} omhoog`}
-                style={{background:"none",border:"none",cursor:i===0?"default":"pointer",color:T.muted,opacity:i===0?0.3:1,fontSize:13,padding:"2px 6px"}}>▲</button>
-              <button onClick={()=>verplaatsExtra(i,1)} disabled={i===extrasLijst.length-1||extrasStatus==="bezig"} title="Omlaag" aria-label={`${naam} omlaag`}
-                style={{background:"none",border:"none",cursor:i===extrasLijst.length-1?"default":"pointer",color:T.muted,opacity:i===extrasLijst.length-1?0.3:1,fontSize:13,padding:"2px 6px"}}>▼</button>
-              <button onClick={()=>verwijderExtra(i)} disabled={extrasStatus==="bezig"} title="Verwijderen" aria-label={`${naam} verwijderen`}
-                style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
-            </div>
-          ))}
-          {extrasLijst.length===0&&<div style={{fontSize:12,color:T.muted}}>Nog geen extra's. Voeg er hieronder een toe.</div>}
+        <LijstBeheer lijst={verkoopExtras} onSave={onSaveVerkoopExtras} placeholder="Nieuwe extra (bijv. Topkoffer)" leeg="Nog geen extra's. Voeg er hieronder een toe."/>
+      </div>
+
+      {/* Onderhoudslijst (sjabloon) */}
+      <div style={{...s.card,marginTop:16}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>Onderhoudslijst</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
+          De lijst die je bij een afspraak afvinkt (afspraak openen → Onderhoudslijst). Al ingevulde punten blijven altijd bewaard, ook als je hier iets weghaalt. Toevoegen, verwijderen en verplaatsen wordt direct opgeslagen.
         </div>
-        <NieuweNaamRij placeholder="Nieuwe extra (bijv. Topkoffer)" onAdd={voegExtraToe}/>
-        <OpslaanStatus status={extrasStatus}/>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Controlepunten <span style={{fontWeight:400,color:T.muted}}>(oké / advies / vervangen / n.v.t.)</span></div>
+        <LijstBeheer lijst={onderhoudSjabloon.controle} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,controle:l})} placeholder="Nieuw controlepunt"/>
+        <div style={{borderTop:`1px solid ${T.border}`,margin:"16px 0"}}/>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Groot onderhoud <span style={{fontWeight:400,color:T.muted}}>(uitgevoerd + type)</span></div>
+        <LijstBeheer lijst={onderhoudSjabloon.groot} onSave={l=>onSaveOnderhoudSjabloon({...onderhoudSjabloon,groot:l})} placeholder="Nieuw punt groot onderhoud"/>
       </div>
 
       {/* Kleurcategorieën */}
@@ -5039,7 +5330,7 @@ export default function AdminApp(){
           alleRijen(()=>sb.from("motoren").select("*").not("klant_id","is",null).order("created_at").order("id")),
           alleRijen(()=>sb.from("km_historie").select("motor_id,datum,km").order("datum").order("id")),
           alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin,voorband_datum,achterband_datum").order("datum",{ascending:false}).order("id")),
-          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag,verkoop_extras").single(),
+          sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag,verkoop_extras,onderhoudslijst").single(),
           alleRijen(()=>sb.from("motor_verkoop_extras").select("motor_id,extras,overig").order("motor_id")), // extra's bij verkoop: alleen admin leesbaar
         ]);
         setInkoopLeads(inkoopRes.data||[]);
@@ -5102,6 +5393,7 @@ export default function AdminApp(){
         if(inst.data?.medewerkers) setMedewerkers(inst.data.medewerkers);
         if(inst.data?.afspraak_categorieen) setAfspraakCategorieen(inst.data.afspraak_categorieen);
         if(Array.isArray(inst.data?.verkoop_extras)) setVerkoopExtras(inst.data.verkoop_extras);
+        if(inst.data?.onderhoudslijst) setOnderhoudSjabloon(geldigSjabloon(inst.data.onderhoudslijst));
         if(inst.data?.inkoop_bewaar_dagen != null) setInkoopBewaarDagen(inst.data.inkoop_bewaar_dagen);
         if(inst.data?.max_afspraken_per_dag != null) setMaxPerDag(inst.data.max_afspraken_per_dag);
 
@@ -5954,6 +6246,7 @@ export default function AdminApp(){
   const [afspraakSoorten, setAfspraakSoorten] = useState([]);
   const [medewerkers, setMedewerkers] = useState([]);
   const [verkoopExtras, setVerkoopExtras] = useState(DEFAULT_VERKOOP_EXTRAS);
+  const [onderhoudSjabloon, setOnderhoudSjabloon] = useState(STANDAARD_SJABLOON);
   const [afspraakCategorieen, setAfspraakCategorieen] = useState([]);
   const [inkoopBewaarDagen, setInkoopBewaarDagen] = useState(5);
   // Dagcapaciteit voor klantportaal en website (de database bewaakt hem, zie supabase/dagcapaciteit.sql)
@@ -6016,6 +6309,14 @@ export default function AdminApp(){
     const { error } = await sb.from("instellingen").update({ verkoop_extras: namen }).eq("id", 1);
     if (error) throw new Error(error.message);
     setVerkoopExtras(namen);
+  };
+
+  const slaOnderhoudSjabloonOp = async (sjabloon) => {
+    const sb = (await import("../lib/supabase.js")).supabase;
+    const schoon = geldigSjabloon(sjabloon);
+    const { error } = await sb.from("instellingen").update({ onderhoudslijst: schoon }).eq("id", 1);
+    if (error) throw new Error(error.message);
+    setOnderhoudSjabloon(schoon);
   };
 
   const slaAfspraakCategorieenOp = async (categorieen) => {
@@ -6159,8 +6460,9 @@ export default function AdminApp(){
     </div>
   );
 
+  // Context: het sjabloon van de onderhoudslijst voor de afspraakschermen (zie OnderhoudslijstModal)
   const pageContent = (
-    <>
+    <OnderhoudSjabloonContext.Provider value={onderhoudSjabloon}>
       {page==="dashboard"&&<Dashboard klanten={klanten} showroom={showroom} afspraken={afspraken} onNav={setPage} onEditAfspraak={editAfspraak} onDeleteAfspraak={deleteAfspraak} onDeleteAfspraakReeks={deleteAfspraakReeks} onAfwerkAfspraak={afwerkAfspraak} klussen={klussen} afspraakCategorieen={afspraakCategorieen} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase}/>}
       {page==="klanten"&&<KlantenPage klanten={klanten} onAddKlant={addKlant} onUpdateKlant={updateKlant} onAfwijsKlant={afwijsKlant} onArchiveerKlant={archiveerKlant} onAddMotor={addMotorAanKlant} onAddService={addService} onUpdateService={updateService} onDeleteService={deleteService} onDeleteKlant={deleteKlant} onUpdateMotorInterval={updateMotorInterval} onUpdateMotor={updateMotor} voorraad={showroom} onKeurGoed={keurGoedKlant} onMarkeerGezien={markeerGezienService} onInruil={inruilMotorVanKlant} onDeleteMotor={deleteMotorVanKlant} klussen={klussen} afspraken={afspraken} onAddAfspraak={addAfspraak} onAddKlus={addKlus} onRondKlusAf={rondKlusAf} onHeropenKlus={heropenKlus} onDeleteKlus={verwijderKlus} onVoegFaseToe={voegFaseToe} onHernoemFase={hernoemFase} onVerwijderFase={verwijderFase} onRondFaseAf={rondFaseAf} onHeropenFase={heropenFase} geslotenDagen={geslotenDagen} openingstijden={openingstijden} afspraakSoorten={afspraakSoorten} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras} onVerkoop={verkoop}/>}
       {page==="voorraad"&&<VoorraadPage showroom={showroom} onAddMotor={addVoorraadMotor} onEditMotor={updateVoorraadMotor} klanten={klanten} onVerkoop={verkoop} onDelete={deleteVoorraadMotor} onToggleStatus={toggleVoorraadStatus} onCheckPrijs={checkVoorraadPrijs} onTerugkopen={terugkopenMotor} afspraken={afspraken} onAddAfspraak={addAfspraak} onDeleteAfspraak={deleteAfspraak} geslotenDagen={geslotenDagen} openingstijden={openingstijden} producten={producten} onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={deleteProduct} onVerkocht={verkochProduct} afspraakSoorten={afspraakSoorten} klussen={klussen} onAddKlus={addKlus} medewerkers={medewerkers} afspraakCategorieen={afspraakCategorieen} verkoopExtras={verkoopExtras}/>}
@@ -6172,8 +6474,8 @@ export default function AdminApp(){
             zetVerlaatGuard={zetVerlaatGuard} onTerug={()=>setPage("instellingen")}/>
         </Suspense>
       )}
-      {page==="instellingen"&&<InstellingenPage onOpenWebsite={()=>setPage("website")} openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} verkoopExtras={verkoopExtras} onSaveVerkoopExtras={slaVerkoopExtrasOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
-    </>
+      {page==="instellingen"&&<InstellingenPage onOpenWebsite={()=>setPage("website")} openingstijden={openingstijden} geslotenDagen={geslotenDagen} onSaveTijden={slaOpeningstijdenOp} onToggleGesloten={toggleGeslotenDag} onVoegGeslotenToe={voegGeslotenDagenToe} opmerking={opmerking} onSaveOpmerking={slaOpmerkingOp} dienstenTarieven={dienstenTarieven} onSaveDiensten={slaDienstenTarievenOp} afspraakSoorten={afspraakSoorten} onSaveAfspraakSoorten={slaAfspraakSoortenOp} medewerkers={medewerkers} onSaveMedewerkers={slaMedewerkersOp} afspraakCategorieen={afspraakCategorieen} onSaveAfspraakCategorieen={slaAfspraakCategorieenOp} verkoopExtras={verkoopExtras} onSaveVerkoopExtras={slaVerkoopExtrasOp} onderhoudSjabloon={onderhoudSjabloon} onSaveOnderhoudSjabloon={slaOnderhoudSjabloonOp} klanten={klanten} voorraad={showroom} onImportKlanten={importKlantenData} onImportVooraad={importVooraadData} inkoopBewaarDagen={inkoopBewaarDagen} onSaveInkoopDagen={slaInkoopDagenOp} maxPerDag={maxPerDag} onSaveMaxPerDag={slaMaxPerDagOp} inkoopPopulair={inkoopPopulair} onAddPopulair={addPopulair} onDeletePopulair={deletePopulair}/>}
+    </OnderhoudSjabloonContext.Provider>
   );
 
   if(isMobile){
