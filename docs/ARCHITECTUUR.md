@@ -62,6 +62,11 @@ flowchart LR
   worden in de database afgedwongen met RLS — de frontend is nooit de beveiliging.
 - **Hosting:** Cloudflare Pages bouwt `main` (`npm run build` → `dist/`). `public/_redirects`
   stuurt alle routes naar `index.html`; `public/_headers` zet CSP, HSTS e.d. en caching.
+  **Vast adres: `https://djm-app.pages.dev`** (`src/lib/appAdres.js`). Cloudflare geeft elke
+  deploy ook een eigen adres (`<hash>.djm-app.pages.dev`) en elke branch een testadres; die
+  blijven altijd op die ene versie staan en krijgen dus nooit updates. Op zo'n adres toont
+  `VerkeerdAdres.jsx` een waarschuwing met een knop naar het vaste adres, en links in e-mails
+  (uitnodiging, wachtwoord vergeten) gaan altijd naar het vaste adres (`appOrigin()`).
 - **PWA:** `public/manifest.webmanifest`, `public/sw.js`, iconen in `public/icons/`.
 
 ## 3. Mappenstructuur
@@ -383,7 +388,8 @@ geblokkeerd is, zoals in een privévenster).
   Ook bij `pageshow` (iPhone haalt de app bevroren uit de achtergrond) wordt gecontroleerd.
   Opent de app vers, dan draait hij al de nieuwste versie en komt er dus geen melding.
 - **App-versie:** `vite.config.js` bakt de bouwdatum en commit (`CF_PAGES_COMMIT_SHA`) in de app
-  (`__APP_VERSIE__`). Instellingen → App-versie (beheer en klantportaal) toont die en heeft
+  (`__APP_VERSIE__`). Instellingen → App-versie (beheer en klantportaal) toont die plus het adres
+  (rood bij een deploy-adres) en heeft
   "Zoeken naar update" (`zoekUpdate()`; bij een nieuwe versie verschijnt ook de melding).
 - **Installeren:** `lib/pwa.js` vangt `beforeinstallprompt` op; `AppInstalleren.jsx` toont de
   knop (Android) of de iPhone-uitleg.

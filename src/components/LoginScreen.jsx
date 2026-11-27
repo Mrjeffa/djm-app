@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { JuridischModal, CookieBanner, PRIVACY_VERSIE, VOORWAARDEN_VERSIE } from './Juridisch.jsx'
+import { appOrigin } from '../lib/appAdres.js'
 
 const T_LIGHT = { bg:'#F8F8F8', surf:'#FFFFFF', surf2:'#F2F2F2', border:'#E0E0E0', accent:'#E31E24', text:'#1A1A1A', muted:'#767676', red:'#DC2626' }
 const T_DARK  = { bg:'#111111', surf:'#1C1C1E', surf2:'#2C2C2E', border:'#38383A', accent:'#E31E24', text:'#F2F2F7', muted:'#8E8E93', red:'#FF453A' }
@@ -118,7 +119,7 @@ export default function LoginScreen() {
     if (!email) { setFout('Vul eerst je e-mailadres in.'); return }
     if (laden) return
     setLaden(true); setFout(null)
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin })
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: appOrigin() })
     setLaden(false)
     // Een onbekend e-mailadres geeft geen fout (zo is niet te achterhalen wie een account heeft)
     if (error) { setFout(authFout(error, 'Versturen lukte niet. Probeer het over een paar minuten opnieuw.')); return }
