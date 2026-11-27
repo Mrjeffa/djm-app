@@ -3536,10 +3536,10 @@ function FactuurModal({afspraak, motor, klant, onClose}){
     email:klant?.email||afspraak.email||"",
     telefoon:klant?.telefoon||afspraak.telefoon||"",
   };
-  const kmTekstLijst=lijst?.km?(lijst.km_eenheid==="mijl"?`${lijst.km} mijl`:String(lijst.km).replace(/\D/g,"")):"";
   const motorGegevens={
     omschrijving:motor?[motor.merk,motor.model].filter(Boolean).join(" "):"",
-    kenteken:motor?.kenteken||"", km:kmTekstLijst, vin:motor?.chassis_nummer||"",
+    kenteken:motor?.kenteken||"", vin:motor?.chassis_nummer||"",
+    km:String(lijst?.km||"").replace(/\D/g,""), kmEenheid:lijst?.km_eenheid==="mijl"?"mijl":"km",
   };
   const opties=[...new Set(prijslijst.map(x=>x.omschrijving))];
   const zetRegel=(i,w)=>setRegels(p=>p.map((r,j)=>j===i?{...r,...w}:r));
@@ -3600,7 +3600,7 @@ function FactuurModal({afspraak, motor, klant, onClose}){
               <div style={{...s.label,marginBottom:2}}>Motor</div>
               <div style={{color:T.text,fontWeight:600}}>{motorGegevens.omschrijving||"—"}</div>
               {motorGegevens.kenteken&&<div style={{color:T.muted}}>Kenteken {motorGegevens.kenteken}</div>}
-              {motorGegevens.km&&<div style={{color:T.muted}}>Km-stand {motorGegevens.km}</div>}
+              {motorGegevens.km&&<div style={{color:T.muted}}>{motorGegevens.kmEenheid==="mijl"?"Mijlenstand":"Km-stand"} {Number(motorGegevens.km).toLocaleString("nl-NL")}</div>}
               {motorGegevens.vin&&<div style={{color:T.muted}}>VIN {motorGegevens.vin}</div>}
             </div>
           </div>
@@ -3691,7 +3691,7 @@ function FactuurInstellingen({sjabloon=STANDAARD_SJABLOON, onSaveSjabloon=async(
     if(p.error){ setPlStatus("Prijslijst laden mislukt: "+p.error.message); return; }
     const {utils,writeFile}=await import("xlsx");
     const ws=utils.aoa_to_sheet(prijslijstRijen((p.data||[]).length?p.data:VOORBEELD_PRIJSLIJST));
-    ws["!cols"]=[{wch:12},{wch:52},{wch:24},{wch:13},{wch:13},{wch:8},{wch:18},{wch:18}];
+    ws["!cols"]=[{wch:12},{wch:52},{wch:24},{wch:18},{wch:18}];
     const wb=utils.book_new(); utils.book_append_sheet(wb,ws,"Prijslijst");
     writeFile(wb,"Prijslijst De Jonge Motoren.xlsx");
     setPlStatus(null);
@@ -3744,7 +3744,7 @@ function FactuurInstellingen({sjabloon=STANDAARD_SJABLOON, onSaveSjabloon=async(
       <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Prijslijst <span style={{fontWeight:400,color:T.muted}}>(alle prijzen ex btw)</span></div>
       <div style={{fontSize:12,color:T.muted,lineHeight:1.7,marginBottom:12}}>
         {aantal!=null&&<div style={{color:T.text,marginBottom:4}}>{aantal} artikel{aantal===1?"":"en"} in de app.</div>}
-        1. Download de prijslijst. 2. Vul hem aan in Excel: plak onder de kopregel bijvoorbeeld de regels uit je Larsson-bestelling (JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs…) of typ eigen regels, zoals "Arbeid", "Olie" of "Klein materiaal, milieu-afvalkosten" met jouw prijs. 3. Upload het bestand: het vervangt de prijslijst in de app.
+        1. Download de prijslijst. 2. Vul hem aan in Excel, met prijzen per stuk, per dienst of per uur (het aantal vul je op de factuur in): plak onder de kopregel bijvoorbeeld regels uit je Larsson-bestelling (de kolommen JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop en Verkoopprijs vallen goed; wat erna komt wordt genegeerd) of typ eigen regels, zoals "Arbeid", "Olie" of "Klein materiaal, milieu-afvalkosten". 3. Upload het bestand: het vervangt de prijslijst in de app.
         Op een factuur zoekt de app de prijs op artikelnummer (bijvoorbeeld HF303 als type bij het oliefilter), op precies dezelfde omschrijving, of op de naam zonder type ("Olie" bij "Olie 10W40").
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>

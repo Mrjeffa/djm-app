@@ -259,11 +259,15 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
 - Het bestand: `public/factuur-sjabloon.xlsx` (de Standaardfactuur van de zaak, zonder
   klantgegevens en zonder bewaarde formule-uitkomsten). `maakFactuur()` past alleen celwaarden
   aan in het werkblad-XML (zip via `xlsx`.CFB), zodat opmaak, formules, keuzelijsten en het
-  afdrukbereik (A–G, briefpapier) blijven; Excel rekent bij openen opnieuw (`fullCalcOnLoad`).
+  afdrukbereik (A–G, briefpapier) blijven. Bij elke formule zet `formuleUitkomsten()` de juiste
+  uitkomst (labels, regeltotalen, btw, totaal, controle), zodat het bestand ook klopt in de
+  beveiligde weergave van Excel en in voorbeeldweergaven, die niet zelf rekenen; bij bewerken
+  rekent Excel opnieuw (`fullCalcOnLoad`). Km in mijlen: label "Mijlenstand:". Tekstregels
+  (zonder aantal en prijs) krijgen een lege kortingscel, zodat lange tekst doorloopt.
   Facturen worden niet in de app bewaard; de zaak slaat het bestand op de computer op.
-- Prijslijst: Instellingen → downloaden als Excel (kolommen zoals een Larsson-bestelling:
-  JM-Nr., Omschrijving, Fabrikant artikel nummer, Inkoop-Netto, Verkoopprijs, …), aanvullen,
-  uploaden. `leesPrijslijst()` zoekt de kopregel en slaat "voertuig:"- en totaalregels over;
+- Prijslijst: Instellingen → downloaden als Excel (JM-Nr., Omschrijving, Fabrikant artikel
+  nummer, Inkoopprijs ex btw, Verkoopprijs ex btw; prijzen per stuk/dienst/uur, in dezelfde
+  volgorde als de eerste kolommen van een Larsson-bestelling), aanvullen, uploaden. `leesPrijslijst()` zoekt de kopregel en slaat "voertuig:"- en totaalregels over;
   uploaden vervangt de hele lijst in één transactie (`vervang_prijslijst`).
 
 **Foutafhandeling:** opslaan in de beheer-app controleert de `error` van Supabase en toont een
