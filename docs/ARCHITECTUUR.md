@@ -234,7 +234,11 @@ na 0,7 s opgeslagen in `onderhoudslijsten` (en direct bij sluiten, wegklikken of
 zolang dat niet lukt staat een reservekopie in `localStorage` die bij openen voorgaat als hij
 nieuwer is. Kan de lijst niet geladen worden, dan is hij niet te bewerken (anders zou een lege
 lijst de echte overschrijven). Het sjabloon staat in `instellingen.onderhoudslijst` (Instellingen →
-Onderhoudslijst) en komt via `OnderhoudSjabloonContext`. Ingevulde punten worden met hun naam
+Onderhoudslijst) en komt via `OnderhoudSjabloonContext`. Lijsten in Instellingen (extra's,
+controlepunten, groot onderhoud, vaste factuurregels) gaan via `LijstBeheer`: toevoegen, wijzigen,
+verwijderen, verplaatsen. Een hernoemde extra wordt ook in `voorraad.extras_niet_aanbieden`
+bijgewerkt; een hernoemd materiaalpunt houdt zijn factuurtekst en blijft onder de oude naam
+gelden voor al ingevulde lijsten. Ingevulde punten worden met hun naam
 bewaard: een aangepast sjabloon voegt punten toe of laat lege punten weg, maar ingevulde blijven.
 Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst ingevuld
 (`samenvatting()` in `lib/onderhoudslijst.js`).
@@ -257,7 +261,7 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
   `{nummer, datum}` in `lijst.factuur` van de afspraak (opnieuw downloaden = zelfde nummer).
   In Instellingen → Facturen en prijslijst is het laatste nummer handmatig te zetten.
 - Het bestand: `public/factuur-sjabloon.xlsx` (de Standaardfactuur van de zaak, zonder
-  klantgegevens en zonder bewaarde formule-uitkomsten). `maakFactuur()` past alleen celwaarden
+  klantgegevens; kolom Korting zonder titel, zodat klanten niet naar korting vragen). `maakFactuur()` past alleen celwaarden
   aan in het werkblad-XML (zip via `xlsx`.CFB), zodat opmaak, formules, keuzelijsten en het
   afdrukbereik (A–G, briefpapier) blijven. Bij elke formule zet `formuleUitkomsten()` de juiste
   uitkomst (labels, regeltotalen, btw, totaal, controle), zodat het bestand ook klopt in de
