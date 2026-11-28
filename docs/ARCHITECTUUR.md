@@ -293,7 +293,9 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
   Koning" bij de K), één woord geldt als achternaam. Sorteren bovenaan de lijst
   (`SORTERINGEN`: achternaam A-Z/Z-A, merk en type, status, niet betaald eerst, binnen op,
   laatst toegevoegd); de keuze wordt per apparaat onthouden (`localStorage`
-  `djm_stalling_sortering`). De Excel-export volgt dezelfde volgorde. De kolom `nummer` bestaat
+  `djm_stalling_sortering`). De Excel-export volgt dezelfde volgorde. Bij een gekoppelde klant
+  tonen en sorteren de lijst en de export de actuele klantnaam (en telefoon), ook als de klant na
+  het opslaan van de reservering is hernoemd. De kolom `nummer` bestaat
   nog (oude nummers uit de import), maar wordt niet meer getoond of ingevuld.
 - Doorzetten (`doorzetRegels()`): één reservering of "Alles doorzetten" naar het volgende
   seizoen: zelfde klant, motor en pakket; status gereserveerd, niet betaald,

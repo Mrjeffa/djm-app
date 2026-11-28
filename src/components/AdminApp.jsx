@@ -5508,8 +5508,12 @@ function StallingModal({rij, klanten, alle, onBewaar, onVerwijder, onDoorzetten,
   );
 }
 
-function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onDoorzetten, onSnelStatus,
+function WinterstallingPage({stalling:opgeslagen=[], klanten=[], onBewaar, onVerwijder, onDoorzetten, onSnelStatus,
   afspraken=[], onAddAfspraak=()=>{}, geslotenDagen=[], openingstijden=null, afspraakSoorten=[], klussen=[], onAddKlus=async()=>{}, medewerkers=[], afspraakCategorieen=[]}){
+  // Gekoppelde klant: altijd de actuele naam en het actuele telefoonnummer tonen (en daarop sorteren),
+  // ook als de klant na het opslaan van de reservering is gewijzigd
+  const klantVan=new Map(klanten.map(k=>[k.id,k]));
+  const stalling=opgeslagen.map(w=>{ const k=w.klant_id&&klantVan.get(w.klant_id); return k?{...w,naam:k.naam||w.naam,telefoon:k.telefoon||w.telefoon}:w; });
   const [seizoen,setSeizoen]=useState(()=>WS.huidigSeizoen());
   const [filter,setFilter]=useState("alle");
   const [zoek,setZoek]=useState("");
