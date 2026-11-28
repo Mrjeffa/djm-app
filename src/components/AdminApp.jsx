@@ -5380,7 +5380,6 @@ function StallingModal({rij, klanten, alle, onBewaar, onVerwijder, onDoorzetten,
     // bestaande reservering zonder motor: blijft "geen motor" tot er een gekozen wordt
     motorId:rij.motor_id||(rij.klant_id?(rij.id&&!isAanvraag?"geen":""):"nieuw"),
     nieuweMotor:{merk:rij.merk||"",model:rij.model||"",kenteken:rij.kenteken||""},
-    nummer:rij.nummer??(isAanvraag?WS.volgendNummer(alle.filter(w=>w.seizoen===rij.seizoen)):""),
   }));
   const [bezig,setBezig]=useState(false);
   const [fout,setFout]=useState(null);
@@ -5446,7 +5445,6 @@ function StallingModal({rij, klanten, alle, onBewaar, onVerwijder, onDoorzetten,
             {[f.seizoen-1,f.seizoen,f.seizoen+1,f.seizoen+2].map(x=><option key={x} value={x}>{WS.seizoenLabel(x)}</option>)}
           </select>
         </Field>
-        <Field label="Nummer"><input style={s.input} inputMode="numeric" value={f.nummer} onChange={e=>set("nummer",e.target.value.replace(/\D/g,""))} aria-label="Nummer"/></Field>
         <Field label="Status">
           <select style={s.input} value={f.status} onChange={e=>zetStatus(e.target.value)} aria-label="Status">
             {WS.STATUSSEN.filter(x=>x.id!=="aangevraagd"||isAanvraag).map(x=><option key={x.id} value={x.id}>{x.label}</option>)}
@@ -5515,6 +5513,8 @@ function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onD
   const [seizoen,setSeizoen]=useState(()=>WS.huidigSeizoen());
   const [filter,setFilter]=useState("alle");
   const [zoek,setZoek]=useState("");
+  const [sortering,setSorteringState]=useState(()=>{ try{ const v=localStorage.getItem("djm_stalling_sortering"); return WS.SORTERINGEN.some(x=>x.id===v)?v:"achternaam"; }catch{ return "achternaam"; } });
+  const setSortering=(v)=>{ setSorteringState(v); try{ localStorage.setItem("djm_stalling_sortering",v); }catch{} };
   const [bewerk,setBewerk]=useState(null); // rij | {nieuw}
   const [afspraakVoor,setAfspraakVoor]=useState(null);
   const [doorzetten,setDoorzetten]=useState(false);
@@ -5536,17 +5536,17 @@ function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onD
   const aanvragen=vanSeizoen.filter(w=>w.status==="aangevraagd").sort((a,b)=>String(a.aangemaakt).localeCompare(String(b.aangemaakt)));
   const lijst=vanSeizoen.filter(w=>w.status!=="aangevraagd")
     .filter(w=>filter==="alle"||(filter==="onbetaald"?!w.betaald:w.status===filter))
-    .filter(w=>WS.past(w,zoek)).sort(WS.sorteer);
+    .filter(w=>WS.past(w,zoek)).sort(WS.sorteerFn(sortering));
   const t=WS.telling(vanSeizoen);
   const seizoenen=[...new Set([...stalling.map(w=>w.seizoen),WS.huidigSeizoen(),seizoen])].sort();
   const teDoorzetten=WS.doorzetRegels(vanSeizoen,seizoen+1,stalling.filter(w=>w.seizoen===seizoen+1));
   const aanvragenAndere=stalling.filter(w=>w.status==="aangevraagd"&&w.seizoen!==seizoen);
-  const nieuweRij=()=>({seizoen,status:"gereserveerd",nummer:WS.volgendNummer(vanSeizoen),betaald:false});
+  const nieuweRij=()=>({seizoen,status:"gereserveerd",betaald:false});
 
   const exporteer=async()=>{
     const {utils,writeFile}=await import("xlsx");
-    const ws=utils.aoa_to_sheet(WS.excelRijen(vanSeizoen.filter(w=>w.status!=="aangevraagd"),seizoen));
-    ws["!cols"]=[{wch:5},{wch:24},{wch:16},{wch:18},{wch:11},{wch:18},{wch:40},{wch:28},{wch:15},{wch:13},{wch:9},{wch:12},{wch:11},{wch:12},{wch:30}];
+    const ws=utils.aoa_to_sheet(WS.excelRijen(vanSeizoen.filter(w=>w.status!=="aangevraagd"),seizoen,sortering));
+    ws["!cols"]=[{wch:24},{wch:16},{wch:18},{wch:11},{wch:18},{wch:40},{wch:28},{wch:15},{wch:13},{wch:9},{wch:12},{wch:11},{wch:12},{wch:30}];
     const wb=utils.book_new(); utils.book_append_sheet(wb,ws,`Winterstalling ${seizoen}`);
     writeFile(wb,`Winterstalling ${seizoen}.xlsx`);
   };
@@ -5601,6 +5601,11 @@ function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onD
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
         <input style={{...s.input,flex:"1 1 200px"}} value={zoek} onChange={e=>setZoek(e.target.value)} placeholder="Zoek op naam, motor, kenteken…" aria-label="Zoeken in de stallingslijst"/>
+        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.muted,flex:"0 1 auto"}}>Sorteren
+          <select style={{...s.input,width:"auto",padding:"7px 8px",fontSize:13}} value={sortering} onChange={e=>setSortering(e.target.value)} aria-label="Sorteren">
+            {WS.SORTERINGEN.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </label>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {chip("alle","Alle",t.totaal)}{chip("gereserveerd","Gereserveerd",t.gereserveerd)}{chip("binnen","Binnen",t.binnen)}{chip("opgehaald","Opgehaald",t.opgehaald)}{chip("onbetaald","Niet betaald",t.totaal-t.betaald)}
         </div>
@@ -5613,7 +5618,6 @@ function WinterstallingPage({stalling=[], klanten=[], onBewaar, onVerwijder, onD
           return(
             <div key={w.id} style={{...s.card,padding:"10px 12px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",cursor:"pointer",marginBottom:0}}
               onClick={()=>setBewerk(w)} role="button" tabIndex={0} onKeyDown={e=>e.key==="Enter"&&setBewerk(w)} aria-label={`Reservering ${w.naam||""}`}>
-              <div style={{width:34,fontFamily:"Barlow Condensed, sans-serif",fontWeight:800,fontSize:18,color:T.muted,textAlign:"right",flexShrink:0}}>{w.nummer??"–"}</div>
               <div style={{flex:"1 1 200px",minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:600}}>{w.naam||"Onbekend"}</div>
                 <div style={{fontSize:12,color:T.muted}}>{WS.motorTekst(w)||"Motor nog niet bekend"}{w.telefoon?` · ${w.telefoon}`:""}</div>
@@ -6118,7 +6122,7 @@ export default function AdminApp(){
           alleRijen(()=>sb.from("service_beurten").select("id,motor_id,datum,omschrijving,km,klant_invoer,interval_gereset,gezien_admin,voorband_datum,achterband_datum").order("datum",{ascending:false}).order("id")),
           sb.from("instellingen").select("gesloten_dagen,openingstijden,opmerking,diensten_tarieven,afspraak_soorten,medewerkers,afspraak_categorieen,inkoop_bewaar_dagen,max_afspraken_per_dag,verkoop_extras,onderhoudslijst").single(),
           alleRijen(()=>sb.from("motor_verkoop_extras").select("motor_id,extras,overig").order("motor_id")), // extra's bij verkoop: alleen admin leesbaar
-          alleRijen(()=>sb.from("winterstalling").select("*").order("seizoen").order("nummer").order("id")),
+          alleRijen(()=>sb.from("winterstalling").select("*").order("seizoen").order("id")),
         ]);
         setInkoopLeads(inkoopRes.data||[]);
         setInkoopStatus(inkoopStatusRes.data||null);
@@ -7141,7 +7145,7 @@ export default function AdminApp(){
       setKlanten(p => p.map(k => k.id === klantId ? { ...k, motoren: [...(k.motoren || []), { ...data, kmHistory: [], service: [] }] } : k));
     }
     const rij = {
-      seizoen: Number(f.seizoen), nummer: f.nummer === "" || f.nummer == null ? null : Number(f.nummer), status: f.status,
+      seizoen: Number(f.seizoen), status: f.status,
       klant_id: klantId, motor_id: motorId,
       naam: klant?.naam || nk?.naam?.trim() || f.naam || null,
       telefoon: klant ? (klant.telefoon || null) : (nk?.telefoon?.trim() || f.telefoon || null),
