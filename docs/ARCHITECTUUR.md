@@ -287,10 +287,18 @@ Bij **Afwerken** worden "Uitgevoerde werkzaamheden" en de km-stand uit de lijst 
   nodig eerst de klant (status goedgekeurd, e-mail optioneel) en/of de motor aan.
 - Aanvragen staan bovenaan ("Verwerken"): een bestaande klant met hetzelfde telefoonnummer of
   e-mailadres wordt voorgesteld, de motor met hetzelfde kenteken (of merk en type) alvast
-  gekozen, en het eerstvolgende nummer ingevuld. "Reservering maken" maakt er een reservering
-  van; "Aanvraag afwijzen" verwijdert hem.
+  gekozen. "Reservering maken" maakt er een reservering van; "Aanvraag afwijzen" verwijdert hem.
+- Geen stallingsnummers (sinds 28 november 2026): de lijst staat standaard op achternaam (A-Z).
+  `naamDelen()` haalt de achternaam uit `naam`; tussenvoegsels tellen niet mee ("Frans de
+  Koning" bij de K), één woord geldt als achternaam. Sorteren bovenaan de lijst
+  (`SORTERINGEN`: achternaam A-Z/Z-A, merk en type, status, niet betaald eerst, binnen op,
+  laatst toegevoegd); de keuze wordt per apparaat onthouden (`localStorage`
+  `djm_stalling_sortering`). De Excel-export volgt dezelfde volgorde. Bij een gekoppelde klant
+  tonen en sorteren de lijst en de export de actuele klantnaam (en telefoon), ook als de klant na
+  het opslaan van de reservering is hernoemd. De kolom `nummer` bestaat
+  nog (oude nummers uit de import), maar wordt niet meer getoond of ingevuld.
 - Doorzetten (`doorzetRegels()`): één reservering of "Alles doorzetten" naar het volgende
-  seizoen: zelfde klant, motor, pakket en (als vrij) nummer; status gereserveerd, niet betaald,
+  seizoen: zelfde klant, motor en pakket; status gereserveerd, niet betaald,
   zonder werkzaamheden en opmerking. Wat er al staat (zelfde motor of al doorgezet) wordt
   overgeslagen; de database staat een motor maar één keer per seizoen toe.
 - "Werkplaats-afspraak" opent `AfspraakModal` voor die klant en motor (werkzaamheden als
@@ -507,7 +515,7 @@ geblokkeerd is, zoals in een privévenster).
 | `motor_verkoop_extras` | extra's bij aankoop per klantmotor (`extras` text[], `overig`); verdwijnt met de motor | alleen admin |
 | `onderhoudslijsten` | ingevulde onderhoudslijst per afspraak (`afspraak_id`, `lijst` jsonb, `bijgewerkt_op`); verdwijnt met de afspraak | alleen admin |
 | `beheer_instellingen` | één rij (`id=1`) met instellingen die alleen de beheerder mag zien: `laatste_factuurnummer`, `winterstalling_plaatsen` | alleen admin |
-| `winterstalling` | stallingslijst: één regel per motor per seizoen (`seizoen`, `nummer`, `status`, `klant_id`, `motor_id`, naam/contact/motor los, `pakket`, `werkzaamheden`, `opmerking` intern, `betaald`, `betaalwijze`, `binnen_op`, `opgehaald_op`, `bron`, `doorgezet_van`); uniek (seizoen, motor) | admin: alles; klant: alleen een aanvraag voor zichzelf/eigen motor toevoegen (status `aangevraagd`, geen interne velden), niet lezen; website: alleen via `vraag_winterstalling_aan` |
+| `winterstalling` | stallingslijst: één regel per motor per seizoen (`seizoen`, `status`, `klant_id`, `motor_id`, naam/contact/motor los, `pakket`, `werkzaamheden`, `opmerking` intern, `betaald`, `betaalwijze`, `binnen_op`, `opgehaald_op`, `bron`, `doorgezet_van`); uniek (seizoen, motor) | admin: alles; klant: alleen een aanvraag voor zichzelf/eigen motor toevoegen (status `aangevraagd`, geen interne velden), niet lezen; website: alleen via `vraag_winterstalling_aan` |
 | `prijslijst` | artikelen voor facturen: `omschrijving`, `artikelnummer`, `jm_nummer`, `inkoop`, `verkoop` (ex btw), `volgorde` | alleen admin |
 | `producten` | onderdelen/accessoires te koop | iedereen: actief en niet verkocht; admin: alles |
 | `klussen` | meerdaagse klussen met fases | alleen admin |
